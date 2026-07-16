@@ -4,7 +4,7 @@
 
 > **技術メモ:** Three.js は最新安定版(0.184.0, r184)を ES Modules + importmap 方式で CDN から読み込みます。
 
-**🔗 デモ: https://github.com/BAISON15/nosai-3d-viewers/**
+**🔗 デモ: https://baison15.github.io/nosai-3d-viewers/**
 
 ## 収録ビューア
 
