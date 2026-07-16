@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>損害保険 評価研修用 3Dビューア</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: #f1f5f9; color: #0f172a;
+  }
+  header {
+    background: #0f172a; color: #e2e8f0; padding: 28px 20px 22px;
+    text-align: center;
+  }
+  header h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; }
+  header p { margin: 0; font-size: 13px; color: #94a3b8; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
+  .card {
+    display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 18px; text-decoration: none; color: inherit;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05); transition: box-shadow .15s, transform .15s;
+  }
+  .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.10); transform: translateY(-1px); }
+  .card .tag {
+    display: inline-block; font-size: 11px; font-weight: 600; color: #b45309;
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 999px;
+    padding: 2px 10px; margin-bottom: 10px;
+  }
+  .card h2 { margin: 0 0 8px; font-size: 16px; }
+  .card p { margin: 0; font-size: 13px; color: #475569; line-height: 1.7; }
+  .card .go { margin-top: 12px; font-size: 12px; color: #2563eb; font-weight: 600; }
+  .disclaimer {
+    margin-top: 24px; font-size: 11px; color: #64748b; line-height: 1.8;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px;
+  }
+  footer { text-align: center; font-size: 11px; color: #94a3b8; padding: 20px; }
+  footer a { color: #64748b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>損害保険 評価研修用 3Dビューア</h1>
+  <p>農業共済(NOSAI)の評価研修を想定したインタラクティブな3Dモデル集 / Three.js製・単一HTML</p>
+</header>
+<main>
+  <a class="card" href="viewers/engei-kyosai-3d-viewer.html">
+    <span class="tag">園芸施設共済</span>
+    <h2>園芸施設 3Dビューア</h2>
+    <p>パイプハウス(Ⅱ類)・鉄骨屋根型(Ⅳ類)・雨よけ施設(Ⅵ類)・多目的ネットハウス(Ⅶ類)・ガラス室の5型式を切替表示。施設構造部分(妻面/側面/屋根面/基礎ほか)の色分けや被覆材の切替、部材ごとの評価着眼点マーカー付き。</p>
+    <div class="go">ビューアを開く →</div>
+  </a>
+  <a class="card" href="viewers/tatemono-kyosai-3d-viewer.html">
+    <span class="tag">建物共済</span>
+    <h2>一般住宅 3Dビューア</h2>
+    <p>木造在来工法の一般住宅を平屋/2階建てで切替。軸組・外装(屋根材/外壁材テクスチャ切替)・内装まで再現し、部位色分け・骨組み表示・内部透過表示に対応。</p>
+    <div class="go">ビューアを開く →</div>
+  </a>
+
+  <div class="disclaimer">
+    <strong>免責事項:</strong> 本モデルは研修・学習用の簡略化されたイメージであり、農林水産省「園芸施設共済評価要領」や各農業共済組合の正式な損害評価基準・様式を完全に再現したものではありません。実際の引受評価・損害評価は必ず公式な評価要領・約款・基準に基づいて行ってください。詳細は <a href="README.md">README</a> を参照してください。
+  </div>
+</main>
+<footer>
+  <a href="https://github.com/">GitHub</a> · Apache License 2.0
+</footer>
+</body>
+</html>

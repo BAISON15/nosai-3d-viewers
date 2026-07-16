@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>園芸施設 3Dビューア(園芸施設共済 評価研修用)</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.184.0/three.module.min.js"
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100vh; background: #f1f5f9; }
+
+  header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; }
+  header h1 { font-size: 13px; margin: 0; font-weight: 600; }
+  header p { font-size: 10.5px; margin: 2px 0 0; color: #94a3b8; }
+
+  main { flex: 1; display: flex; min-height: 0; flex-direction: row; }
+  @media (max-width: 860px) { main { flex-direction: column; } }
+
+  #viewport { position: relative; flex: 1; min-height: 360px; }
+  #canvas-holder { position: absolute; inset: 0; }
+  #canvas-holder canvas { display: block; touch-action: none; }
+
+  .label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; user-select: none; transform: translate(-50%, -100%); }
+  .label-chip { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.15); border: 1px solid #cbd5e1; background: rgba(255,255,255,.92); color: #334155; }
+  .label-chip.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
+  .label-chip.dim { background: rgba(15,23,42,.78); color: #fde68a; border: 1px dashed #f59e0b; }
+
+  .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
+
+  aside { width: 320px; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
+  @media (max-width: 860px) { aside { width: auto; border-left: none; border-top: 1px solid #cbd5e1; max-height: 46vh; } }
+
+  .section { margin-bottom: 16px; }
+  .section h2 { font-size: 11px; font-weight: 600; color: #64748b; margin: 0 0 8px; }
+  .btn { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; margin-bottom: 6px; transition: background .15s; }
+  .btn:hover { background: #f8fafc; }
+  .btn.active { border-color: #f59e0b; background: #fffbeb; color: #0f172a; }
+  .btn small { display: block; color: #94a3b8; font-size: 10px; margin-top: 1px; }
+  .btn.active small { color: #b45309; }
+  .btn-row { display: flex; gap: 6px; }
+  .btn-row .btn { flex: 1; text-align: center; }
+
+  .type-note { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #64748b; line-height: 1.6; margin-top: 2px; }
+
+  .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-bottom: 3px; }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); flex: none; }
+  .legend-cap { font-size: 10px; color: #94a3b8; margin-top: 4px; line-height: 1.5; }
+
+  .note-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; color: #475569; line-height: 1.7; margin-top: 4px; }
+  .note-box .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+
+  .disclaimer { font-size: 10px; color: #94a3b8; line-height: 1.6; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>園芸施設 3Dビューア — 園芸施設共済 評価研修用</h1>
+    <p>園芸施設共済評価要領(平成30年5月2日 30経営第367号)の名称・区分を参考にした簡易学習モデル</p>
+  </header>
+  <main>
+    <div id="viewport">
+      <div id="canvas-holder"></div>
+      <div id="labels"></div>
+      <button class="reset-btn" id="reset-view">視点をリセット</button>
+      <div class="hint">ドラッグ: 回転 / ホイール・ピンチ: ズーム / 橙色の点: 部材の着眼点</div>
+    </div>
+    <aside id="panel"></aside>
+  </main>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+// r128相当の色味を維持するため色管理を無効化(見た目の互換性のため)。
+// 最新のリニア色管理を使う場合は次行を削除してください。
+if (THREE.ColorManagement) THREE.ColorManagement.enabled = false;
+
+/* ============================================================
+   共通マテリアル・色定義
+============================================================ */
+const MAT = {
+  pipe:   new THREE.MeshStandardMaterial({ color: 0x9aa1a8, roughness: 0.45, metalness: 0.6 }),
+  steel:  new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5,  metalness: 0.55 }),
+  steelW: new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.4,  metalness: 0.5 }),
+  wire:   new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.4,  metalness: 0.7 }),
+  conc:   new THREE.MeshStandardMaterial({ color: 0x8d8d86, roughness: 0.9 }),
+  stone:  new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.95 }),
+  door:   new THREE.MeshStandardMaterial({ color: 0x2b3b47, roughness: 0.3, side: THREE.DoubleSide }),
+};
+
+/* 被覆材(別表2の代表的な種類を簡略化して表現) */
+const COVERS = {
+  noubi:      { label: "一般農ビ(農業用ポリ塩化ビニール)", color: 0xfff6dd, opacity: 0.34 },
+  po:         { label: "一般農PO(ポリオレフィン系)",       color: 0xffffff, opacity: 0.30 },
+  taikyu_po:  { label: "耐久農PO",                          color: 0xf2fbff, opacity: 0.33 },
+  soft:       { label: "軟質フィルム〔61型系=Ⅳ類甲〕",     color: 0xffffff, opacity: 0.30 },
+  hard:       { label: "硬質フィルム〔62型系=Ⅳ類乙〕",     color: 0xd8f0f8, opacity: 0.48 },
+  kanreisha:  { label: "寒冷紗・ネット〔80型系=Ⅵ類相当〕", color: 0x334155, opacity: 0.40 },
+  glass3:     { label: "ガラス 透明3mm",                    color: 0xd7ecf4, opacity: 0.22 },
+  glass4:     { label: "ガラス 透明4mm",                    color: 0xcfe8f2, opacity: 0.25 },
+  amiiri:     { label: "網入りガラス",                      color: 0xc4d4da, opacity: 0.32 },
+  net_gen:    { label: "一般多目的ネット(ポリエチレン)",    color: 0x1f2937, opacity: 0.35 },
+  net_taikyu: { label: "耐久性多目的ネット",                color: 0x111827, opacity: 0.40 },
+};
+
+/* 施設構造部分の色分け(第4-1(1): 妻面・側面・屋根面・基礎の4区分、Ⅶ類は周囲面・天井面・基礎) */
+const PART_COLORS = {
+  "妻面A": "#e11d48", "妻面B": "#fb923c",
+  "側面A": "#2563eb", "側面B": "#7dd3fc",
+  "屋根面A": "#16a34a", "屋根面B": "#86efac",
+  "側屋根面A": "#0d9488", "側屋根面B": "#99f6e4",
+  "周囲面": "#2563eb", "天井面": "#16a34a",
+  "基礎": "#64748b",
+};
+
+const partMatCache = {};
+function partMat(part, isCover) {
+  const key = part + (isCover ? "_c" : "_s");
+  if (!partMatCache[key]) {
+    partMatCache[key] = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(PART_COLORS[part] || "#a3a3a3"),
+      roughness: 0.7, metalness: 0.05,
+      transparent: !!isCover, opacity: isCover ? 0.6 : 1.0,
+      side: THREE.DoubleSide,
+    });
+  }
+  return partMatCache[key];
+}
+
+/* ============================================================
+   ジオメトリ用ヘルパー
+============================================================ */
+function tag(mesh, part, member, isCover) {
+  mesh.userData.part = part;
+  mesh.userData.member = member;
+  mesh.userData.isCover = !!isCover;
+  mesh.userData.baseMat = mesh.material;
+  return mesh;
+}
+
+function pipeBetween(p1, p2, r, mat) {
+  const dir = new THREE.Vector3().subVectors(p2, p1);
+  const len = dir.length();
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6), mat);
+  mesh.position.copy(p1).addScaledVector(dir, 0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  return mesh;
+}
+
+function pipeAlongX(x0, x1, y, z, r, mat) {
+  return pipeBetween(new THREE.Vector3(x0, y, z), new THREE.Vector3(x1, y, z), r, mat);
+}
+
+/* アーチ被覆(半円筒の一部)を確実な向きで生成: φ=0→+Z, φ=π/2→頂点, φ=π→−Z */
+function archSkinGeometry(r, len, phi0, phi1, segX, segP) {
+  segX = segX || 1; segP = segP || 14;
+  const pos = [], norm = [], uv = [], idx = [];
+  for (let i = 0; i <= segX; i++) {
+    const x = -len / 2 + (len * i) / segX;
+    for (let j = 0; j <= segP; j++) {
+      const p = phi0 + ((phi1 - phi0) * j) / segP;
+      pos.push(x, r * Math.sin(p), r * Math.cos(p));
+      norm.push(0, Math.sin(p), Math.cos(p));
+      uv.push(i / segX, j / segP);
+    }
+  }
+  const row = segP + 1;
+  for (let i = 0; i < segX; i++) for (let j = 0; j < segP; j++) {
+    const a = i * row + j, b = (i + 1) * row + j;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setIndex(idx);
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+
+function coverMaterial(coverKey) {
+  const c = COVERS[coverKey];
+  return new THREE.MeshStandardMaterial({
+    color: c.color, transparent: true, opacity: c.opacity,
+    roughness: 0.25, metalness: 0.0, side: THREE.DoubleSide,
+  });
+}
+
+/* 1/4アーチのパイプ(トーラス)。sideZ: +1 → +Z側(A面), −1 → −Z側(B面) */
+function quarterRib(r, tube, x, yBase, sideZ, mat) {
+  const mesh = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 8, 12, Math.PI / 2), mat);
+  // 回転順XYZ(Rzが先に適用): zOff=π/2 の破片が +Z 側に来る
+  mesh.rotation.set(0, Math.PI / 2, sideZ > 0 ? Math.PI / 2 : 0);
+  mesh.position.set(x, yBase, 0);
+  return mesh;
+}
+
+/* 妻面の半円被覆 */
+function gableArcCover(r, xPos, yBase, mat) {
+  const s = new THREE.Shape();
+  s.moveTo(-r, 0);
+  s.absarc(0, 0, r, Math.PI, 0, true);
+  s.lineTo(-r, 0);
+  const mesh = new THREE.Mesh(new THREE.ShapeGeometry(s, 24), mat);
+  mesh.rotation.y = Math.PI / 2;
+  mesh.position.set(xPos, yBase, 0);
+  return mesh;
+}
+
+/* ============================================================
+   型式別 モデル生成
+============================================================ */
+
+/* --- Ⅱ類 パイプハウス(アーチ型・40型相当) --- */
+function buildPipeHouse(coverKey) {
+  const g = new THREE.Group();
+  const r = 2.7, D = 12, ribStep = 0.8, tube = 0.03;
+  const cMat = coverMaterial(coverKey);
+
+  const nRib = Math.round(D / ribStep) + 1;
+  for (let i = 0; i < nRib; i++) {
+    const x = -D / 2 + ribStep * i;
+    g.add(tag(quarterRib(r, tube, x, 0, +1, MAT.pipe), "側屋根面A", "アーチ・パイプ"));
+    g.add(tag(quarterRib(r, tube, x, 0, -1, MAT.pipe), "側屋根面B", "アーチ・パイプ"));
+  }
+  // 母屋(直管): 棟 + 斜め45°位置 + 地際
+  g.add(tag(pipeAlongX(-D/2, D/2, r, 0, 0.028, MAT.pipe), "側屋根面A", "母屋(直管)"));
+  const c45 = r * Math.cos(Math.PI/4);
+  g.add(tag(pipeAlongX(-D/2, D/2, c45,  c45, 0.028, MAT.pipe), "側屋根面A", "母屋(直管)"));
+  g.add(tag(pipeAlongX(-D/2, D/2, c45, -c45, 0.028, MAT.pipe), "側屋根面B", "母屋(直管)"));
+  g.add(tag(pipeAlongX(-D/2, D/2, 0.05,  r-0.03, 0.028, MAT.pipe), "側屋根面A", "母屋(直管)"));
+  g.add(tag(pipeAlongX(-D/2, D/2, 0.05, -(r-0.03), 0.028, MAT.pipe), "側屋根面B", "母屋(直管)"));
+
+  // 妻面(両端): 間柱・胴ぶち・出入口戸
+  [[D/2, "妻面A"], [-D/2, "妻面B"]].forEach(([x, part]) => {
+    [-1.8, -0.7, 0.7, 1.8].forEach((z) => {
+      const h = Math.sqrt(Math.max(r*r - z*z, 0.04)) - 0.02;
+      g.add(tag(pipeBetween(new THREE.Vector3(x,0,z), new THREE.Vector3(x,h,z), 0.026, MAT.pipe), part, "妻面間柱"));
+    });
+    // 胴ぶち(戸の両脇 y=0.9、戸上 y=1.9)
+    const zm09 = Math.sqrt(r*r - 0.9*0.9);
+    g.add(tag(pipeBetween(new THREE.Vector3(x,0.9,0.7),  new THREE.Vector3(x,0.9,zm09-0.02), 0.024, MAT.pipe), part, "妻面胴ぶち"));
+    g.add(tag(pipeBetween(new THREE.Vector3(x,0.9,-0.7), new THREE.Vector3(x,0.9,-(zm09-0.02)), 0.024, MAT.pipe), part, "妻面胴ぶち"));
+    const zm19 = Math.sqrt(r*r - 1.9*1.9);
+    g.add(tag(pipeBetween(new THREE.Vector3(x,1.9,zm19-0.02), new THREE.Vector3(x,1.9,-(zm19-0.02)), 0.024, MAT.pipe), part, "妻面胴ぶち"));
+    // 出入口戸
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.75, 1.2), MAT.door);
+    door.position.set(x, 0.88, 0);
+    g.add(tag(door, part, "出入口戸"));
+    // 妻面被覆
+    g.add(tag(gableArcCover(r, x + (x>0?0.03:-0.03), 0, cMat.clone()), part, "被覆材", true));
+  });
+
+  // トンネル被覆(A/B半分ずつ)
+  g.add(tag(new THREE.Mesh(archSkinGeometry(r+0.02, D, 0, Math.PI/2, 2, 14), cMat.clone()), "側屋根面A", "被覆材", true));
+  g.add(tag(new THREE.Mesh(archSkinGeometry(r+0.02, D, Math.PI/2, Math.PI, 2, 14), cMat.clone()), "側屋根面B", "被覆材", true));
+
+  return {
+    group: g, camR: 13, targetY: 1.4,
+    members: [
+      { key:"arch", name:"アーチ・パイプ", pos:[1.2, 2.35, 1.35], note:"Ⅱ類の主要骨材(φ19.1〜25.4mm級の直管パイプ)。Ⅱ類・Ⅱ類利用型の分損では、本体(フィルム等を除く)の被害額を「価額÷総スパン数×被害の生じたスパン数」で算出するため、被害スパンの数え方が評価の起点になります。" },
+      { key:"moya", name:"母屋(直管)", pos:[-2, 2.78, 0], note:"アーチをつなぐ直管パイプ。取付金具・バンド・ボルト類は独立した部材ではなく各部に含めて評価します。" },
+      { key:"tsuma", name:"妻面(間柱・胴ぶち)", pos:[6.05, 1.6, 1.5], note:"妻面はA面・B面に区分されます。間柱・胴ぶち・固定金具継手類・出入口戸が妻面の主な部材です(別表5・40型)。" },
+      { key:"door", name:"出入口戸", pos:[6.05, 0.9, 0], note:"妻面の部材として評価します。出入口戸・天窓・側窓が多いことは標準価額の増額事由、少ないことは減額事由です。" },
+      { key:"cover", name:"被覆材(プラスチックフィルム等)", pos:[0, 1.95, -1.95], note:"フィルム等の損害額は「価額×(100%−自然消耗割合)×損害割合」。施設構造部分別の被害面積割合を求め、新たに被覆を要する面積が被覆面積の80%以上なら被害面積割合は100%とします。" },
+    ],
+    dims: [
+      { name:"間口", pos:[D/2+0.5, 0.12, 0] },
+      { name:"奥行", pos:[0, 0.12, r+0.5] },
+      { name:"棟高", pos:[D/2+0.4, r, 0] },
+    ],
+    parts: ["妻面A","妻面B","側屋根面A","側屋根面B"],
+  };
+}
+
+/* --- 切妻(屋根型)骨組の共通ビルダー: Ⅳ類鉄骨 / ガラス室で共用 --- */
+/* --- 切妻(屋根型)骨組の共通ビルダー: Ⅳ類鉄骨 / ガラス室で共用(単棟〜3連棟) --- */
+function buildGableFrame(opt) {
+  const g = new THREE.Group();
+  const { W, D, eave, ridge, frameMat, coverKey, foundation, tenmado } = opt;
+  const spans = opt.spans || 1;
+  const rise = ridge - eave;
+  const halfSpan = W / 2;
+  const angle = Math.atan2(rise, halfSpan);
+  const slopeLen = Math.sqrt(halfSpan * halfSpan + rise * rise);
+  const cMat = coverMaterial(coverKey);
+  const bay = 2;
+  const nFrame = Math.round(D / bay);
+  const totalW = W * spans;
+  const zRow = [];
+  for (let k = 0; k <= spans; k++) zRow.push(-totalW / 2 + k * W);
+  const zCenter = (k) => -totalW / 2 + W / 2 + k * W;
+
+  for (let i = 0; i <= nFrame; i++) {
+    const x = -D / 2 + (D / nFrame) * i;
+    // 柱列: 外側2列=側面、内側=接続側面(要領第4-1(1)エ: 屋根面A面に含める)
+    zRow.forEach((z, idx) => {
+      const outer = (idx === 0 || idx === spans);
+      const part = outer ? (z > 0 ? "側面A" : "側面B") : "屋根面A";
+      const member = outer ? "柱" : "接続側面(柱)";
+      g.add(tag(pipeBetween(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, eave, z), 0.05, frameMat), part, member));
+    });
+    for (let k = 0; k < spans; k++) {
+      const zc = zCenter(k);
+      g.add(tag(pipeBetween(new THREE.Vector3(x, eave, zc - halfSpan), new THREE.Vector3(x, eave, zc + halfSpan), 0.045, frameMat), "屋根面A", "梁"));
+      g.add(tag(pipeBetween(new THREE.Vector3(x, eave, zc + halfSpan), new THREE.Vector3(x, ridge, zc), 0.04, frameMat), "屋根面A", "たる木(受け材)"));
+      g.add(tag(pipeBetween(new THREE.Vector3(x, eave, zc - halfSpan), new THREE.Vector3(x, ridge, zc), 0.04, frameMat), "屋根面B", "たる木(受け材)"));
+    }
+    if (foundation === "independent") {
+      zRow.forEach((z) => {
+        const f = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), MAT.conc);
+        f.position.set(x, 0.12, z);
+        g.add(tag(f, "基礎", "独立基礎"));
+      });
+    }
+  }
+  // 棟木・母屋(棟ごと)
+  for (let k = 0; k < spans; k++) {
+    const zc = zCenter(k);
+    g.add(tag(pipeAlongX(-D/2, D/2, ridge, zc, 0.05, frameMat), "屋根面A", "棟木"));
+    [0.42, 0.75].forEach((t) => {
+      const y = eave + rise * t, dz = halfSpan * (1 - t);
+      g.add(tag(pipeAlongX(-D/2, D/2, y, zc + dz, 0.032, frameMat), "屋根面A", "母屋"));
+      g.add(tag(pipeAlongX(-D/2, D/2, y, zc - dz, 0.032, frameMat), "屋根面B", "母屋"));
+    });
+  }
+  // 桁(外側=側面)/接続側面の桁+谷樋(要領第4-1(1)オ: 連棟の樋は屋根面A面)
+  zRow.forEach((z, idx) => {
+    const outer = (idx === 0 || idx === spans);
+    g.add(tag(pipeAlongX(-D/2, D/2, eave, z, 0.045, frameMat), outer ? (z > 0 ? "側面A" : "側面B") : "屋根面A", outer ? "桁" : "接続側面(桁)"));
+    if (!outer) {
+      const vd = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, D, 10), MAT.pipe);
+      vd.rotation.z = Math.PI / 2;
+      vd.position.set(0, eave + 0.08, z);
+      g.add(tag(vd, "屋根面A", "谷樋"));
+    }
+  });
+  // 胴ぶち・筋かい(外側側面のみ)
+  [0.8, 1.6].forEach((y) => {
+    g.add(tag(pipeAlongX(-D/2, D/2, y,  totalW / 2, 0.03, frameMat), "側面A", "胴ぶち"));
+    g.add(tag(pipeAlongX(-D/2, D/2, y, -totalW / 2, 0.03, frameMat), "側面B", "胴ぶち"));
+  });
+  [[+1, "側面A"], [-1, "側面B"]].forEach(([sf, part]) => {
+    const z = sf * totalW / 2;
+    g.add(tag(pipeBetween(new THREE.Vector3( D/2, 0.1, z), new THREE.Vector3( D/2 - bay, eave, z), 0.028, frameMat), part, "筋かい"));
+    g.add(tag(pipeBetween(new THREE.Vector3(-D/2, 0.1, z), new THREE.Vector3(-D/2 + bay, eave, z), 0.028, frameMat), part, "筋かい"));
+  });
+  // 妻面: 間柱・胴ぶち(全幅)
+  [[D/2, "妻面A"], [-D/2, "妻面B"]].forEach(([x, part]) => {
+    for (let z = -totalW / 2 + 1.5; z < totalW / 2 - 0.1; z += 1.5) {
+      const k = Math.min(spans - 1, Math.max(0, Math.floor((z + totalW / 2) / W)));
+      const dz = Math.abs(z - zCenter(k));
+      const yTop = Math.max(ridge - dz * (rise / halfSpan), eave * 0.6);
+      g.add(tag(pipeBetween(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, yTop, z), 0.04, frameMat), part, "妻面間柱"));
+    }
+    [0.9, 1.8].forEach((y) => {
+      g.add(tag(pipeBetween(new THREE.Vector3(x, y, -totalW / 2), new THREE.Vector3(x, y, totalW / 2), 0.028, frameMat), part, "妻面胴ぶち"));
+    });
+  });
+  const doorZ = zCenter(Math.floor((spans - 1) / 2));
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.0, 1.0), MAT.door);
+  door.position.set(D / 2 + 0.04, 1.0, doorZ);
+  g.add(tag(door, "妻面A", "出入口戸"));
+
+  if (foundation === "strip") {
+    [[ totalW / 2], [-totalW / 2]].forEach(([z]) => {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(D + 0.2, 0.3, 0.25), MAT.conc);
+      f.position.set(0, 0.15, z);
+      g.add(tag(f, "基礎", "布基礎"));
+    });
+    [[ D / 2], [-D / 2]].forEach(([x]) => {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.3, totalW + 0.2), MAT.conc);
+      f.position.set(x, 0.15, 0);
+      g.add(tag(f, "基礎", "布基礎"));
+    });
+  }
+
+  // 被覆: 側面(外側2面)
+  [[+1, "側面A"], [-1, "側面B"]].forEach(([sf, part]) => {
+    const pm = new THREE.Mesh(new THREE.BoxGeometry(D, eave, 0.04), cMat.clone());
+    pm.position.set(0, eave / 2, sf * (totalW / 2 + 0.03));
+    g.add(tag(pm, part, "被覆材", true));
+  });
+  // 被覆: 屋根(棟ごと)
+  for (let k = 0; k < spans; k++) {
+    const zc = zCenter(k);
+    [[+1, "屋根面A"], [-1, "屋根面B"]].forEach(([sf, part]) => {
+      const pm = new THREE.Mesh(new THREE.BoxGeometry(D + 0.2, 0.04, slopeLen), cMat.clone());
+      pm.rotation.x = sf > 0 ? angle : -angle;
+      pm.position.set(0, eave + rise / 2 + 0.03, zc + sf * halfSpan / 2);
+      g.add(tag(pm, part, "被覆材", true));
+    });
+  }
+  // 被覆: 妻面(矩形全幅+三角×棟数)
+  [[D/2, "妻面A"], [-D/2, "妻面B"]].forEach(([x, part]) => {
+    const rect = new THREE.Mesh(new THREE.BoxGeometry(0.04, eave, totalW), cMat.clone());
+    rect.position.set(x + (x > 0 ? 0.05 : -0.05), eave / 2, 0);
+    g.add(tag(rect, part, "被覆材", true));
+    for (let k = 0; k < spans; k++) {
+      const shp = new THREE.Shape();
+      shp.moveTo(-halfSpan, 0); shp.lineTo(halfSpan, 0); shp.lineTo(0, rise); shp.lineTo(-halfSpan, 0);
+      const tri = new THREE.Mesh(new THREE.ShapeGeometry(shp), cMat.clone());
+      tri.rotation.y = Math.PI / 2;
+      tri.position.set(x + (x > 0 ? 0.05 : -0.05), eave, zCenter(k));
+      g.add(tag(tri, part, "被覆材", true));
+    }
+  });
+
+  if (tenmado) {
+    const t = 0.78, y = eave + rise * t, zc = zCenter(0);
+    const w = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 0.9), coverMaterial(coverKey));
+    w.rotation.x = angle;
+    w.position.set(2, y + 0.12, zc + halfSpan * (1 - t));
+    g.add(tag(w, "屋根面A", "天窓"));
+  }
+  return { group: g, angle, slopeLen };
+}
+
+/* --- Ⅳ類 鉄骨ハウス(屋根型・61/62型相当、単棟〜3連棟) --- */
+function buildSteelHouse(coverKey, spans) {
+  spans = spans || 1;
+  const W = 8, D = 14, eave = 2.4, ridge = 4.0;
+  const totalW = W * spans;
+  const zc0 = -totalW / 2 + W / 2;
+  const { group } = buildGableFrame({ W, D, eave, ridge, spans, frameMat: MAT.steel, coverKey, foundation: "independent" });
+  const members = [
+    { key:"hari", name:"梁・棟木", pos:[0, ridge + 0.1, zc0], note:"屋根面の部材。妻面・側面・屋根面はそれぞれA面・B面に区分し、棟木・中柱を含めた側をA面とします(第4-1(1)イ)。" },
+    { key:"moya", name:"母屋・たる木(受け材)", pos:[-3, 3.15, zc0 + 1.9], note:"屋根面の部材。母屋・胴ぶち・たる木の間隔が一般より狭く本数が多い施設は標準価額の増額事由に、広く少ない施設は減額事由になります。" },
+    { key:"hashira", name:"柱・桁", pos:[5, 1.5, totalW / 2 + 0.05], note:"側面の主要部材。被害態様(ちぎれ/のび/亀裂・腰折れ・まがり/ねじれ・回転/移動・引抜け/はく落)ごとに損傷程度を甚・中・軽で判定します。" },
+    { key:"dobuchi", name:"胴ぶち・筋かい", pos:[2, 0.85, -(totalW / 2 + 0.05)], note:"側面の横材と斜材。損傷程度「甚」は取替、「中」は取替又は補修、「軽」は補修として評価します。" },
+    { key:"tsuma", name:"妻面間柱・胴ぶち", pos:[7.05, 1.6, zc0 + 2.2], note:"妻面の部材。出入口戸も妻面に含めて評価します。" },
+    { key:"kiso", name:"独立基礎", pos:[3, 0.25, totalW / 2 + 0.1], note:"基礎はコンクリート(亀裂・はく落・回転・移動)とアンカーボルト(のび・引抜け・まがり)に分けて被害態様を確認します。" },
+    { key:"cover", name:"被覆材(フィルム等)", pos:[-5, 1.5, -(totalW / 2 + 0.1)], note:"軟質フィルム被覆はⅣ類甲(61型系)、硬質フィルム被覆はⅣ類乙(62型系)。同じ骨組でも寒冷紗・ネット被覆はⅥ類ネットハウス(80-19型以降)相当になります。" },
+  ];
+  if (spans > 1) {
+    const zv = -totalW / 2 + W;
+    members.push(
+      { key:"tanidoi", name:"谷樋(連棟)", pos:[0, eave + 0.35, zv], note:"連棟の谷部に設ける樋。要領では連棟の樋は屋根面A面に含めて評価します(第4-1(1)オ)。谷部は雪・落ち葉が溜まりやすく、被覆の破れの起点にもなります。" },
+      { key:"setsuzoku", name:"接続側面(中柱列)", pos:[3, 1.3, zv], note:"連棟の接続側面に使用されている部材(柱・桁等)は屋根面A面に含めて評価します(第4-1(1)エ)。61-9/62-9型(2連)などが該当します。" },
+    );
+  }
+  return {
+    group, camR: 17 + (spans - 1) * 5, targetY: 1.6,
+    members,
+    dims: [
+      { name:"間口", pos:[D / 2 + 0.5, 0.12, 0] },
+      { name:"奥行", pos:[0, 0.12, totalW / 2 + 0.6] },
+      { name:"軒高", pos:[D / 2 + 0.4, eave, totalW / 2] },
+      { name:"棟高", pos:[D / 2 + 0.4, ridge, zc0] },
+    ],
+    parts: ["妻面A","妻面B","側面A","側面B","屋根面A","屋根面B","基礎"],
+  };
+}
+
+/* --- ガラス室Ⅱ類(鉄骨・20型相当、単棟〜3連棟) --- */
+function buildGlassHouse(coverKey, spans) {
+  spans = spans || 1;
+  const W = 8, D = 14, eave = 2.6, ridge = 4.3;
+  const totalW = W * spans;
+  const zc0 = -totalW / 2 + W / 2;
+  const { group } = buildGableFrame({ W, D, eave, ridge, spans, frameMat: MAT.steelW, coverKey, foundation: "strip", tenmado: true });
+  const members = [
+    { key:"glass", name:"ガラス", pos:[-4, 1.6, totalW / 2 + 0.1], note:"ガラスのずれは補修として評価します。補修割合の係数はガラスのみ0.5(その他の部材は0.7)です。価額=再建築価額×時価現有率で評価します。" },
+    { key:"frame", name:"柱・桁・梁(鉄骨)", pos:[5, 1.5, -(totalW / 2 + 0.05)], note:"20型系は等辺山形鋼・H形鋼・リップみぞ形鋼などの鉄骨造。使用材が標準より細い・質が劣る場合は減額事由になります。" },
+    { key:"tenmado", name:"天窓", pos:[2, eave + (ridge - eave) * 0.78 + 0.2, zc0 + (W / 2) * 0.22], note:"出入口戸・天窓・側窓が多いことは増額事由。窓枠等にアルミを使用していることも増額事由です(一部アルミ又は総アルミのガラス室を除く)。" },
+    { key:"kiso", name:"布基礎・アンカーボルト", pos:[0, 0.25, totalW / 2 + 0.15], note:"基礎が大きく根切りが深いことは増額事由、小さく浅いことは減額事由。アンカーボルトの被害態様は のび・引抜け・まがり です。" },
+  ];
+  if (spans > 1) {
+    const zv = -totalW / 2 + W;
+    members.push(
+      { key:"tanidoi", name:"谷樋(連棟)", pos:[0, eave + 0.35, zv], note:"連棟の谷部に設ける樋。要領では連棟の樋は屋根面A面に含めて評価します(第4-1(1)オ)。20-7型(2連)・20-8型(3連)が該当します。" },
+      { key:"setsuzoku", name:"接続側面(中柱列)", pos:[3, 1.3, zv], note:"連棟の接続側面に使用されている部材(柱・桁等)は屋根面A面に含めて評価します(第4-1(1)エ)。" },
+    );
+  }
+  return {
+    group, camR: 17 + (spans - 1) * 5, targetY: 1.7,
+    members,
+    dims: [
+      { name:"間口", pos:[D / 2 + 0.5, 0.12, 0] },
+      { name:"奥行", pos:[0, 0.12, totalW / 2 + 0.6] },
+      { name:"軒高", pos:[D / 2 + 0.4, eave, totalW / 2] },
+      { name:"棟高", pos:[D / 2 + 0.4, ridge, zc0] },
+    ],
+    parts: ["妻面A","妻面B","側面A","側面B","屋根面A","屋根面B","基礎"],
+  };
+}
+
+/* --- Ⅵ類 雨よけ施設(80型相当) --- */
+function buildAmayoke(coverKey) {
+  const g = new THREE.Group();
+  const r = 2.7, D = 12, postH = 1.8, ribStep = 1.2, tube = 0.028;
+  const cMat = coverMaterial(coverKey);
+
+  const nRib = Math.round(D / ribStep) + 1;
+  for (let i = 0; i < nRib; i++) {
+    const x = -D/2 + ribStep * i;
+    g.add(tag(quarterRib(r, tube, x, postH, +1, MAT.pipe), "屋根面A", "アーチ・パイプ"));
+    g.add(tag(quarterRib(r, tube, x, postH, -1, MAT.pipe), "屋根面B", "アーチ・パイプ"));
+    [[+1,"側面A"],[-1,"側面B"]].forEach(([s, part]) => {
+      g.add(tag(pipeBetween(new THREE.Vector3(x,0,s*r), new THREE.Vector3(x,postH,s*r), 0.026, MAT.pipe), part, "支柱"));
+    });
+  }
+  g.add(tag(pipeAlongX(-D/2, D/2, postH + r, 0, 0.026, MAT.pipe), "屋根面A", "母屋(直管)"));
+  g.add(tag(pipeAlongX(-D/2, D/2, postH, r, 0.026, MAT.pipe), "側面A", "桁(直管)"));
+  g.add(tag(pipeAlongX(-D/2, D/2, postH, -r, 0.026, MAT.pipe), "側面B", "桁(直管)"));
+
+  g.add(tag(new THREE.Mesh(archSkinGeometry(r+0.02, D, 0, Math.PI/2, 2, 14), cMat.clone()), "屋根面A", "被覆材", true).translateY(postH));
+  g.add(tag(new THREE.Mesh(archSkinGeometry(r+0.02, D, Math.PI/2, Math.PI, 2, 14), cMat.clone()), "屋根面B", "被覆材", true).translateY(postH));
+
+  return {
+    group: g, camR: 13, targetY: 2.0,
+    members: [
+      { key:"cover", name:"被覆(屋根面のみ)", pos:[-2, postH+2.5, -0.9], note:"雨よけ施設(80-1〜80-18型、Ⅵ類)は屋根面のみが被覆され、被覆面積構成割合は屋根面A・B各50%です(別表3)。側面は開放されています。" },
+      { key:"arch", name:"アーチ・パイプ", pos:[1, postH+2.1, 1.4], note:"80型の被覆面積算定係数・部材別価額割合は、骨組が対応する30〜62型の値を準用します(別表3・別表5の備考)。" },
+      { key:"post", name:"支柱", pos:[3, 0.9, 2.75], note:"損害評価では部材ごとに取替数・補修数を調査し、取替割合(取替数/総使用数)と補修割合(補修数/総使用数×0.7)を算出します。" },
+    ],
+    dims: [
+      { name:"間口", pos:[D/2+0.5, 0.12, 0] },
+      { name:"奥行", pos:[0, 0.12, r+0.5] },
+      { name:"軒高", pos:[D/2+0.4, postH, r] },
+      { name:"棟高", pos:[D/2+0.4, postH+r, 0] },
+    ],
+    parts: ["側面A","側面B","屋根面A","屋根面B"],
+  };
+}
+
+/* --- Ⅶ類 多目的ネットハウス(平型・90-1型相当) --- */
+function buildNetHouse(coverKey) {
+  const g = new THREE.Group();
+  const D = 20, W = 14, wallH = 2.6, poleH = 4.2;
+  const cMat = coverMaterial(coverKey);
+
+  // 周囲柱・隅柱
+  const zSides = [-W/2, W/2], xSides = [-D/2, D/2];
+  for (let k = 0; k <= 6; k++) {
+    const x = -D/2 + (D/6)*k;
+    zSides.forEach((z) => {
+      const corner = (k === 0 || k === 6);
+      const h = corner ? 3.0 : 2.8;
+      const p = pipeBetween(new THREE.Vector3(x,0,z), new THREE.Vector3(x,h,z), corner?0.05:0.038, MAT.pipe);
+      g.add(tag(p, "周囲面", corner ? "隅柱" : "周囲柱"));
+    });
+  }
+  for (let k = 1; k <= 3; k++) {
+    const z = -W/2 + (W/4)*k;
+    xSides.forEach((x) => {
+      g.add(tag(pipeBetween(new THREE.Vector3(x,0,z), new THREE.Vector3(x,2.8,z), 0.038, MAT.pipe), "周囲面", "周囲柱"));
+    });
+  }
+  // 周囲線(上下2段)
+  [wallH, 1.3].forEach((y) => {
+    g.add(tag(pipeAlongX(-D/2, D/2, y,  W/2, 0.012, MAT.wire), "周囲面", "周囲線"));
+    g.add(tag(pipeAlongX(-D/2, D/2, y, -W/2, 0.012, MAT.wire), "周囲面", "周囲線"));
+    g.add(tag(pipeBetween(new THREE.Vector3( D/2,y,-W/2), new THREE.Vector3( D/2,y,W/2), 0.012, MAT.wire), "周囲面", "周囲線"));
+    g.add(tag(pipeBetween(new THREE.Vector3(-D/2,y,-W/2), new THREE.Vector3(-D/2,y,W/2), 0.012, MAT.wire), "周囲面", "周囲線"));
+  });
+  // 中つり柱・受石・つり線
+  const px = [-D/3, 0, D/3], pz = [-W/3, 0, W/3];
+  px.forEach((x) => pz.forEach((z) => {
+    g.add(tag(pipeBetween(new THREE.Vector3(x,0,z), new THREE.Vector3(x,poleH,z), 0.05, MAT.pipe), "天井面", "中つり柱"));
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.22,0.4), MAT.stone);
+    st.position.set(x, 0.08, z);
+    g.add(tag(st, "基礎", "受石"));
+    [[x+3.3,z],[x-3.3,z],[x,z+3.3],[x,z-3.3]].forEach(([tx,tz]) => {
+      g.add(tag(pipeBetween(new THREE.Vector3(x,poleH,z), new THREE.Vector3(tx,wallH,tz), 0.008, MAT.wire), "天井面", "つり線"));
+    });
+  }));
+  // 幹線(天井の格子ワイヤー)
+  pz.forEach((z) => g.add(tag(pipeAlongX(-D/2, D/2, wallH, z, 0.012, MAT.wire), "天井面", "幹線")));
+  px.forEach((x) => g.add(tag(pipeBetween(new THREE.Vector3(x,wallH,-W/2), new THREE.Vector3(x,wallH,W/2), 0.012, MAT.wire), "天井面", "幹線")));
+  // 控え線・アンカー(四隅)
+  [[ D/2, W/2, 2.2, 1.8],[ D/2,-W/2, 2.2,-1.8],[-D/2, W/2,-2.2, 1.8],[-D/2,-W/2,-2.2,-1.8]].forEach(([cx,cz,ox,oz]) => {
+    g.add(tag(pipeBetween(new THREE.Vector3(cx,3.0,cz), new THREE.Vector3(cx+ox,0,cz+oz), 0.01, MAT.wire), "周囲面", "控え線"));
+    const a = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.35,6), MAT.steel);
+    a.position.set(cx+ox, 0.05, cz+oz);
+    g.add(tag(a, "基礎", "アンカー"));
+  });
+  // ネット(周囲面・天井面)
+  [[0,wallH/2, W/2, D, wallH, 0],[0,wallH/2,-W/2, D, wallH, 0]].forEach(([x,y,z,lw,lh]) => {
+    const n = new THREE.Mesh(new THREE.PlaneGeometry(lw, lh), cMat.clone());
+    n.position.set(x,y,z);
+    g.add(tag(n, "周囲面", "ネット(周囲面)", true));
+  });
+  xSides.forEach((x) => {
+    const n = new THREE.Mesh(new THREE.PlaneGeometry(W, wallH), cMat.clone());
+    n.rotation.y = Math.PI/2;
+    n.position.set(x, wallH/2, 0);
+    g.add(tag(n, "周囲面", "ネット(周囲面)", true));
+  });
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(D, W), cMat.clone());
+  ceil.rotation.x = -Math.PI/2;
+  ceil.position.set(0, wallH, 0);
+  g.add(tag(ceil, "天井面", "ネット(天井面)", true));
+
+  return {
+    group: g, camR: 30, targetY: 1.8,
+    members: [
+      { key:"shuui", name:"周囲柱・隅柱・周囲線", pos:[D/2+0.1, 1.5, 3.5], note:"周囲面の部材。Ⅶ類(多目的ネットハウス)は妻面・側面・屋根面ではなく、周囲面・天井面・基礎の3区分で評価します(第4-1(1)ア)。" },
+      { key:"tenjo", name:"中つり柱・幹線・つり線", pos:[0, 3.6, 0], note:"天井面の部材。90-1型の主要骨材はφ76.3mm(一般)・φ48.6mm(耐久性)級の支柱です。※足場・足場用補強柱等は本モデルでは省略しています。" },
+      { key:"hikae", name:"控え線", pos:[D/2+1.2, 1.4, W/2+1.0], note:"控え線は周囲面に含まれる部材です(別表5・90-1型)。" },
+      { key:"kiso", name:"受石・アンカー", pos:[D/3, 0.25, W/3], note:"基礎の部材(受石・アンカー)。Ⅶ類のアンカーの被害態様は のび・まがり・引抜け・移動 で評価します。" },
+      { key:"net", name:"多目的ネット", pos:[-D/2-0.1, 1.3, 0], note:"被覆面積構成割合は周囲面23.2%・天井面76.8%(別表3・90-1型)。ネットも「新たに被覆を要する面積が80%以上なら100%」の扱いは同様です。" },
+    ],
+    dims: [
+      { name:"間口", pos:[D/2+0.8, 0.12, 0] },
+      { name:"奥行", pos:[0, 0.12, W/2+0.8] },
+    ],
+    parts: ["周囲面","天井面","基礎"],
+  };
+}
+
+/* ============================================================
+   型式カタログ
+============================================================ */
+const TYPES = {
+  pipe: {
+    label: "プラスチックハウスⅡ類",
+    sub: "パイプハウス(アーチ型・40型系相当)",
+    build: buildPipeHouse,
+    covers: ["noubi", "po", "taikyu_po"],
+    defaultCover: "po",
+    info: "主要骨材が直管パイプ(φ19.1〜25.4mm級)。別表1では40-1型(間口3.6〜6.0m)・40-2型(間口6.0〜10.0m)。分損時はスパン数の割合で本体被害額を算出する点が他型式と異なります。※奥行は表示用に短縮しています(標準型式は奥行40〜70m級)。",
+  },
+  steel: {
+    label: "プラスチックハウスⅣ類",
+    sub: "鉄骨ハウス(屋根型・61/62型系相当)",
+    build: buildSteelHouse,
+    covers: ["soft", "hard", "kanreisha"],
+    defaultCover: "soft",
+    spansSelectable: true,
+    info: "鉄骨(中)造の屋根型。軟質フィルム被覆=Ⅳ類甲(61型系)、硬質フィルム被覆=Ⅳ類乙(62型系)。損害割合は部材別価額割合(別表5)×施設構造部分別価額割合(別表4)を積み上げて算出します。61-9/62-9型(2連棟)に相当する連棟にも切替できます。",
+  },
+  glass: {
+    label: "ガラス室Ⅱ類",
+    sub: "鉄骨ガラス室(20型系相当)",
+    build: buildGlassHouse,
+    covers: ["glass3", "glass4", "amiiri"],
+    defaultCover: "glass4",
+    spansSelectable: true,
+    info: "鉄骨造のガラス室。価額=再建築価額×時価現有率。ガラスのずれは補修扱い、補修割合の係数はガラスのみ0.5です。木造のガラス室はⅠ類(10型系)になります。20-7型(2連)・20-8型(3連)に相当する連棟にも切替できます。",
+  },
+  amayoke: {
+    label: "プラスチックハウスⅥ類",
+    sub: "雨よけ施設(80型系相当)",
+    build: buildAmayoke,
+    covers: ["noubi", "po"],
+    defaultCover: "noubi",
+    info: "80-1〜80-18型が雨よけ施設、80-19〜80-36型がネットハウス。被覆面積構成割合は屋根面A・B各50%(別表3)。係数・割合は骨組が対応する30〜62型の値を準用します。",
+  },
+  net: {
+    label: "プラスチックハウスⅦ類",
+    sub: "多目的ネットハウス(平型・90-1型相当)",
+    build: buildNetHouse,
+    covers: ["net_gen", "net_taikyu"],
+    defaultCover: "net_gen",
+    info: "90-1型。施設構造部分は周囲面・天井面・基礎の3区分(他型式は妻面・側面・屋根面・基礎の4区分)。標準設置面積は1,000〜10,000㎡で、本モデルは表示用に縮小しています。",
+  },
+};
+
+/* ============================================================
+   アプリ状態・three.js基盤
+============================================================ */
+const state = {
+  typeKey: "pipe",
+  spans: 1,
+  coverKey: TYPES.pipe.defaultCover,
+  mode: "normal",       // normal | parts | frame
+  showDims: false,
+  selectedMember: null,
+};
+
+const holder = document.getElementById("canvas-holder");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdbe7ef);
+scene.fog = new THREE.Fog(0xdbe7ef, 30, 70);
+
+const camera = new THREE.PerspectiveCamera(45, holder.clientWidth / holder.clientHeight, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(holder.clientWidth, holder.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+holder.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 0.9));
+const dir = new THREE.DirectionalLight(0xfff4e0, 1.1);
+dir.position.set(10, 16, 8);
+scene.add(dir);
+const fill = new THREE.DirectionalLight(0xcfe0ff, 0.3);
+fill.position.set(-8, 6, -10);
+scene.add(fill);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshStandardMaterial({ color: 0x7fa06b, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+const grid = new THREE.GridHelper(120, 120, 0x5c7a52, 0x6f8f63);
+grid.position.y = 0.001;
+scene.add(grid);
+
+const orbit = { theta: Math.PI/4, phi: Math.PI/3, radius: 13, target: new THREE.Vector3(0, 1.4, 0) };
+let modelGroup = null, currentDef = null, markerMeshes = [];
+const raycaster = new THREE.Raycaster();
+
+/* ============================================================
+   モデル再構築・表示モード
+============================================================ */
+function rebuild(resetCam) {
+  if (modelGroup) scene.remove(modelGroup);
+  markerMeshes.forEach((m) => scene.remove(m));
+  markerMeshes = [];
+
+  const t = TYPES[state.typeKey];
+  currentDef = t.build(state.coverKey, t.spansSelectable ? state.spans : 1);
+  modelGroup = currentDef.group;
+  scene.add(modelGroup);
+
+  const geo = new THREE.SphereGeometry(0.14, 16, 16);
+  currentDef.members.forEach((m) => {
+    const mk = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff8c00, emissiveIntensity: 0.6 }));
+    mk.position.set(m.pos[0], m.pos[1], m.pos[2]);
+    mk.userData.key = m.key;
+    scene.add(mk);
+    markerMeshes.push(mk);
+  });
+
+  if (resetCam) {
+    orbit.theta = Math.PI/4; orbit.phi = Math.PI/3;
+    orbit.radius = currentDef.camR;
+    orbit.target.set(0, currentDef.targetY, 0);
+  }
+  applyMode();
+  renderLabels();
+  renderPanel();
+}
+
+/* ==== 部材ハイライト ==== */
+const hlSolid = new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff7a00, emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide });
+const hlCover = new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff7a00, emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide, transparent: true, opacity: 0.75 });
+const MEMBER_TARGETS = {
+  "pipe:arch": ["アーチ・パイプ"],
+  "pipe:moya": ["母屋(直管)"],
+  "pipe:tsuma": ["妻面間柱", "妻面胴ぶち"],
+  "pipe:door": ["出入口戸"],
+  "pipe:cover": ["被覆材"],
+  "steel:hari": ["梁", "棟木"],
+  "steel:moya": ["母屋", "たる木(受け材)"],
+  "steel:hashira": ["柱", "桁"],
+  "steel:dobuchi": ["胴ぶち", "筋かい"],
+  "steel:tsuma": ["妻面間柱", "妻面胴ぶち", "出入口戸"],
+  "steel:kiso": ["独立基礎"],
+  "steel:cover": ["被覆材"],
+  "glass:glass": ["被覆材"],
+  "glass:frame": ["柱", "桁", "梁"],
+  "glass:tenmado": ["天窓"],
+  "glass:kiso": ["布基礎"],
+  "amayoke:cover": ["被覆材"],
+  "amayoke:arch": ["アーチ・パイプ", "母屋(直管)"],
+  "amayoke:post": ["支柱", "桁(直管)"],
+  "net:shuui": ["周囲柱", "隅柱", "周囲線"],
+  "net:tenjo": ["中つり柱", "幹線", "つり線"],
+  "net:hikae": ["控え線"],
+  "net:kiso": ["受石", "アンカー"],
+  "net:net": ["ネット(周囲面)", "ネット(天井面)"],
+  "steel:tanidoi": ["谷樋"],
+  "steel:setsuzoku": ["接続側面(柱)", "接続側面(桁)"],
+  "glass:tanidoi": ["谷樋"],
+  "glass:setsuzoku": ["接続側面(柱)", "接続側面(桁)"],
+};
+function selectedTargets() {
+  if (!state.selectedMember) return null;
+  const t = MEMBER_TARGETS[state.typeKey + ":" + state.selectedMember];
+  return t ? new Set(t) : null;
+}
+
+function applyMode() {
+  const tg = selectedTargets();
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.baseMat) return;
+    const d = m.userData;
+    let vis, mat;
+    if (state.mode === "frame") {
+      vis = !d.isCover; mat = d.baseMat;
+    } else if (state.mode === "parts") {
+      vis = true; mat = partMat(d.part, d.isCover);
+    } else {
+      vis = true; mat = d.baseMat;
+    }
+    if (tg && tg.has(d.member)) { vis = true; mat = d.isCover ? hlCover : hlSolid; }
+    m.visible = vis;
+    m.material = mat;
+  });
+}
+
+/* ============================================================
+   ラベル(部材マーカー・寸法名称)
+============================================================ */
+const labelsHolder = document.getElementById("labels");
+let labelEntries = []; // {el, getPos}
+
+function renderLabels() {
+  labelsHolder.innerHTML = "";
+  labelEntries = [];
+  currentDef.members.forEach((m, i) => {
+    const div = document.createElement("div");
+    div.className = "label";
+    div.innerHTML = `<div class="label-chip${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
+    div.addEventListener("click", () => { state.selectedMember = m.key; renderLabels(); renderPanel(); applyMode(); });
+    labelsHolder.appendChild(div);
+    labelEntries.push({ el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
+  });
+  if (state.showDims) {
+    currentDef.dims.forEach((d) => {
+      const div = document.createElement("div");
+      div.className = "label";
+      div.innerHTML = `<div class="label-chip dim">${d.name}</div>`;
+      labelsHolder.appendChild(div);
+      labelEntries.push({ el: div, pos: new THREE.Vector3(d.pos[0], d.pos[1], d.pos[2]) });
+    });
+  }
+}
+
+function updateLabelPositions() {
+  const w = holder.clientWidth, h = holder.clientHeight;
+  labelEntries.forEach((e) => {
+    const v = e.pos.clone().project(camera);
+    e.el.style.transform = `translate(-50%,-100%) translate(${(v.x*0.5+0.5)*w}px, ${(-v.y*0.5+0.5)*h}px)`;
+    e.el.style.display = v.z > 1 ? "none" : "block";
+  });
+}
+
+/* ============================================================
+   操作
+============================================================ */
+const dom = renderer.domElement;
+dom.style.touchAction = "none";
+const drag = { on: false, x: 0, y: 0 };
+let lastPinch = null;
+
+dom.addEventListener("pointerdown", (e) => { drag.on = true; drag.x = e.clientX; drag.y = e.clientY; });
+window.addEventListener("pointermove", (e) => {
+  if (!drag.on) return;
+  orbit.theta -= (e.clientX - drag.x) * 0.006;
+  orbit.phi   -= (e.clientY - drag.y) * 0.006;
+  orbit.phi = Math.max(0.22, Math.min(Math.PI/2 - 0.02, orbit.phi));
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+window.addEventListener("pointerup", () => { drag.on = false; });
+dom.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  orbit.radius = Math.max(5, Math.min(48, orbit.radius + e.deltaY * 0.012));
+}, { passive: false });
+dom.addEventListener("touchmove", (e) => {
+  if (e.touches.length === 2) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (lastPinch !== null) orbit.radius = Math.max(5, Math.min(48, orbit.radius - (d - lastPinch) * 0.03));
+    lastPinch = d;
+    drag.on = false;
+  }
+}, { passive: true });
+dom.addEventListener("touchend", () => { lastPinch = null; });
+
+dom.addEventListener("click", (e) => {
+  const rect = dom.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(markerMeshes);
+  if (hits.length > 0) {
+    state.selectedMember = hits[0].object.userData.key;
+    renderLabels(); renderPanel(); applyMode();
+  }
+});
+
+window.addEventListener("resize", () => {
+  camera.aspect = holder.clientWidth / holder.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(holder.clientWidth, holder.clientHeight);
+});
+document.getElementById("reset-view").addEventListener("click", () => {
+  orbit.theta = Math.PI/4; orbit.phi = Math.PI/3;
+  orbit.radius = currentDef.camR;
+  orbit.target.set(0, currentDef.targetY, 0);
+});
+
+/* ============================================================
+   パネル
+============================================================ */
+const panel = document.getElementById("panel");
+
+function el(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html;
+  return e;
+}
+
+function renderPanel() {
+  panel.innerHTML = "";
+  const t = TYPES[state.typeKey];
+
+  // 型式選択
+  const secType = el("div", "section", "<h2>型式(区分)の選択</h2>");
+  Object.keys(TYPES).forEach((key) => {
+    const d = TYPES[key];
+    const b = el("button", "btn" + (state.typeKey === key ? " active" : ""),
+      `${d.label}<small>${d.sub}</small>`);
+    b.addEventListener("click", () => {
+      state.typeKey = key;
+      state.coverKey = TYPES[key].defaultCover;
+      state.selectedMember = null;
+      rebuild(true);
+    });
+    secType.appendChild(b);
+  });
+  secType.appendChild(el("div", "type-note", t.info));
+  panel.appendChild(secType);
+
+  // 棟数(連棟対応型式のみ)
+  if (t.spansSelectable) {
+    const secSp = el("div", "section", "<h2>棟数(単棟/連棟)</h2>");
+    const rowSp = el("div", "btn-row");
+    [[1, "単棟"], [2, "2連棟"], [3, "3連棟"]].forEach(([v, lb]) => {
+      const b = el("button", "btn" + (state.spans === v ? " active" : ""), lb);
+      b.addEventListener("click", () => { state.spans = v; rebuild(true); });
+      rowSp.appendChild(b);
+    });
+    secSp.appendChild(rowSp);
+    secSp.appendChild(el("div", "legend-cap", "要領第3-1(2)ウ: 別表1に単棟として掲げる型式を2連棟とする場合は標準価額を5%、3連棟以上は7.5%減額できます(2連棟型式を3連棟以上とする場合は2.5%)。連棟の谷樋・接続側面の部材は屋根面A面に含めます(第4-1(1)エ・オ)。"));
+    panel.appendChild(secSp);
+  }
+
+  // 表示モード
+  const secMode = el("div", "section", "<h2>表示モード</h2>");
+  const row = el("div", "btn-row");
+  [["normal","標準"],["parts","構造部分 色分け"],["frame","骨組みのみ"]].forEach(([k, lb]) => {
+    const b = el("button", "btn" + (state.mode === k ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.mode = k; applyMode(); renderPanel(); });
+    row.appendChild(b);
+  });
+  secMode.appendChild(row);
+  if (state.mode === "parts") {
+    const lg = el("div", "legend");
+    currentDef.parts.forEach((p) => {
+      lg.appendChild(el("div", "legend-item",
+        `<span class="sw" style="background:${PART_COLORS[p]}"></span>${p}`));
+    });
+    lg.appendChild(el("div", "legend-cap",
+      state.typeKey === "net"
+        ? "Ⅶ類は周囲面・天井面・基礎の3区分で評価します(第4-1(1)ア)。"
+        : "要領では妻面・側面・屋根面・基礎の4区分。各面はA面・B面に分け、棟木・中柱を含む側がA面です(第4-1(1))。※Ⅱ類は側面・屋根面が一体の「側屋根面」として扱われます(別表3・4)。"));
+    secMode.appendChild(lg);
+  }
+  panel.appendChild(secMode);
+
+  // 被覆材
+  const secCover = el("div", "section", "<h2>被覆材(別表2の代表例)</h2>");
+  t.covers.forEach((ck) => {
+    const b = el("button", "btn" + (state.coverKey === ck ? " active" : ""), COVERS[ck].label);
+    b.addEventListener("click", () => { state.coverKey = ck; rebuild(false); });
+    secCover.appendChild(b);
+  });
+  panel.appendChild(secCover);
+
+  // 寸法名称
+  const secDim = el("div", "section", "<h2>外面・寸法の名称(第2)</h2>");
+  const bd = el("button", "btn" + (state.showDims ? " active" : ""),
+    state.showDims ? "寸法名称を非表示にする" : "寸法名称を表示する(間口・奥行・軒高・棟高)");
+  bd.addEventListener("click", () => { state.showDims = !state.showDims; renderLabels(); renderPanel(); applyMode(); });
+  secDim.appendChild(bd);
+  panel.appendChild(secDim);
+
+  // 部材と着眼点
+  const secMem = el("div", "section", "<h2>部材と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部材はモデル上でオレンジ色に点滅表示されます</div>");
+  currentDef.members.forEach((m) => {
+    const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
+    b.addEventListener("click", () => { state.selectedMember = m.key; renderLabels(); renderPanel(); applyMode(); });
+    secMem.appendChild(b);
+  });
+  const active = currentDef.members.find((m) => m.key === state.selectedMember);
+  if (active) {
+    secMem.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));
+  }
+  panel.appendChild(secMem);
+
+  // 共通の評価メモ
+  panel.appendChild(el("div", "section note-box",
+    `<div class="title">損害評価の基本(第4)</div>部材の被害態様は ①ちぎれ・のび・亀裂 ②腰折れ ③まがり・ねじれ ④回転・移動 ⑤引抜け・はく落 の5種類。損傷程度は甚・中・軽の3区分で、甚=取替、中=取替又は補修、軽=補修として評価します。補修割合の係数は0.7(ガラスのみ0.5)です。`));
+
+  // 免責
+  panel.appendChild(el("div", "disclaimer",
+    "本モデルは園芸施設共済評価要領(30経営第367号)の名称・区分・別表を参考にした研修用の簡略化イメージです。形状・寸法・部材数は実際の標準型式と一致せず(奥行等は表示用に短縮)、実際の型式判定・引受評価・損害評価は要領本文および別表1〜7に基づいて行ってください。"));
+}
+
+/* ============================================================
+   ループ
+============================================================ */
+function animate() {
+  camera.position.set(
+    orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
+    orbit.target.y + orbit.radius * Math.cos(orbit.phi),
+    orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
+  );
+  camera.lookAt(orbit.target);
+  const pulse = 0.35 + 0.3 * Math.sin(performance.now() * 0.004);
+  hlSolid.emissiveIntensity = pulse;
+  hlCover.emissiveIntensity = pulse;
+  renderer.render(scene, camera);
+  updateLabelPositions();
+  requestAnimationFrame(animate);
+}
+
+rebuild(true);
+animate();
+</script>
+</body>
+</html>

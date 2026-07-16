@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>一般住宅 3Dビューア(建物共済 損害評価研修用)</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.184.0/three.module.min.js"
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100vh; background: #f1f5f9; }
+
+  header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; }
+  header h1 { font-size: 13px; margin: 0; font-weight: 600; }
+  header p { font-size: 10.5px; margin: 2px 0 0; color: #94a3b8; }
+
+  main { flex: 1; display: flex; min-height: 0; flex-direction: row; }
+  @media (max-width: 860px) { main { flex-direction: column; } }
+
+  #viewport { position: relative; flex: 1; min-height: 360px; }
+  #canvas-holder { position: absolute; inset: 0; }
+  #canvas-holder canvas { display: block; touch-action: none; }
+
+  .label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; user-select: none; transform: translate(-50%, -100%); }
+  .label-chip { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.15); border: 1px solid #cbd5e1; background: rgba(255,255,255,.92); color: #334155; }
+  .label-chip.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
+  .label-chip.dim { background: rgba(15,23,42,.78); color: #fde68a; border: 1px dashed #f59e0b; }
+
+  .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
+
+  aside { width: 320px; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
+  @media (max-width: 860px) { aside { width: auto; border-left: none; border-top: 1px solid #cbd5e1; max-height: 46vh; } }
+
+  .section { margin-bottom: 16px; }
+  .section h2 { font-size: 11px; font-weight: 600; color: #64748b; margin: 0 0 8px; }
+  .btn { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; margin-bottom: 6px; transition: background .15s; }
+  .btn:hover { background: #f8fafc; }
+  .btn.active { border-color: #f59e0b; background: #fffbeb; color: #0f172a; }
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn-row .btn { flex: 1; text-align: center; min-width: 70px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); vertical-align: -2px; margin-right: 6px; }
+
+  .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-bottom: 3px; }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); flex: none; }
+  .legend-cap { font-size: 10px; color: #94a3b8; margin-top: 4px; line-height: 1.5; }
+
+  .note-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; color: #475569; line-height: 1.7; margin-top: 4px; }
+  .note-box .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+
+  .disclaimer { font-size: 10px; color: #94a3b8; line-height: 1.6; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>一般住宅 3Dビューア — 建物共済 損害評価研修用(木造在来工法)</h1>
+    <p>平屋/2階建て切替・軸組/内装表示対応。部位区分は一般的な建築部位名称に基づく研修用の参考です</p>
+  </header>
+  <main>
+    <div id="viewport">
+      <div id="canvas-holder"></div>
+      <div id="labels"></div>
+      <button class="reset-btn" id="reset-view">視点をリセット</button>
+      <div class="hint">ドラッグ: 回転 / ホイール・ピンチ: ズーム / 橙色の点: 部位の着眼点</div>
+    </div>
+    <aside id="panel"></aside>
+  </main>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+// r128相当の色味を維持するため色管理を無効化(見た目の互換性のため)。
+// 最新のリニア色管理を使う場合は次行を削除してください。
+if (THREE.ColorManagement) THREE.ColorManagement.enabled = false;
+
+/* ============================================================
+   マテリアル・部位色
+============================================================ */
+const MAT = {
+  wood:   new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.8 }),
+  woodD:  new THREE.MeshStandardMaterial({ color: 0x8a6a49, roughness: 0.8 }),
+  floor:  new THREE.MeshStandardMaterial({ color: 0xd6b98c, roughness: 0.7 }),
+  ceil:   new THREE.MeshStandardMaterial({ color: 0xf3f1e8, roughness: 0.95 }),
+  iwall:  new THREE.MeshStandardMaterial({ color: 0xf5f2ea, roughness: 0.95 }),
+  glass:  new THREE.MeshStandardMaterial({ color: 0x35505f, roughness: 0.2, metalness: 0.1 }),
+  gutter: new THREE.MeshStandardMaterial({ color: 0xcfd4d9, roughness: 0.35, metalness: 0.5 }),
+  conc:   new THREE.MeshStandardMaterial({ color: 0x8d8d86, roughness: 0.9 }),
+  door:   new THREE.MeshStandardMaterial({ color: 0x4a3220, roughness: 0.7 }),
+  equip:  new THREE.MeshStandardMaterial({ color: 0xe7e5e4, roughness: 0.5, metalness: 0.2 }),
+};
+
+const ROOFS = {
+  kawara:    { label: "粘土瓦",               color: 0xa8503a, roughness: 0.85, metalness: 0.02 },
+  slate:     { label: "スレート(化粧スレート)", color: 0x54606b, roughness: 0.65, metalness: 0.05 },
+  galvalume: { label: "ガルバリウム鋼板",       color: 0xc9ced2, roughness: 0.30, metalness: 0.65 },
+};
+const WALLS = {
+  mortar: { label: "モルタル塗り",      color: 0xe9e2d3, roughness: 0.9, metalness: 0 },
+  siding: { label: "窯業系サイディング", color: 0xd7d1c1, roughness: 0.6, metalness: 0 },
+  wood:   { label: "木質系下見板",      color: 0x8a6a49, roughness: 0.8, metalness: 0 },
+};
+
+const PART_COLORS = {
+  "屋根":          "#dc2626",
+  "外壁":          "#2563eb",
+  "開口部":        "#f59e0b",
+  "雨樋・附帯":    "#06b6d4",
+  "軸組(構造材)":  "#92400e",
+  "内装":          "#d946ef",
+  "床":            "#65a30d",
+  "基礎":          "#64748b",
+};
+const partMatCache = {};
+function partMat(part, translucent) {
+  const key = part + (translucent ? "_t" : "_s");
+  if (!partMatCache[key]) {
+    partMatCache[key] = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(PART_COLORS[part] || "#a3a3a3"),
+      roughness: 0.7, metalness: 0.05,
+      transparent: !!translucent, opacity: translucent ? 0.45 : 1.0,
+      side: THREE.DoubleSide,
+    });
+  }
+  return partMatCache[key];
+}
+const ghostMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.07, depthWrite: false });
+
+/* ============================================================
+   材質テクスチャ(プロシージャル生成)
+   1タイル=下記CELLSのメートル数に相当する模様を描画し、面の寸法に応じて繰り返す
+============================================================ */
+const CELLS = { roof_kawara: 1.2, roof_slate: 1.8, roof_galvalume: 2.4, wall_mortar: 2.0, wall_siding: 1.8, wall_wood: 1.0 };
+const TEX_CACHE = {};
+
+function makeCanvasTex(draw) {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 256;
+  draw(cv.getContext("2d"), 256, 256);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+const TEX_DRAWERS = {
+  /* 粘土瓦: 段ごとの陰影+谷線・山の丸み+軒側のスカラップ */
+  roof_kawara(ctx, w, h) {
+    ctx.fillStyle = "#a8503a"; ctx.fillRect(0, 0, w, h);
+    const rows = 4, cols = 4, rh = h / rows, cw = w / cols;
+    for (let r = 0; r < rows; r++) {
+      const off = (r % 2) * (cw / 2);
+      const gr = ctx.createLinearGradient(0, r * rh, 0, (r + 1) * rh);
+      gr.addColorStop(0, "rgba(255,255,255,0.12)");
+      gr.addColorStop(0.7, "rgba(0,0,0,0.04)");
+      gr.addColorStop(1, "rgba(0,0,0,0.32)");
+      ctx.fillStyle = gr; ctx.fillRect(0, r * rh, w, rh);
+      for (let c = -1; c <= cols; c++) {
+        const x = c * cw + off;
+        ctx.strokeStyle = "rgba(40,12,6,0.35)"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(x, r * rh + 2); ctx.lineTo(x, (r + 1) * rh - 1); ctx.stroke();
+        ctx.strokeStyle = "rgba(255,235,220,0.18)"; ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.moveTo(x + cw / 2, r * rh + 4); ctx.lineTo(x + cw / 2, (r + 1) * rh - 3); ctx.stroke();
+        ctx.strokeStyle = "rgba(40,12,6,0.45)"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(x + cw / 2, (r + 1) * rh - 2, cw / 2 - 2, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+      }
+    }
+  },
+  /* 化粧スレート: 千鳥に割り付けた平板+目地 */
+  roof_slate(ctx, w, h) {
+    ctx.fillStyle = "#54606b"; ctx.fillRect(0, 0, w, h);
+    const rows = 6, cols = 3, rh = h / rows, cw = w / cols;
+    for (let r = 0; r < rows; r++) {
+      const off = (r % 2) * (cw / 2);
+      for (let c = -1; c <= cols; c++) {
+        const x = c * cw + off;
+        ctx.fillStyle = `rgba(255,255,255,${0.03 * ((r * 3 + c * 5 + 60) % 3)})`;
+        ctx.fillRect(x + 1, r * rh + 1, cw - 2, rh - 2);
+        ctx.fillStyle = "rgba(0,0,0,0.30)";
+        ctx.fillRect(x - 1, r * rh, 2, rh);
+      }
+      ctx.fillStyle = "rgba(0,0,0,0.40)";
+      ctx.fillRect(0, (r + 1) * rh - 2, w, 2);
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fillRect(0, r * rh, w, 1);
+    }
+  },
+  /* ガルバリウム鋼板: 縦ハゼ(立平葺き)のライン+金属の縦ムラ */
+  roof_galvalume(ctx, w, h) {
+    ctx.fillStyle = "#c9ced2"; ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 48; i++) {
+      const x = (i * 37 + 11) % w;
+      ctx.fillStyle = `rgba(${(i % 2) ? "255,255,255" : "90,100,110"},${0.03 + (i * 7 % 4) * 0.01})`;
+      ctx.fillRect(x, 0, 2 + (i % 3), h);
+    }
+    const cols = 6, cw = w / cols;
+    for (let c = 0; c < cols; c++) {
+      const x = c * cw;
+      ctx.fillStyle = "rgba(60,70,80,0.55)"; ctx.fillRect(x, 0, 3, h);
+      ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.fillRect(x + 3, 0, 2, h);
+      ctx.fillStyle = "rgba(60,70,80,0.25)"; ctx.fillRect(x + 5, 0, 1, h);
+    }
+  },
+  /* モルタル塗り: 大きな模様を持たないフラットな塗り肌(微細な砂目のみ) */
+  wall_mortar(ctx, w, h) {
+    ctx.fillStyle = "#e9e2d3"; ctx.fillRect(0, 0, w, h);
+    // 擬似乱数(ハッシュ)で微細な砂目を散らす。大きな円や淡いパッチは描かない。
+    let s = 1234567;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    for (let i = 0; i < 1400; i++) {
+      const x = rnd() * w, y = rnd() * h;
+      const light = rnd() < 0.5;
+      ctx.fillStyle = `rgba(${light ? "255,255,255" : "120,110,92"},${0.04 + rnd() * 0.05})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  },
+  /* 窯業系サイディング: 横目地+千鳥の縦ジョイント+柄の細筋 */
+  wall_siding(ctx, w, h) {
+    ctx.fillStyle = "#d7d1c1"; ctx.fillRect(0, 0, w, h);
+    const rows = 6, rh = h / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let i = 0; i < 12; i++) {
+        ctx.fillStyle = `rgba(100,92,78,${0.04 + ((r * 5 + i * 3) % 3) * 0.02})`;
+        ctx.fillRect(0, r * rh + 3 + ((i * 19 + r * 7) % (rh - 8)), w, 1);
+      }
+      ctx.fillStyle = "rgba(60,54,44,0.45)"; ctx.fillRect(0, (r + 1) * rh - 2, w, 2);
+      ctx.fillStyle = "rgba(255,255,255,0.20)"; ctx.fillRect(0, r * rh, w, 2);
+      const jx = ((r % 2) ? w / 2 : w / 4) + (r * 31) % 40;
+      ctx.fillStyle = "rgba(60,54,44,0.30)"; ctx.fillRect(jx, r * rh, 2, rh);
+    }
+  },
+  /* 木質系下見板: 板の重ね(下端の影)+木目 */
+  wall_wood(ctx, w, h) {
+    ctx.fillStyle = "#8a6a49"; ctx.fillRect(0, 0, w, h);
+    const rows = 5, rh = h / rows;
+    for (let r = 0; r < rows; r++) {
+      const gr = ctx.createLinearGradient(0, r * rh, 0, (r + 1) * rh);
+      gr.addColorStop(0, "rgba(255,235,200,0.15)");
+      gr.addColorStop(0.85, "rgba(0,0,0,0.05)");
+      gr.addColorStop(1, "rgba(0,0,0,0.45)");
+      ctx.fillStyle = gr; ctx.fillRect(0, r * rh, w, rh);
+      for (let i = 0; i < 8; i++) {
+        ctx.strokeStyle = `rgba(50,32,18,${0.10 + ((r * 3 + i) % 3) * 0.05})`;
+        ctx.lineWidth = 1;
+        const y0 = r * rh + 4 + ((i * 23 + r * 11) % (rh - 10));
+        ctx.beginPath(); ctx.moveTo(0, y0);
+        ctx.bezierCurveTo(w * 0.3, y0 + 3, w * 0.6, y0 - 3, w, y0 + 1);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(30,18,8,0.5)"; ctx.fillRect(0, (r + 1) * rh - 2, w, 2);
+    }
+  },
+};
+
+function getBaseTexture(key) {
+  if (!TEX_CACHE[key]) TEX_CACHE[key] = makeCanvasTex(TEX_DRAWERS[key]);
+  return TEX_CACHE[key];
+}
+
+function texturedMaterial(kind, key, repX, repY) {
+  const def = kind === "roof" ? ROOFS[key] : WALLS[key];
+  const tex = getBaseTexture(kind + "_" + key).clone();
+  tex.needsUpdate = true;
+  tex.repeat.set(repX, repY);
+  return new THREE.MeshStandardMaterial({
+    color: 0xffffff, map: tex, bumpMap: tex, bumpScale: 0.03,
+    roughness: def.roughness, metalness: def.metalness, side: THREE.DoubleSide,
+  });
+}
+
+/* ============================================================
+   ヘルパー
+============================================================ */
+function tag(mesh, part, member, layer) {
+  mesh.userData.part = part;
+  mesh.userData.member = member;
+  mesh.userData.layer = layer; // ext | int | frame | found
+  mesh.userData.baseMat = mesh.material;
+  return mesh;
+}
+function box(w, h, d, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  return m;
+}
+function beamBetween(p1, p2, r, mat) {
+  const dir = new THREE.Vector3().subVectors(p2, p1);
+  const len = dir.length();
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6), mat);
+  m.position.copy(p1).addScaledVector(dir, 0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  return m;
+}
+
+/* ============================================================
+   住宅モデル生成
+   W=8(間口, X方向=棟方向), D=6(奥行, Z方向), 南面=+Z, 玄関=+X妻側
+============================================================ */
+function quadMesh(a, b, c, d, mat) {
+  const geo = new THREE.BufferGeometry();
+  const pos = [a, b, c, a, c, d].flatMap((v) => [v.x, v.y, v.z]);
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute([0,0, 1,0, 1,1, 0,0, 1,1, 0,1], 2));
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, mat);
+}
+function triMesh(a, b, c, mat) {
+  const geo = new THREE.BufferGeometry();
+  const pos = [a, b, c].flatMap((v) => [v.x, v.y, v.z]);
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute([0,0, 1,0, 0.5,1], 2));
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, mat);
+}
+
+function buildHouse(stories, roofShape, roofKey, wallKey) {
+  const g = new THREE.Group();
+  const n = stories;
+  const W = 8, D = 6, ov = 0.5, foundH = 0.45, storyH = 2.75;
+  const wallTop = foundH + storyH * n;
+  const We = W / 2 + ov, Ze = D / 2 + ov;
+  const roofW = W + 2 * ov;
+
+  // 屋根形状ごとの基本量
+  const rise = 1.8;                                  // 切妻・寄棟
+  const riseT = 1.6;                                 // 片流れの高低差
+  const angle = Math.atan2(rise, Ze);
+  const slopeLen = Math.sqrt(Ze * Ze + rise * rise);
+  const angleK = Math.atan2(riseT, 2 * Ze);
+  const slopeLenK = Math.sqrt((2 * Ze) * (2 * Ze) + riseT * riseT);
+  const rh = We - Ze;                                // 寄棟の棟の半長(等勾配)
+  let ridgeY;
+  if (roofShape === "katanagare") ridgeY = wallTop + riseT;
+  else if (roofShape === "rikuyane") ridgeY = wallTop + 0.62;   // パラペット天端
+  else ridgeY = wallTop + rise;
+
+  // 材質(面の実寸に応じて模様を繰り返す)
+  const roofCell = CELLS["roof_" + roofKey], wallCell = CELLS["wall_" + wallKey];
+  const roofMatFor = (u, v) => texturedMaterial("roof", roofKey, Math.max(1, u / roofCell), Math.max(1, v / roofCell));
+  const wallMatFor = (u, v) => texturedMaterial("wall", wallKey, Math.max(1, u / wallCell), Math.max(1, v / wallCell));
+  const flatRoofMat = new THREE.MeshStandardMaterial({ color: 0x878e94, roughness: 0.92 });
+  const fasciaMat = new THREE.MeshStandardMaterial({ color: 0xf5f2ea, roughness: 0.8 });
+  const capMat = new THREE.MeshStandardMaterial({ color: 0xb9bec3, roughness: 0.35, metalness: 0.5 });
+
+  /* ---- 基礎(布基礎) ---- */
+  [[W + 0.12, 0.16, 0,  D / 2], [W + 0.12, 0.16, 0, -D / 2]].forEach(([lw, ld, x, z]) => {
+    g.add(tag(box(lw, foundH, ld, MAT.conc, x, foundH / 2, z), "基礎", "布基礎", "found"));
+  });
+  [[ W / 2], [-W / 2]].forEach(([x]) => {
+    g.add(tag(box(0.16, foundH, D + 0.12, MAT.conc, x, foundH / 2, 0), "基礎", "布基礎", "found"));
+  });
+  g.add(tag(box(W - 0.4, foundH - 0.05, 0.14, MAT.conc, 0, (foundH - 0.05) / 2, 0), "基礎", "布基礎(中通り)", "found"));
+
+  /* ---- 土台・床組 ---- */
+  const sillY = foundH + 0.06;
+  g.add(tag(box(W, 0.12, 0.12, MAT.woodD, 0, sillY,  D / 2), "軸組(構造材)", "土台", "frame"));
+  g.add(tag(box(W, 0.12, 0.12, MAT.woodD, 0, sillY, -D / 2), "軸組(構造材)", "土台", "frame"));
+  g.add(tag(box(0.12, 0.12, D, MAT.woodD,  W / 2, sillY, 0), "軸組(構造材)", "土台", "frame"));
+  g.add(tag(box(0.12, 0.12, D, MAT.woodD, -W / 2, sillY, 0), "軸組(構造材)", "土台", "frame"));
+  [-2, -1, 0, 1, 2].forEach((z) => {
+    g.add(tag(box(W - 0.3, 0.09, 0.09, MAT.woodD, 0, foundH + 0.03, z), "軸組(構造材)", "床組(大引)", "frame"));
+  });
+
+  /* ---- 柱・間柱・筋かい(階ごと) ---- */
+  const cornerName = n === 2 ? "通し柱" : "柱(隅柱)";
+  [[ W/2,  D/2], [ W/2, -D/2], [-W/2,  D/2], [-W/2, -D/2]].forEach(([x, z]) => {
+    const h = wallTop - (foundH + 0.12);
+    g.add(tag(box(0.13, h, 0.13, MAT.wood, x, foundH + 0.12 + h / 2, z), "軸組(構造材)", cornerName, "frame"));
+  });
+  for (let f = 0; f < n; f++) {
+    const yb = foundH + 0.12 + storyH * f;
+    const yt = foundH + storyH * (f + 1);
+    const h = yt - yb;
+    [-2.7, 0, 2.7].forEach((x) => [D / 2, -D / 2].forEach((z) => {
+      g.add(tag(box(0.11, h, 0.11, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "管柱", "frame"));
+    }));
+    [-1, 1].forEach((z) => [W / 2, -W / 2].forEach((x) => {
+      g.add(tag(box(0.11, h, 0.11, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "管柱", "frame"));
+    }));
+    [-3.3, 3.3].forEach((x) => [D / 2, -D / 2].forEach((z) => {
+      g.add(tag(box(0.045, h, 0.1, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "間柱", "frame"));
+    }));
+    [-2, 0, 2].forEach((z) => [W / 2, -W / 2].forEach((x) => {
+      g.add(tag(box(0.1, h, 0.045, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "間柱", "frame"));
+    }));
+    [[ W/2 - 0.15,  D/2], [ W/2 - 0.15, -D/2], [-(W/2 - 0.15),  D/2], [-(W/2 - 0.15), -D/2]].forEach(([x, z]) => {
+      const inner = x > 0 ? x - 1.8 : x + 1.8;
+      g.add(tag(beamBetween(new THREE.Vector3(x, yb, z), new THREE.Vector3(inner, yt, z), 0.045, MAT.wood), "軸組(構造材)", "筋かい", "frame"));
+    });
+  }
+
+  /* ---- 胴差し・2階床組(2階建てのみ) ---- */
+  if (n === 2) {
+    const y2 = foundH + storyH;
+    g.add(tag(box(W, 0.24, 0.12, MAT.woodD, 0, y2,  D / 2), "軸組(構造材)", "胴差し", "frame"));
+    g.add(tag(box(W, 0.24, 0.12, MAT.woodD, 0, y2, -D / 2), "軸組(構造材)", "胴差し", "frame"));
+    g.add(tag(box(0.12, 0.24, D, MAT.woodD,  W / 2, y2, 0), "軸組(構造材)", "胴差し", "frame"));
+    g.add(tag(box(0.12, 0.24, D, MAT.woodD, -W / 2, y2, 0), "軸組(構造材)", "胴差し", "frame"));
+    [-3, -1.5, 0, 1.5, 3].forEach((x) => {
+      g.add(tag(box(0.1, 0.2, D - 0.2, MAT.woodD, x, y2, 0), "軸組(構造材)", "床梁(2階床組)", "frame"));
+    });
+  }
+
+  /* ---- 小屋組(屋根形状別・簡略) ---- */
+  g.add(tag(box(W + 0.2, 0.15, 0.12, MAT.woodD, 0, wallTop,  D / 2), "軸組(構造材)", "桁", "frame"));
+  g.add(tag(box(W + 0.2, 0.15, 0.12, MAT.woodD, 0, wallTop, -D / 2), "軸組(構造材)", "桁", "frame"));
+  g.add(tag(box(0.12, 0.15, D, MAT.woodD,  W / 2, wallTop, 0), "軸組(構造材)", "妻梁", "frame"));
+  g.add(tag(box(0.12, 0.15, D, MAT.woodD, -W / 2, wallTop, 0), "軸組(構造材)", "妻梁", "frame"));
+  if (roofShape === "kiritsuma") {
+    [-2, 0, 2].forEach((x) => {
+      g.add(tag(box(0.12, 0.18, D, MAT.woodD, x, wallTop + 0.02, 0), "軸組(構造材)", "小屋梁", "frame"));
+      g.add(tag(box(0.1, 1.5, 0.1, MAT.wood, x, wallTop + 0.11 + 0.75, 0), "軸組(構造材)", "小屋束", "frame"));
+    });
+    g.add(tag(box(W + 0.2, 0.12, 0.12, MAT.woodD, 0, wallTop + 1.7, 0), "軸組(構造材)", "棟木", "frame"));
+    [1.7, -1.7].forEach((z) => {
+      const y = wallTop + rise * (1 - Math.abs(z) / Ze);
+      g.add(tag(box(W + 0.2, 0.1, 0.1, MAT.wood, 0, y - 0.04, z), "軸組(構造材)", "母屋", "frame"));
+    });
+    for (let x = -4.2; x <= 4.21; x += 0.6) {
+      [[Ze], [-Ze]].forEach(([sz]) => {
+        g.add(tag(beamBetween(new THREE.Vector3(x, wallTop + 0.02, sz), new THREE.Vector3(x, wallTop + rise - 0.06, 0), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+      });
+    }
+  } else if (roofShape === "yosemune") {
+    [-2, 0, 2].forEach((x) => {
+      g.add(tag(box(0.12, 0.18, D, MAT.woodD, x, wallTop + 0.02, 0), "軸組(構造材)", "小屋梁", "frame"));
+    });
+    [-0.6, 0.6].forEach((x) => g.add(tag(box(0.1, 1.5, 0.1, MAT.wood, x, wallTop + 0.86, 0), "軸組(構造材)", "小屋束", "frame")));
+    g.add(tag(box(2 * rh + 0.2, 0.12, 0.12, MAT.woodD, 0, wallTop + rise - 0.1, 0), "軸組(構造材)", "棟木", "frame"));
+    for (let x = -1.0; x <= 1.01; x += 0.5) {
+      [[Ze], [-Ze]].forEach(([sz]) => {
+        g.add(tag(beamBetween(new THREE.Vector3(x, wallTop + 0.02, sz), new THREE.Vector3(x, ridgeY - 0.08, 0), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+      });
+    }
+    // 主平部の垂木(隅木ラインまで)
+    [1.6, 2.2, 2.8, 3.4, 4.0].forEach((ax) => [[1], [-1]].forEach(([sx]) => {
+      const x = sx * ax;
+      const t = (We - Math.abs(x)) / (We - rh);
+      [[1], [-1]].forEach(([sz]) => {
+        g.add(tag(beamBetween(
+          new THREE.Vector3(x, wallTop + 0.02, sz * Ze),
+          new THREE.Vector3(x, wallTop + rise * t - 0.06, sz * Ze * (1 - t)), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+      });
+    }));
+    // 隅木・配付垂木(端部)
+    [[We, Ze, rh], [We, -Ze, rh], [-We, Ze, -rh], [-We, -Ze, -rh]].forEach(([cx, cz, rx]) => {
+      g.add(tag(beamBetween(new THREE.Vector3(cx, wallTop + 0.02, cz), new THREE.Vector3(rx, ridgeY - 0.06, 0), 0.04, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+    });
+    [[We, rh], [-We, -rh]].forEach(([cx, rx]) => [-1.75, 0, 1.75].forEach((z) => {
+      g.add(tag(beamBetween(new THREE.Vector3(cx, wallTop + 0.02, z), new THREE.Vector3(rx, ridgeY - 0.06, 0), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+    }));
+  } else if (roofShape === "katanagare") {
+    [-2, 0, 2].forEach((x) => g.add(tag(box(0.12, 0.18, D, MAT.woodD, x, wallTop + 0.02, 0), "軸組(構造材)", "小屋梁", "frame")));
+    const hHigh = riseT * (Ze + D / 2) / (2 * Ze);
+    g.add(tag(box(W + 0.2, 0.15, 0.12, MAT.woodD, 0, wallTop + hHigh - 0.1, -D / 2), "軸組(構造材)", "桁", "frame"));
+    [1 / 3, 2 / 3].forEach((t) => {
+      const z = Ze - 2 * Ze * t, y = wallTop + riseT * t;
+      g.add(tag(box(W + 0.2, 0.1, 0.1, MAT.wood, 0, y - 0.06, z), "軸組(構造材)", "母屋", "frame"));
+    });
+    for (let x = -4.2; x <= 4.21; x += 0.6) {
+      g.add(tag(beamBetween(new THREE.Vector3(x, wallTop - 0.02, Ze), new THREE.Vector3(x, wallTop + riseT - 0.06, -Ze), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+    }
+  } else { // 陸屋根: 屋根梁のみ
+    [-3, -1.5, 0, 1.5, 3].forEach((x) => {
+      g.add(tag(box(0.1, 0.2, D - 0.2, MAT.woodD, x, wallTop + 0.02, 0), "軸組(構造材)", "小屋梁", "frame"));
+    });
+  }
+
+  /* ---- 外壁(矩形部) ---- */
+  const wallH = wallTop - foundH;
+  g.add(tag(box(W, wallH, 0.07, wallMatFor(W, wallH), 0, foundH + wallH / 2,  D / 2 + 0.05), "外壁", "外壁", "ext"));
+  g.add(tag(box(W, wallH, 0.07, wallMatFor(W, wallH), 0, foundH + wallH / 2, -(D / 2 + 0.05)), "外壁", "外壁", "ext"));
+  g.add(tag(box(0.07, wallH, D, wallMatFor(D, wallH),  W / 2 + 0.05, foundH + wallH / 2, 0), "外壁", "外壁", "ext"));
+  g.add(tag(box(0.07, wallH, D, wallMatFor(D, wallH), -(W / 2 + 0.05), foundH + wallH / 2, 0), "外壁", "外壁", "ext"));
+
+  /* ---- 外壁(屋根形状別の上部) ---- */
+  if (roofShape === "kiritsuma") {
+    const triShape = new THREE.Shape();
+    triShape.moveTo(-D / 2, 0); triShape.lineTo(D / 2, 0); triShape.lineTo(0, rise); triShape.lineTo(-D / 2, 0);
+    const triGeo = new THREE.ShapeGeometry(triShape);
+    const gableMat = wallMatFor(D, D);
+    [[ W / 2 + 0.06], [-(W / 2 + 0.06)]].forEach(([x]) => {
+      const t = new THREE.Mesh(triGeo, gableMat);
+      t.rotation.y = Math.PI / 2;
+      t.position.set(x, wallTop, 0);
+      g.add(tag(t, "外壁", "外壁(妻壁)", "ext"));
+    });
+  } else if (roofShape === "katanagare") {
+    const hAt = (zw) => riseT * (Ze - zw) / (2 * Ze);
+    const trap = new THREE.Shape();
+    trap.moveTo(-D / 2, 0); trap.lineTo(D / 2, 0); trap.lineTo(D / 2, hAt(-D / 2)); trap.lineTo(-D / 2, hAt(D / 2)); trap.lineTo(-D / 2, 0);
+    const trapGeo = new THREE.ShapeGeometry(trap);
+    const trapMat = wallMatFor(D, riseT);
+    [[ W / 2 + 0.06], [-(W / 2 + 0.06)]].forEach(([x]) => {
+      const t = new THREE.Mesh(trapGeo, trapMat);
+      t.rotation.y = Math.PI / 2;
+      t.position.set(x, wallTop, 0);
+      g.add(tag(t, "外壁", "外壁(妻壁)", "ext"));
+    });
+    const hHigh = hAt(-D / 2);
+    g.add(tag(box(W, hHigh, 0.07, wallMatFor(W, hHigh), 0, wallTop + hHigh / 2, -(D / 2 + 0.05)), "外壁", "外壁(妻壁)", "ext"));
+  } else if (roofShape === "rikuyane") {
+    const ph = 0.45, pb = wallTop + 0.125;
+    [[0,  D / 2 + 0.02, W + 0.3, 0.12], [0, -(D / 2 + 0.02), W + 0.3, 0.12]].forEach(([x, z, lx, lz]) => {
+      g.add(tag(box(lx, ph, lz, wallMatFor(lx, ph), x, pb + ph / 2, z), "外壁", "パラペット・笠木", "ext"));
+      g.add(tag(box(lx + 0.06, 0.05, 0.22, capMat, x, pb + ph + 0.03, z), "外壁", "パラペット・笠木", "ext"));
+    });
+    [[ W / 2 + 0.02, 0, 0.12, D + 0.3], [-(W / 2 + 0.02), 0, 0.12, D + 0.3]].forEach(([x, z, lx, lz]) => {
+      g.add(tag(box(lx, ph, lz, wallMatFor(D, ph), x, pb + ph / 2, z), "外壁", "パラペット・笠木", "ext"));
+      g.add(tag(box(0.22, 0.05, lz + 0.06, capMat, x, pb + ph + 0.03, z), "外壁", "パラペット・笠木", "ext"));
+    });
+  }
+  // 寄棟は矩形壁のみ(妻壁の三角なし)
+
+  /* ---- 屋根(形状別) ---- */
+  if (roofShape === "kiritsuma") {
+    [[+1], [-1]].forEach(([sflag]) => {
+      const p = box(roofW, 0.09, slopeLen + 0.15, roofMatFor(roofW, slopeLen), 0, wallTop + rise / 2 + 0.05, sflag * Ze / 2);
+      p.rotation.x = sflag > 0 ? angle : -angle;
+      g.add(tag(p, "屋根", "屋根葺き材", "ext"));
+    });
+    g.add(tag(box(roofW, 0.1, 0.3, roofMatFor(roofW, 0.3), 0, ridgeY + 0.08, 0), "屋根", "棟(棟瓦・棟板金)", "ext"));
+  } else if (roofShape === "yosemune") {
+    const RA = new THREE.Vector3(rh, ridgeY, 0), RB = new THREE.Vector3(-rh, ridgeY, 0);
+    const C = (x, z) => new THREE.Vector3(x, wallTop, z);
+    g.add(tag(quadMesh(C(-We, Ze), C(We, Ze), RA, RB, roofMatFor(roofW, slopeLen)), "屋根", "屋根葺き材", "ext"));
+    g.add(tag(quadMesh(C(We, -Ze), C(-We, -Ze), RB, RA, roofMatFor(roofW, slopeLen)), "屋根", "屋根葺き材", "ext"));
+    g.add(tag(triMesh(C(We, Ze), C(We, -Ze), RA, roofMatFor(D + 2 * ov, slopeLen)), "屋根", "屋根葺き材", "ext"));
+    g.add(tag(triMesh(C(-We, -Ze), C(-We, Ze), RB, roofMatFor(D + 2 * ov, slopeLen)), "屋根", "屋根葺き材", "ext"));
+    g.add(tag(box(2 * rh + 0.3, 0.1, 0.3, roofMatFor(2 * rh, 0.3), 0, ridgeY + 0.05, 0), "屋根", "棟(棟瓦・棟板金)", "ext"));
+    [[We, Ze, rh], [We, -Ze, rh], [-We, Ze, -rh], [-We, -Ze, -rh]].forEach(([cx, cz, rx]) => {
+      g.add(tag(beamBetween(new THREE.Vector3(cx, wallTop + 0.06, cz), new THREE.Vector3(rx, ridgeY + 0.06, 0), 0.05, capMat), "屋根", "隅棟", "ext"));
+    });
+  } else if (roofShape === "katanagare") {
+    const p = quadMesh(
+      new THREE.Vector3(-We, wallTop + 0.04, Ze),
+      new THREE.Vector3( We, wallTop + 0.04, Ze),
+      new THREE.Vector3( We, wallTop + riseT + 0.04, -Ze),
+      new THREE.Vector3(-We, wallTop + riseT + 0.04, -Ze),
+      roofMatFor(roofW, slopeLenK));
+    g.add(tag(p, "屋根", "屋根葺き材", "ext"));
+  } else {
+    g.add(tag(box(W + 0.24, 0.12, D + 0.24, flatRoofMat, 0, wallTop + 0.07, 0), "屋根", "屋根葺き材", "ext"));
+  }
+
+  /* ---- 破風・鼻隠し(陸屋根以外) ---- */
+  if (roofShape === "kiritsuma") {
+    [[Ze], [-Ze]].forEach(([z]) => {
+      g.add(tag(box(roofW, 0.18, 0.04, fasciaMat, 0, wallTop - 0.03, z + Math.sign(z) * 0.03), "屋根", "破風・鼻隠し", "ext"));
+    });
+    [[+1], [-1]].forEach(([sx]) => [[+1], [-1]].forEach(([sz]) => {
+      const b = box(0.04, 0.2, slopeLen, fasciaMat, sx * (We + 0.02), wallTop + rise / 2, sz * Ze / 2);
+      b.rotation.x = sz > 0 ? angle : -angle;
+      g.add(tag(b, "屋根", "破風・鼻隠し", "ext"));
+    }));
+  } else if (roofShape === "yosemune") {
+    [[Ze], [-Ze]].forEach(([z]) => {
+      g.add(tag(box(roofW, 0.18, 0.04, fasciaMat, 0, wallTop - 0.03, z + Math.sign(z) * 0.03), "屋根", "破風・鼻隠し", "ext"));
+    });
+    [[We], [-We]].forEach(([x]) => {
+      g.add(tag(box(0.04, 0.18, D + 2 * ov, fasciaMat, x + Math.sign(x) * 0.03, wallTop - 0.03, 0), "屋根", "破風・鼻隠し", "ext"));
+    });
+  } else if (roofShape === "katanagare") {
+    g.add(tag(box(roofW, 0.18, 0.04, fasciaMat, 0, wallTop - 0.03, Ze + 0.03), "屋根", "破風・鼻隠し", "ext"));
+    g.add(tag(box(roofW, 0.2, 0.04, fasciaMat, 0, wallTop + riseT - 0.06, -(Ze + 0.03)), "屋根", "破風・鼻隠し", "ext"));
+    [[+1], [-1]].forEach(([sx]) => {
+      const b = box(0.04, 0.2, slopeLenK, fasciaMat, sx * (We + 0.02), wallTop + riseT / 2, 0);
+      b.rotation.x = angleK;
+      g.add(tag(b, "屋根", "破風・鼻隠し", "ext"));
+    });
+  }
+
+  /* ---- 雨樋(形状別) ---- */
+  const gutterY = wallTop + 0.02;
+  function eavesGutterX(z) {
+    const gt = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, roofW, 8), MAT.gutter);
+    gt.rotation.z = Math.PI / 2;
+    gt.position.set(0, gutterY, z);
+    g.add(tag(gt, "雨樋・附帯", "軒樋", "ext"));
+  }
+  function downspout(x, z, topY) {
+    const dt = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, topY - 0.15, 8), MAT.gutter);
+    dt.position.set(x, (topY - 0.15) / 2 + 0.1, z);
+    g.add(tag(dt, "雨樋・附帯", "竪樋", "ext"));
+  }
+  if (roofShape === "kiritsuma") {
+    eavesGutterX(Ze + 0.1); eavesGutterX(-(Ze + 0.1));
+    downspout(W / 2 - 0.3, Ze + 0.07, wallTop);
+    downspout(-(W / 2 - 0.3), -(Ze + 0.07), wallTop);
+  } else if (roofShape === "yosemune") {
+    eavesGutterX(Ze + 0.1); eavesGutterX(-(Ze + 0.1));
+    [[We + 0.1], [-(We + 0.1)]].forEach(([x]) => {
+      const gt = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, D + 2 * ov, 8), MAT.gutter);
+      gt.rotation.x = Math.PI / 2;
+      gt.position.set(x, gutterY, 0);
+      g.add(tag(gt, "雨樋・附帯", "軒樋", "ext"));
+    });
+    downspout(W / 2 - 0.3, Ze + 0.07, wallTop);
+    downspout(-(W / 2 - 0.3), -(Ze + 0.07), wallTop);
+  } else if (roofShape === "katanagare") {
+    eavesGutterX(Ze + 0.1);
+    downspout(W / 2 - 0.3, Ze + 0.07, wallTop);
+    downspout(-(W / 2 - 0.3), Ze + 0.07, wallTop);
+  } else {
+    downspout(W / 2 - 0.3, -(D / 2 + 0.08), wallTop + 0.1);
+  }
+
+  /* ---- 庇・雨戸(共通) ---- */
+  const hEnt = box(0.55, 0.05, 1.5, capMat, W / 2 + 0.32, foundH + 2.3, 1.6);
+  hEnt.rotation.z = -0.14;
+  g.add(tag(hEnt, "雨樋・附帯", "庇", "ext"));
+  [-1.8, 1.8].forEach((x) => {
+    const h1 = box(2.0, 0.05, 0.5, capMat, x, foundH + 2.18, D / 2 + 0.3);
+    h1.rotation.x = 0.14;
+    g.add(tag(h1, "雨樋・附帯", "庇", "ext"));
+    const h2 = box(1.7, 0.05, 0.45, capMat, x, foundH + 2.42, -(D / 2 + 0.28));
+    h2.rotation.x = -0.14;
+    g.add(tag(h2, "雨樋・附帯", "庇", "ext"));
+    const tb = box(0.95, 1.95, 0.13, MAT.equip, x + (x > 0 ? 1.35 : -1.35), foundH + 1.07, D / 2 + 0.1);
+    g.add(tag(tb, "開口部", "雨戸・戸袋", "ext"));
+  });
+
+  /* ---- 開口部 ---- */
+  [-1.8, 1.8].forEach((x) => {
+    g.add(tag(box(1.7, 1.9, 0.09, MAT.glass, x, foundH + 1.07,  D / 2 + 0.1), "開口部", "掃き出し窓(1階)", "ext"));
+    g.add(tag(box(1.4, 1.0, 0.09, MAT.glass, x, foundH + 1.75, -(D / 2 + 0.1)), "開口部", "腰窓(1階)", "ext"));
+  });
+  if (n === 2) {
+    [-1.8, 1.8].forEach((x) => {
+      g.add(tag(box(1.6, 1.2, 0.09, MAT.glass, x, foundH + storyH + 1.5, D / 2 + 0.1), "開口部", "窓(2階)", "ext"));
+    });
+    g.add(tag(box(1.4, 1.0, 0.09, MAT.glass, 0, foundH + storyH + 1.5, -(D / 2 + 0.1)), "開口部", "窓(2階)", "ext"));
+  }
+  g.add(tag(box(0.09, 2.1, 1.0, MAT.door, W / 2 + 0.1, foundH + 1.07, 1.6), "開口部", "玄関戸", "ext"));
+
+  /* ---- 附帯設備 ---- */
+  g.add(tag(box(0.35, 0.9, 0.25, MAT.equip, 3.0, 0.9, -(D / 2 + 0.25)), "雨樋・附帯", "附帯設備(給湯器等)", "ext"));
+
+  /* ---- 内装(1階) ---- */
+  const f1 = foundH + 0.16;
+  g.add(tag(box(W - 0.2, 0.06, D - 0.2, MAT.floor, 0, f1, 0), "床", "床(1階)", "int"));
+  const c1 = foundH + (n === 1 ? 2.4 : 2.55);
+  g.add(tag(box(W - 0.2, 0.04, D - 0.2, MAT.ceil, 0, c1, 0), "内装", "天井(1階)", "int"));
+  const ih1 = c1 - f1 - 0.05;
+  g.add(tag(box(0.08, ih1, 3.6, MAT.iwall, 0.8, f1 + ih1 / 2, -1.2), "内装", "内壁(間仕切り)", "int"));
+  g.add(tag(box(0.9,  ih1, 0.08, MAT.iwall, 1.25, f1 + ih1 / 2, 0.6), "内装", "内壁(間仕切り)", "int"));
+  g.add(tag(box(1.36, ih1, 0.08, MAT.iwall, 3.28, f1 + ih1 / 2, 0.6), "内装", "内壁(間仕切り)", "int"));
+  g.add(tag(box(0.75, 1.9, 0.06, MAT.woodD, 2.15, f1 + 0.95, 0.6), "内装", "内部建具(ドア)", "int"));
+
+  /* ---- 内装(2階)+階段 ---- */
+  if (n === 2) {
+    const f2 = foundH + storyH + 0.12;
+    g.add(tag(box(6.8, 0.08, D - 0.2, MAT.floor, -0.5, f2, 0), "床", "床(2階)", "int"));
+    const c2 = foundH + storyH + 2.55;
+    g.add(tag(box(W - 0.2, 0.04, D - 0.2, MAT.ceil, 0, c2, 0), "内装", "天井(2階)", "int"));
+    const ih2 = c2 - f2 - 0.06;
+    g.add(tag(box(0.08, ih2, 4.1, MAT.iwall, -0.5, f2 + ih2 / 2, -0.85), "内装", "内壁(間仕切り)", "int"));
+    g.add(tag(box(0.06, 1.9, 0.75, MAT.woodD, -0.5, f2 + 0.99, 1.6), "内装", "内部建具(ドア)", "int"));
+    const rise2 = (f2 - f1) / 14;
+    for (let i = 0; i < 14; i++) {
+      g.add(tag(box(0.9, 0.06, 0.26, MAT.woodD, 3.35, f1 + rise2 * (i + 1) - 0.03, -2.85 + 0.26 * i + 0.13), "内装", "階段", "int"));
+    }
+  }
+
+  /* ---- マーカー・寸法 ---- */
+  const roofNotes = {
+    kiritsuma: "風災では葺き材のめくれ・ずれ・飛散、雹災では割れ・貫通痕、雪害では変形が代表的な損害。棟部(棟瓦・棟板金)は風の影響を最も受けやすい部位です。",
+    yosemune: "寄棟は4方向に流れをもつ屋根。大棟に加えて四隅に隅棟(下り棟)があり、棟部の飛散・ずれの確認箇所が切妻より多くなります。",
+    katanagare: "片流れは1方向勾配の屋根。高い側の壁とけらば(破風側)が風雨を受けやすく、軒先・けらばの捲れや高側壁面の雨染みを確認します。",
+    rikuyane: "陸屋根はシート防水・塗膜防水等の防水層で仕上げます。防水層の破断・膨れ、ドレン(排水口)まわりの詰まり・漏水痕、パラペット取合いを確認します。",
+  };
+  const koyaPos = {
+    kiritsuma: [2, wallTop + 1.0, 1.4],
+    yosemune: [0.5, wallTop + 1.0, 1.0],
+    katanagare: [2, wallTop + 0.9, -0.5],
+    rikuyane: [0, wallTop + 0.15, 1.5],
+  }[roofShape];
+  const members = [
+    { key:"roof",  name: roofShape === "rikuyane" ? "屋根(防水層)" : "屋根葺き材・棟", pos:[0, ridgeY + 0.25, 0], note: roofNotes[roofShape] },
+    { key:"koya",  name: roofShape === "rikuyane" ? "屋根梁" : "小屋組(垂木・母屋・棟木)", pos: koyaPos, note:"屋根面に波打ち・変形がある場合は、葺き材だけでなく下地・垂木・母屋まで損害が及んでいないか確認します。小屋組まで損害が及ぶと損害割合が大きく変わります。「骨組み表示」で構成を確認できます。" },
+    { key:"doi",   name: roofShape === "rikuyane" ? "排水(ルーフドレン・竪樋)" : "雨樋(軒樋・竪樋)", pos: roofShape === "rikuyane" ? [W / 2 - 0.3, wallTop - 0.8, -(D / 2 + 0.25)] : [2.5, wallTop + 0.1, Ze + 0.25], note: roofShape === "rikuyane" ? "陸屋根の雨水はルーフドレン(排水口)から竪樋で排水します。ドレンの詰まりは漏水・滞水の主要因で、豪雨後は特に確認が必要です。" : "雪の重みや台風で変形・脱落しやすい部位。単価は小さくても被害件数が多く、本数・延長の把握と写真記録が重要です。" },
+    { key:"hisashi", name:"庇", pos:[W / 2 + 0.5, foundH + 2.5, 1.6], note:"窓や出入口の上部に設ける小庇。強風で煽られて変形・脱落しやすい付帯部位で、本体屋根とは別に有無・損傷を確認します。" },
+    { key:"amado", name:"雨戸・戸袋", pos:[3.3, foundH + 1.15, D / 2 + 0.3], note:"掃き出し窓の雨戸と戸袋。風災時は雨戸自体の飛散・変形のほか、戸袋内への飛来物・浸水も確認します。" },
+    { key:"wall",  name:"外壁", pos:[-2.8, foundH + 1.6, D / 2 + 0.15], note:"飛来物の衝突痕・ひび割れ・剥落を確認。水災では外壁に残る浸水痕の高さが浸水深の証拠となり、損害評価の基礎になります。" },
+    { key:"open",  name:"開口部(窓・サッシ)", pos:[1.8, foundH + 1.15, D / 2 + 0.25], note:"ガラス割れ・サッシ変形・網戸や雨戸の飛散は風災・雹災で件数の多い損害箇所です。破損位置と飛来物の方向の整合も確認します。" },
+    { key:"genkan",name:"玄関戸", pos:[W / 2 + 0.2, foundH + 1.15, 1.6], note:"開口部(建具)として評価します。浸水時は戸・枠の変形や開閉不良も損害の対象になり得ます。" },
+    { key:"jiku",  name:"軸組(柱・梁・筋かい)", pos:[-(W / 2 + 0.15), foundH + 1.7, -1], note:"柱・梁の折損や建物の傾きは損害割合に大きく影響する構造部位です。参考: 損害割合80%以上は特別費用共済金の支払要件、地震火災費用共済金の「半焼」は損害割合20%以上が目安とされます(細部は各組合の約款によります)。" },
+    { key:"dodai", name:"土台・床組", pos:[2.5, foundH + 0.15, -(D / 2 + 0.15)], note:"床上浸水時は土台・大引の含水・汚損を確認します。浸水被害は床下浸水か床上浸水か、浸水深がどこまでかで被害範囲が大きく変わります。" },
+    { key:"kiso",  name:"基礎", pos:[0, 0.25, D / 2 + 0.15], note:"亀裂・不同沈下・傾きを確認します。地震等では建物の傾斜の程度が損害認定の重要な指標になります。" },
+    { key:"naiso", name:"内壁・天井", pos:[0.8, foundH + 1.5, -1.2], note:"雨漏り・漏水によるシミ・膨れ・剥がれを確認。天井のシミは屋根損害のサインです。「内部表示」で間仕切り・天井を確認できます。" },
+    { key:"yuka",  name:"床", pos:[-1.5, foundH + 0.35, 1.5], note:"水災では浸水深(床下浸水/床上浸水)が損害額算定の基礎になります。フローリングの反り・浮き・シミも確認します。" },
+    { key:"setsubi", name:"附帯設備", pos:[3.0, 1.0, -(D / 2 + 0.45)], note:"建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。給排水設備の事故による水濡れも火災共済の対象事故の例に挙げられます。" },
+  ];
+  if (roofShape !== "rikuyane") {
+    const hafuPos = {
+      kiritsuma: [W / 2 + 0.2, wallTop + 0.9, 1.8],
+      yosemune: [0, wallTop - 0.03, Ze + 0.2],
+      katanagare: [We + 0.2, wallTop + riseT / 2, 0],
+    }[roofShape];
+    members.splice(3, 0, { key:"hafu", name:"破風・鼻隠し", pos: hafuPos, note:"屋根端部の化粧板。妻側(勾配部)を破風、軒先側(雨樋が付く側)を鼻隠しと呼びます。風災で捲れ・飛散しやすく、雨樋と併せて確認します。" });
+  } else {
+    members.splice(3, 0, { key:"parapet", name:"パラペット・笠木", pos:[0, wallTop + 0.75, D / 2 + 0.2], note:"屋上周囲の立ち上がり壁(パラペット)と上端の笠木。笠木板金は強風で外れやすく、取合い部は雨漏りの起点になりやすい部位です。" });
+  }
+  if (n === 2) {
+    members.push(
+      { key:"doushi", name:"胴差し・2階床組", pos:[-(W / 2 + 0.15), foundH + storyH + 0.1, 1], note:"2階建てでは階ごとに損害範囲を整理します。雨漏りが1階天井まで達している場合、2階床組(床梁)への波及も確認します。" },
+      { key:"kaidan", name:"階段", pos:[3.35, foundH + 1.7, -1.6], note:"内部造作として評価します。浸水や消火活動による水濡れの影響を受けやすい動線部位です。" },
+    );
+  }
+  const dims = [
+    { name:"間口", pos:[0, 0.12, D / 2 + 0.9] },
+    { name:"奥行", pos:[W / 2 + 0.9, 0.12, 0] },
+    { name:"軒高", pos:[W / 2 + 0.5, wallTop, D / 2] },
+    { name: roofShape === "rikuyane" ? "最高部(笠木天端)" : "棟高", pos:[W / 2 + 0.5, ridgeY, 0] },
+  ];
+  return { group: g, members, dims, camR: n === 1 ? 14 : 17, targetY: n === 1 ? 1.8 : 2.8 };
+}
+
+/* ============================================================
+   アプリ状態・three.js基盤
+============================================================ */
+const state = {
+  stories: 1,
+  roofShape: "kiritsuma",
+  roofKey: "kawara",
+  wallKey: "mortar",
+  mode: "normal",   // normal | parts | frame | interior
+  showDims: false,
+  selectedMember: null,
+};
+
+const holder = document.getElementById("canvas-holder");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdbe7ef);
+scene.fog = new THREE.Fog(0xdbe7ef, 28, 60);
+
+const camera = new THREE.PerspectiveCamera(45, holder.clientWidth / holder.clientHeight, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(holder.clientWidth, holder.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+holder.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 0.9));
+const dirL = new THREE.DirectionalLight(0xfff4e0, 1.1);
+dirL.position.set(10, 16, 8);
+scene.add(dirL);
+const fillL = new THREE.DirectionalLight(0xcfe0ff, 0.3);
+fillL.position.set(-8, 6, -10);
+scene.add(fillL);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x7fa06b, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+const grid = new THREE.GridHelper(100, 100, 0x5c7a52, 0x6f8f63);
+grid.position.y = 0.001;
+scene.add(grid);
+
+const orbit = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 14, target: new THREE.Vector3(0, 1.8, 0) };
+let modelGroup = null, currentDef = null, markerMeshes = [];
+const raycaster = new THREE.Raycaster();
+
+function rebuild(resetCam) {
+  if (modelGroup) scene.remove(modelGroup);
+  markerMeshes.forEach((m) => scene.remove(m));
+  markerMeshes = [];
+
+  currentDef = buildHouse(state.stories, state.roofShape, state.roofKey, state.wallKey);
+  modelGroup = currentDef.group;
+  scene.add(modelGroup);
+
+  const geo = new THREE.SphereGeometry(0.13, 16, 16);
+  currentDef.members.forEach((m) => {
+    const mk = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff8c00, emissiveIntensity: 0.6 }));
+    mk.position.set(m.pos[0], m.pos[1], m.pos[2]);
+    mk.userData.key = m.key;
+    scene.add(mk);
+    markerMeshes.push(mk);
+  });
+
+  if (resetCam) {
+    orbit.theta = Math.PI / 4; orbit.phi = Math.PI / 3;
+    orbit.radius = currentDef.camR;
+    orbit.target.set(0, currentDef.targetY, 0);
+  }
+  if (state.selectedMember && !currentDef.members.find((m) => m.key === state.selectedMember)) {
+    state.selectedMember = null;
+  }
+  applyMode();
+  renderLabels();
+  renderPanel();
+}
+
+/* ==== 部位ハイライト ==== */
+const hlMat = new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff7a00, emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide });
+const MEMBER_TARGETS = {
+  roof:    ["屋根葺き材", "棟(棟瓦・棟板金)", "隅棟"],
+  koya:    ["垂木", "母屋", "棟木", "小屋束", "小屋梁"],
+  doi:     ["軒樋", "竪樋"],
+  wall:    ["外壁", "外壁(妻壁)"],
+  open:    ["掃き出し窓(1階)", "腰窓(1階)", "窓(2階)"],
+  genkan:  ["玄関戸"],
+  jiku:    ["通し柱", "柱(隅柱)", "管柱", "間柱", "筋かい"],
+  dodai:   ["土台", "床組(大引)"],
+  kiso:    ["布基礎", "布基礎(中通り)"],
+  naiso:   ["内壁(間仕切り)", "天井(1階)", "天井(2階)", "内部建具(ドア)"],
+  yuka:    ["床(1階)", "床(2階)"],
+  setsubi: ["附帯設備(給湯器等)"],
+  doushi:  ["胴差し", "床梁(2階床組)"],
+  kaidan:  ["階段"],
+  hafu:    ["破風・鼻隠し"],
+  hisashi: ["庇"],
+  amado:   ["雨戸・戸袋"],
+  parapet: ["パラペット・笠木"],
+};
+function selectedTargets() {
+  if (!state.selectedMember) return null;
+  const t = MEMBER_TARGETS[state.selectedMember];
+  return t ? new Set(t) : null;
+}
+
+function applyMode() {
+  const tg = selectedTargets();
+  const matchedLayers = new Set();
+  if (tg) {
+    modelGroup.traverse((m) => {
+      if (m.isMesh && m.userData.baseMat && tg.has(m.userData.member)) matchedLayers.add(m.userData.layer);
+    });
+  }
+  // 標準表示で内部の部位を選択した場合、外装(と必要なら内装)を透過して見えるようにする
+  const xrayExt = !!tg && matchedLayers.size > 0 && state.mode === "normal" && !matchedLayers.has("ext");
+  const xrayInt = xrayExt && !matchedLayers.has("int");
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.baseMat) return;
+    const d = m.userData;
+    let vis, mat;
+    if (state.mode === "frame") {
+      vis = (d.layer === "frame" || d.layer === "found"); mat = d.baseMat;
+    } else if (state.mode === "parts") {
+      vis = true; mat = partMat(d.part, d.layer === "ext");
+    } else if (state.mode === "interior") {
+      vis = true; mat = d.layer === "ext" ? ghostMat : d.baseMat;
+    } else {
+      vis = true; mat = d.baseMat;
+    }
+    if (tg && tg.has(d.member)) {
+      vis = true; mat = hlMat;
+    } else {
+      if (xrayExt && d.layer === "ext") mat = ghostMat;
+      if (xrayInt && d.layer === "int") mat = ghostMat;
+    }
+    m.visible = vis;
+    m.material = mat;
+  });
+}
+
+/* ============================================================
+   ラベル
+============================================================ */
+const labelsHolder = document.getElementById("labels");
+let labelEntries = [];
+
+function renderLabels() {
+  labelsHolder.innerHTML = "";
+  labelEntries = [];
+  currentDef.members.forEach((m) => {
+    const div = document.createElement("div");
+    div.className = "label";
+    div.innerHTML = `<div class="label-chip${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
+    div.addEventListener("click", () => { state.selectedMember = m.key; renderLabels(); renderPanel(); applyMode(); });
+    labelsHolder.appendChild(div);
+    labelEntries.push({ el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
+  });
+  if (state.showDims) {
+    currentDef.dims.forEach((d) => {
+      const div = document.createElement("div");
+      div.className = "label";
+      div.innerHTML = `<div class="label-chip dim">${d.name}</div>`;
+      labelsHolder.appendChild(div);
+      labelEntries.push({ el: div, pos: new THREE.Vector3(d.pos[0], d.pos[1], d.pos[2]) });
+    });
+  }
+}
+
+function updateLabelPositions() {
+  const w = holder.clientWidth, h = holder.clientHeight;
+  labelEntries.forEach((e) => {
+    const v = e.pos.clone().project(camera);
+    e.el.style.transform = `translate(-50%,-100%) translate(${(v.x * 0.5 + 0.5) * w}px, ${(-v.y * 0.5 + 0.5) * h}px)`;
+    e.el.style.display = v.z > 1 ? "none" : "block";
+  });
+}
+
+/* ============================================================
+   操作
+============================================================ */
+const dom = renderer.domElement;
+dom.style.touchAction = "none";
+const drag = { on: false, x: 0, y: 0 };
+let lastPinch = null;
+
+dom.addEventListener("pointerdown", (e) => { drag.on = true; drag.x = e.clientX; drag.y = e.clientY; });
+window.addEventListener("pointermove", (e) => {
+  if (!drag.on) return;
+  orbit.theta -= (e.clientX - drag.x) * 0.006;
+  orbit.phi   -= (e.clientY - drag.y) * 0.006;
+  orbit.phi = Math.max(0.22, Math.min(Math.PI / 2 - 0.02, orbit.phi));
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+window.addEventListener("pointerup", () => { drag.on = false; });
+dom.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  orbit.radius = Math.max(5, Math.min(40, orbit.radius + e.deltaY * 0.012));
+}, { passive: false });
+dom.addEventListener("touchmove", (e) => {
+  if (e.touches.length === 2) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (lastPinch !== null) orbit.radius = Math.max(5, Math.min(40, orbit.radius - (d - lastPinch) * 0.03));
+    lastPinch = d;
+    drag.on = false;
+  }
+}, { passive: true });
+dom.addEventListener("touchend", () => { lastPinch = null; });
+
+dom.addEventListener("click", (e) => {
+  const rect = dom.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(markerMeshes);
+  if (hits.length > 0) {
+    state.selectedMember = hits[0].object.userData.key;
+    renderLabels(); renderPanel(); applyMode();
+  }
+});
+
+window.addEventListener("resize", () => {
+  camera.aspect = holder.clientWidth / holder.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(holder.clientWidth, holder.clientHeight);
+});
+document.getElementById("reset-view").addEventListener("click", () => {
+  orbit.theta = Math.PI / 4; orbit.phi = Math.PI / 3;
+  orbit.radius = currentDef.camR;
+  orbit.target.set(0, currentDef.targetY, 0);
+});
+
+/* ============================================================
+   パネル
+============================================================ */
+const panel = document.getElementById("panel");
+function el(t, cls, html) {
+  const e = document.createElement(t);
+  if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html;
+  return e;
+}
+
+function renderPanel() {
+  panel.innerHTML = "";
+
+  // 階数
+  const secN = el("div", "section", "<h2>階数</h2>");
+  const rowN = el("div", "btn-row");
+  [[1, "平屋(1階建て)"], [2, "2階建て"]].forEach(([v, lb]) => {
+    const b = el("button", "btn" + (state.stories === v ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.stories = v; rebuild(true); });
+    rowN.appendChild(b);
+  });
+  secN.appendChild(rowN);
+  panel.appendChild(secN);
+
+  // 表示モード
+  const secMode = el("div", "section", "<h2>表示モード</h2>");
+  const rowM = el("div", "btn-row");
+  [["normal","標準"],["parts","部位 色分け"],["frame","骨組み(軸組)"],["interior","内部(外装を透過)"]].forEach(([k, lb]) => {
+    const b = el("button", "btn" + (state.mode === k ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.mode = k; applyMode(); renderPanel(); });
+    rowM.appendChild(b);
+  });
+  secMode.appendChild(rowM);
+  if (state.mode === "parts") {
+    const lg = el("div", "legend");
+    Object.keys(PART_COLORS).forEach((p) => {
+      lg.appendChild(el("div", "legend-item", `<span class="sw" style="background:${PART_COLORS[p]}"></span>${p}`));
+    });
+    lg.appendChild(el("div", "legend-cap",
+      "外装(屋根・外壁・開口部等)は半透明で表示し、内部の部位も同時に確認できます。※この部位区分は一般的な建築部位に基づく研修用の区分で、NOSAIの正式な評価様式の区分ではありません。"));
+    secMode.appendChild(lg);
+  }
+  panel.appendChild(secMode);
+
+  // 屋根形状
+  const secShape = el("div", "section", "<h2>屋根形状</h2>");
+  const rowS = el("div", "btn-row");
+  [["kiritsuma","切妻"],["yosemune","寄棟"],["katanagare","片流れ"],["rikuyane","陸屋根"]].forEach(([k, lb]) => {
+    const b = el("button", "btn" + (state.roofShape === k ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.roofShape = k; rebuild(false); });
+    rowS.appendChild(b);
+  });
+  secShape.appendChild(rowS);
+  panel.appendChild(secShape);
+
+  // 屋根材(陸屋根は防水層のため対象外)
+  const secR = el("div", "section", "<h2>屋根材</h2>");
+  if (state.roofShape === "rikuyane") {
+    secR.appendChild(el("div", "legend-cap", "陸屋根はシート防水等の防水層で表現しているため、屋根材の選択は勾配屋根(切妻・寄棟・片流れ)で有効です。"));
+  } else {
+    Object.keys(ROOFS).forEach((k) => {
+      const m = ROOFS[k];
+      const b = el("button", "btn" + (state.roofKey === k ? " active" : ""),
+        `<span class="swatch" style="background:#${m.color.toString(16).padStart(6,"0")}"></span>${m.label}`);
+      b.addEventListener("click", () => { state.roofKey = k; rebuild(false); });
+      secR.appendChild(b);
+    });
+  }
+  panel.appendChild(secR);
+
+  const secW = el("div", "section", "<h2>外壁材</h2>");
+  Object.keys(WALLS).forEach((k) => {
+    const m = WALLS[k];
+    const b = el("button", "btn" + (state.wallKey === k ? " active" : ""),
+      `<span class="swatch" style="background:#${m.color.toString(16).padStart(6,"0")}"></span>${m.label}`);
+    b.addEventListener("click", () => { state.wallKey = k; rebuild(false); });
+    secW.appendChild(b);
+  });
+  panel.appendChild(secW);
+
+  // 寸法
+  const secD = el("div", "section", "<h2>寸法の名称</h2>");
+  const bd = el("button", "btn" + (state.showDims ? " active" : ""),
+    state.showDims ? "寸法名称を非表示にする" : "寸法名称を表示する(間口・奥行・軒高・棟高)");
+  bd.addEventListener("click", () => { state.showDims = !state.showDims; renderLabels(); renderPanel(); applyMode(); });
+  secD.appendChild(bd);
+  panel.appendChild(secD);
+
+  // 部材・部位
+  const secM = el("div", "section", "<h2>部位と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部位はモデル上でオレンジ色に点滅します。内部の部位を選ぶと外装が自動的に透けて表示されます</div>");
+  currentDef.members.forEach((m) => {
+    const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
+    b.addEventListener("click", () => { state.selectedMember = m.key; renderLabels(); renderPanel(); applyMode(); });
+    secM.appendChild(b);
+  });
+  const active = currentDef.members.find((m) => m.key === state.selectedMember);
+  if (active) {
+    secM.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));
+  }
+  panel.appendChild(secM);
+
+  // 共通メモ
+  panel.appendChild(el("div", "section note-box",
+    `<div class="title">建物共済の損害評価(公開情報に基づく一般的な枠組み)</div>損害額は再建築価額(新価特約付帯時)又は時価額を基礎に算定されます。総合共済の自然災害(地震等を除く)では、損害額から共済価額の5%又は1万円のいずれか低い額を控除する取扱いが一般的です。地震等は損害割合5%以上が支払要件、支払は共済金額の50%が限度とされる例が多くあります。ただし、具体的な算定方法・部位別の評価基準は各農業共済組合等の約款・損害評価要領によります。`));
+
+  // 免責
+  panel.appendChild(el("div", "disclaimer",
+    "本モデルの部位区分・部材構成・説明文は、一般的な木造在来工法の部位名称とNOSAI各組合の公開情報に基づく研修用の参考です。NOSAI建物共済の正式な部位区分表・損害割合基準(損害評価要領等)を再現したものではありません。お手元の評価様式・基準資料をご提供いただければ、その区分に合わせて部位・着眼点ノートを再構成できます。"));
+}
+
+/* ============================================================
+   ループ
+============================================================ */
+function animate() {
+  camera.position.set(
+    orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
+    orbit.target.y + orbit.radius * Math.cos(orbit.phi),
+    orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
+  );
+  camera.lookAt(orbit.target);
+  hlMat.emissiveIntensity = 0.35 + 0.3 * Math.sin(performance.now() * 0.004);
+  renderer.render(scene, camera);
+  updateLabelPositions();
+  requestAnimationFrame(animate);
+}
+
+rebuild(true);
+animate();
+</script>
+</body>
+</html>
