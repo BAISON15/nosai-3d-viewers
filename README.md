@@ -27,7 +27,7 @@
 
 ### ローカルで動かす
 ```bash
-git clone https://github.com/<GitHubユーザー名>/<リポジトリ名>.git
+git clone https://github.com//BAISON15/nosai-3d-viewers.git
 cd <リポジトリ名>
 # お好みのブラウザで viewers/*.html を直接開いてください
 ```
@@ -44,7 +44,7 @@ cd <リポジトリ名>
 Apache License 2.0 のもとで公開しています。詳細は [LICENSE](LICENSE) を参照してください。
 
 ```
-Copyright [year] [your name]
+Copyright 2026 BAISON
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -58,8 +58,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
-
-`[year]` と `[your name]` は公開時にご自身の情報に置き換えてください。
 
 ## 貢献
 
