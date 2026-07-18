@@ -714,10 +714,10 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     );
   }
   const dims = [
-    { name:"間口", pos:[0, 0.12, D / 2 + 0.9] },
-    { name:"奥行", pos:[W / 2 + 0.9, 0.12, 0] },
-    { name:"軒高", pos:[W / 2 + 0.5, wallTop, D / 2] },
-    { name: roofShape === "rikuyane" ? "最高部(笠木天端)" : "棟高", pos:[W / 2 + 0.5, ridgeY, 0] },
+    { name:"間口", from:[-W / 2, 0.06, D / 2 + 1.0], to:[W / 2, 0.06, D / 2 + 1.0] },
+    { name:"奥行", from:[W / 2 + 1.0, 0.06, -D / 2], to:[W / 2 + 1.0, 0.06, D / 2] },
+    { name:"軒高", from:[W / 2 + 0.7, 0, D / 2 + 0.35], to:[W / 2 + 0.7, wallTop, D / 2 + 0.35] },
+    { name: roofShape === "rikuyane" ? "最高部(笠木天端)" : "棟高", from:[W / 2 + 0.7, 0, 0], to:[W / 2 + 0.7, ridgeY, 0] },
   ];
   return { group: g, members, dims, camR: n === 1 ? 14 : 17, targetY: n === 1 ? 1.8 : 2.8 };
 }
@@ -733,6 +733,7 @@ const state = {
   mode: "normal",   // normal | parts | frame | interior
   showDims: false,
   selectedMember: null,
+  selectedDim: null,
 };
 
 const holder = document.getElementById("canvas-holder");
@@ -864,6 +865,53 @@ function applyMode() {
 ============================================================ */
 const labelsHolder = document.getElementById("labels");
 let labelEntries = [];
+let dimGroup = null;
+const dimMat = new THREE.MeshStandardMaterial({ color: 0xd97706, emissive: 0x92400e, emissiveIntensity: 0.35 });
+const dimHlMat = new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff7a00, emissiveIntensity: 0.6 });
+function makeDimLine(from, to) {
+  const g = new THREE.Group();
+  const a = new THREE.Vector3(from[0], from[1], from[2]);
+  const b = new THREE.Vector3(to[0], to[1], to[2]);
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const len = dir.length();
+  const main = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, len, 6), dimMat);
+  main.position.copy(a).addScaledVector(dir, 0.5);
+  main.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  g.add(main);
+  // 端部ティック(測定範囲の両端を示す短い直交バー)
+  const vertical = Math.abs(dir.y) > len * 0.7;
+  const tickDir = vertical ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  [a, b].forEach((p) => {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.24, 6), dimMat);
+    t.position.copy(p);
+    t.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tickDir);
+    g.add(t);
+  });
+  return g;
+}
+function updateDimObjects() {
+  if (dimGroup) { scene.remove(dimGroup); dimGroup = null; }
+  if (!state.showDims || !currentDef) return;
+  if (state.selectedDim && !currentDef.dims.some((d) => d.name === state.selectedDim)) state.selectedDim = null;
+  dimGroup = new THREE.Group();
+  currentDef.dims.forEach((d) => {
+    if (!d.from || !d.to) return;
+    const line = makeDimLine(d.from, d.to);
+    line.userData.dimName = d.name;
+    dimGroup.add(line);
+  });
+  scene.add(dimGroup);
+  applyDimHighlight();
+}
+function applyDimHighlight() {
+  if (!dimGroup) return;
+  dimGroup.children.forEach((line) => {
+    const on = state.selectedDim === line.userData.dimName;
+    line.traverse((m) => { if (m.isMesh) m.material = on ? dimHlMat : dimMat; });
+  });
+}
+
+
 
 function renderLabels() {
   labelsHolder.innerHTML = "";
@@ -880,11 +928,19 @@ function renderLabels() {
     currentDef.dims.forEach((d) => {
       const div = document.createElement("div");
       div.className = "label";
-      div.innerHTML = `<div class="label-chip dim">${d.name}</div>`;
+      div.innerHTML = `<div class="label-chip dim${state.selectedDim === d.name ? " active" : ""}">${d.name}</div>`;
+      div.addEventListener("click", () => {
+        state.selectedDim = state.selectedDim === d.name ? null : d.name;
+        renderLabels(); renderPanel();
+      });
       labelsHolder.appendChild(div);
-      labelEntries.push({ el: div, pos: new THREE.Vector3(d.pos[0], d.pos[1], d.pos[2]) });
+      const lp = (d.from && d.to)
+        ? [(d.from[0] + d.to[0]) / 2, (d.from[1] + d.to[1]) / 2 + 0.16, (d.from[2] + d.to[2]) / 2]
+        : d.pos;
+      labelEntries.push({ el: div, pos: new THREE.Vector3(lp[0], lp[1], lp[2]) });
     });
   }
+  updateDimObjects();
 }
 
 function updateLabelPositions() {
@@ -1036,9 +1092,22 @@ function renderPanel() {
   // 寸法
   const secD = el("div", "section", "<h2>寸法の名称</h2>");
   const bd = el("button", "btn" + (state.showDims ? " active" : ""),
-    state.showDims ? "寸法名称を非表示にする" : "寸法名称を表示する(間口・奥行・軒高・棟高)");
-  bd.addEventListener("click", () => { state.showDims = !state.showDims; renderLabels(); renderPanel(); applyMode(); });
+    state.showDims ? "寸法名称を非表示にする" : "寸法線と名称を表示する(間口・奥行・軒高・棟高)");
+  bd.addEventListener("click", () => { state.showDims = !state.showDims; if (!state.showDims) state.selectedDim = null; renderLabels(); renderPanel(); applyMode(); });
   secD.appendChild(bd);
+  if (state.showDims) {
+    const rowD = el("div", "btn-row");
+    currentDef.dims.forEach((d) => {
+      const b = el("button", "btn" + (state.selectedDim === d.name ? " active" : ""), d.name);
+      b.addEventListener("click", () => {
+        state.selectedDim = state.selectedDim === d.name ? null : d.name;
+        renderLabels(); renderPanel();
+      });
+      rowD.appendChild(b);
+    });
+    secD.appendChild(rowD);
+    secD.appendChild(el("div", "legend-cap", "寸法名を押すと該当する寸法線がオレンジ色に点滅します(もう一度押すと解除)。"));
+  }
   panel.appendChild(secD);
 
   // 部材・部位
@@ -1074,6 +1143,7 @@ function animate() {
   );
   camera.lookAt(orbit.target);
   hlMat.emissiveIntensity = 0.35 + 0.3 * Math.sin(performance.now() * 0.004);
+  dimHlMat.emissiveIntensity = 0.5 + 0.3 * Math.sin(performance.now() * 0.004);
   renderer.render(scene, camera);
   updateLabelPositions();
   requestAnimationFrame(animate);
