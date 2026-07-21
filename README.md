@@ -1,19 +1,19 @@
 # 損害保険 評価研修用 3Dビューア (Agricultural & Building Insurance Assessment 3D Viewers)
 
-農業共済(NOSAI)の**園芸施設共済**および**建物共済**、**農機具共済**の評価研修を想定した、ブラウザで動くインタラクティブな3Dモデル集です。Three.js製・単一HTMLファイルで、インターネット接続があればダブルクリックで起動できます(インストール不要)。
+農業共済(NOSAI)の**園芸施設共済**および**建物共済**の評価研修を想定した、ブラウザで動くインタラクティブな3Dモデル集です。Three.js製・単一HTMLファイルで、インターネット接続があればダブルクリックで起動できます(インストール不要)。
 
 > **技術メモ:** Three.js は最新安定版(0.184.0, r184)を ES Modules + importmap 方式で CDN から読み込みます。
 
-**🔗 デモ:https://baison15.github.io/nosai-3d-viewers/**
-
+**🔗 デモ: https://baison15.github.io/nosai-3d-viewers/**
+*(公開後、実際のURLに書き換えてください)*
 
 ## 収録ビューア
 
 | ファイル | 内容 |
 |---|---|
-| [`viewers/engei-kyosai-3d-viewer.html`](viewers/engei-kyosai-3d-viewer.html) | 園芸施設共済向け。プラスチックハウスⅡ類(パイプハウス)・Ⅳ類(鉄骨屋根型)・Ⅵ類(雨よけ施設)・Ⅶ類(多目的ネットハウス)・ガラス室Ⅱ類の5型式を切替表示。施設構造部分(妻面/側面/屋根面/基礎、Ⅶ類は周囲面/天井面/基礎)の色分け表示、被覆材切替、部材マーカー付き。 |
+| [`viewers/engei-kyosai-3d-viewer.html`](viewers/engei-kyosai-3d-viewer.html) | 園芸施設共済向け。プラスチックハウスⅡ類(パイプハウス)・Ⅳ類(鉄骨屋根型)・Ⅵ類(雨よけ施設)・Ⅶ類(多目的ネットハウス)・ガラス室Ⅱ類の5型式を切替表示。施設構造部分(妻面/側面/屋根面/基礎、Ⅶ類は周囲面/天井面/基礎)の色分け表示、被覆材切替、部材マーカー付き。台風・大雪の被害シミュレーション(損害評価の練習)を搭載。 |
 | [`viewers/noki-kyosai-3d-viewer.html`](viewers/noki-kyosai-3d-viewer.html) | 農機具共済向け。乗用型トラクタ・乗用型田植機・自脱型/普通型コンバイン・薬剤散布用乗用管理機(一体型)の5機種。トラクタはロータリー・ハロー・プラウ・溝堀機・あぜ塗機・スタブルカルチ・サブソイラー・ブームスプレーヤなど附属装置15種を着脱可能(3点リンク/ドローバー接合・PTOシャフト再現)。オーガ・ブームの格納/展開切替、部位マーカーに対応。 |
-| [`viewers/tatemono-kyosai-3d-viewer.html`](viewers/tatemono-kyosai-3d-viewer.html) | 建物共済向け。木造在来工法の一般住宅を平屋/2階建てで切替。軸組(柱・梁・筋かい・小屋組等)・外装(屋根材/外壁材はテクスチャ切替)・内装(床・天井・間仕切り・階段)を再現し、部位色分け・骨組み表示・内部透過表示に対応。 |
+| [`viewers/tatemono-kyosai-3d-viewer.html`](viewers/tatemono-kyosai-3d-viewer.html) | 建物共済向け。木造在来工法の一般住宅を平屋/2階建てで切替。軸組(柱・梁・筋かい・小屋組等)・外装(屋根材/外壁材はテクスチャ切替)・内装(床・天井・間仕切り・階段)を再現し、部位色分け・骨組み表示・内部透過表示に対応。台風・雹・大雪・水災の被害シミュレーション(損害評価の練習)を搭載。 |
 
 ## 特徴
 
@@ -62,6 +62,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
+`[year]` と `[your name]` は公開時にご自身の情報に置き換えてください。
 
 ## 貢献
 

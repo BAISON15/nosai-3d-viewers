@@ -31,6 +31,8 @@
   .label-chip { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.15); border: 1px solid #cbd5e1; background: rgba(255,255,255,.92); color: #334155; }
   .label-chip.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
   .label-chip.dim { background: rgba(15,23,42,.78); color: #fde68a; border: 1px dashed #f59e0b; }
+  .label-chip.dmg { background: #fee2e2; border-color: #f87171; color: #991b1b; }
+  .label-chip.dmg.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
 
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
@@ -675,6 +677,8 @@ const state = {
   mode: "normal",       // normal | parts | frame
   showDims: false,
   selectedMember: null,
+  dmgScenario: "none",   // none | typhoon | snow
+  dmgSeed: 1,
   selectedDim: null,
 };
 
@@ -721,9 +725,13 @@ function rebuild(resetCam) {
   modelGroup = currentDef.group;
   scene.add(modelGroup);
 
+  currentDef.members = currentDef.members.concat(applyDamage());
+
   const geo = new THREE.SphereGeometry(0.14, 16, 16);
   currentDef.members.forEach((m) => {
-    const mk = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff8c00, emissiveIntensity: 0.6 }));
+    const mk = new THREE.Mesh(geo, m.isDamage
+      ? new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xb91c1c, emissiveIntensity: 0.6 })
+      : new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff8c00, emissiveIntensity: 0.6 }));
     mk.position.set(m.pos[0], m.pos[1], m.pos[2]);
     mk.userData.key = m.key;
     scene.add(mk);
@@ -773,8 +781,285 @@ const MEMBER_TARGETS = {
   "glass:tanidoi": ["谷樋"],
   "glass:setsuzoku": ["接続側面(柱)", "接続側面(桁)"],
 };
+/* ============================================================
+   損害評価の練習: 被害シミュレーション
+   要領第4の被害態様(①ちぎれ ②腰折れ ③まがり ⑤はく落 等)に対応
+============================================================ */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const dmgHoleMat  = new THREE.MeshStandardMaterial({ color: 0x111827, transparent: true, opacity: 0.9, side: THREE.DoubleSide, roughness: 0.9 });
+const dmgFlapMat  = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, transparent: true, opacity: 0.55, side: THREE.DoubleSide, roughness: 0.4 });
+const dmgCrackMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, emissive: 0x94a3b8, emissiveIntensity: 0.25, side: THREE.DoubleSide });
+
+const DMG_NOTES = {
+  tear:  "被害態様: 被覆材の破れ。施設構造部分(面)ごとに被害面積割合を求めます。新たに被覆を要する面積がその面の被覆面積の80%以上となる場合、被害面積割合は100%として扱います(第4)。",
+  fold:  "被害態様②「腰折れ」: 局部的に激しく曲がり、又は強い圧縮力によって座屈し、断面形状が変形した状態。損傷程度を甚(取替)・中(取替又は補修)・軽(補修)で判定します。",
+  bend:  "被害態様③「まがり」: 大きな曲率で緩やかに曲がった状態。損傷程度(甚・中・軽)を判定し、補修とする場合は補修割合(補修数/総使用数×0.7)で評価します。",
+  glass: "ガラスの割れは取替として評価します(ずれは補修扱い。補修割合の係数はガラスのみ0.5)。割れの枚数と位置、破片の飛散範囲を記録します。",
+  pane:  "ガラスの脱落・欠損。取替として評価します。欠落枚数と位置を面(妻面・側面・屋根面)ごとに整理します。",
+  cut:   "被害態様①「ちぎれ」: 部材が2つに分離した状態。Ⅶ類は周囲面・天井面・基礎の3区分で、部材ごとに取替数・補修数を調査します。",
+};
+
+function tagAll(obj, part, member, isCover) {
+  obj.traverse((m) => { if (m.isMesh) { m.userData.part = part; m.userData.member = member; m.userData.isCover = !!isCover; m.userData.baseMat = m.material; } });
+  return obj;
+}
+function tearMesh(size, rng, withFlap) {
+  const grp = new THREE.Group();
+  const shp = new THREE.Shape();
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = size * (0.45 + rng() * 0.55);
+    const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+    if (i) shp.lineTo(px, py); else shp.moveTo(px, py);
+  }
+  shp.closePath();
+  grp.add(new THREE.Mesh(new THREE.ShapeGeometry(shp), dmgHoleMat));
+  if (withFlap) {
+    const f = new THREE.Shape();
+    f.moveTo(0, 0); f.lineTo(size * 0.9, size * 0.25); f.lineTo(size * 0.55, size * 0.75); f.closePath();
+    const fm = new THREE.Mesh(new THREE.ShapeGeometry(f), dmgFlapMat);
+    fm.position.set(size * 0.15, size * 0.1, 0.015);
+    fm.rotation.z = rng() * 1.5;
+    grp.add(fm);
+  }
+  return grp;
+}
+function crackMesh(size, rng) {
+  const grp = new THREE.Group();
+  const n = 6 + ((rng() * 3) | 0);
+  for (let i = 0; i < n; i++) {
+    const a = rng() * Math.PI * 2;
+    const len = size * (0.5 + rng() * 0.7);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(len, 0.016, 0.006), dmgCrackMat);
+    b.position.set(Math.cos(a) * len / 2, Math.sin(a) * len / 2, 0);
+    b.rotation.z = a;
+    grp.add(b);
+  }
+  const c = new THREE.Mesh(new THREE.CircleGeometry(0.05, 10), dmgCrackMat);
+  grp.add(c);
+  return grp;
+}
+function placeOnSurface(obj, pos, normal) {
+  obj.position.copy(pos.clone().addScaledVector(normal, 0.025));
+  obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize());
+  return obj;
+}
+function beamEndpoints(m) {
+  const len = m.geometry.parameters.height;
+  const half = new THREE.Vector3(0, 1, 0).applyQuaternion(m.quaternion).multiplyScalar(len / 2);
+  return [m.position.clone().sub(half), m.position.clone().add(half)];
+}
+function addBentArc(parent, r, x, yBase, sideZ, tube, mat, part, member, rng, topDent) {
+  const phi0 = sideZ > 0 ? 0 : Math.PI / 2, phi1 = phi0 + Math.PI / 2;
+  const dentPhi = topDent ? (Math.PI / 2 + (rng() - 0.5) * 0.2) : (phi0 + 0.3 + rng() * (Math.PI / 2 - 0.6));
+  const depth = 0.3 + rng() * 0.25;
+  const N = 10, pts = [];
+  for (let i = 0; i <= N; i++) {
+    const ph = phi0 + ((phi1 - phi0) * i) / N;
+    const d = Math.max(0, 1 - Math.abs(ph - dentPhi) / 0.4);
+    const rr = r - d * d * depth;
+    pts.push(new THREE.Vector3(x, yBase + rr * Math.sin(ph), rr * Math.cos(ph)));
+  }
+  for (let i = 0; i < N; i++) parent.add(tag(pipeBetween(pts[i], pts[i + 1], tube, mat), part, member));
+  return pts[Math.round(N * ((dentPhi - phi0) / (phi1 - phi0)))];
+}
+function addSagged(parent, p1, p2, rr, mat, part, member, sag, sideways) {
+  const mid = p1.clone().add(p2).multiplyScalar(0.5);
+  if (sideways) mid.z += sag * (mid.z >= 0 ? 1 : -1); else mid.y -= sag;
+  parent.add(tag(pipeBetween(p1, mid, rr, mat), part, member));
+  parent.add(tag(pipeBetween(mid, p2, rr, mat), part, member));
+  return mid;
+}
+function collectByMember(name, geomType) {
+  const out = [];
+  modelGroup.traverse((m) => {
+    if (m.isMesh && m.userData.member === name && (!geomType || m.geometry.type === geomType)) out.push(m);
+  });
+  return out;
+}
+function pick(arr, rng) { return arr.length ? arr[(rng() * arr.length) | 0] : null; }
+
+function applyDamage() {
+  const damages = [];
+  if (state.dmgScenario === "none") return damages;
+  const rng = mulberry32(state.dmgSeed * 7919 + (state.dmgScenario === "typhoon" ? 131 : 977));
+  const tkey = state.typeKey;
+  const spans = TYPES[tkey].spansSelectable ? state.spans : 1;
+  let idx = 0;
+  const reg = (label, kind, pos, targetMember, part) => {
+    idx++;
+    damages.push({ key: "dmg" + idx, isDamage: true, name: `被害${idx}: ${label}`,
+      targets: [targetMember], pos: [pos.x, pos.y, pos.z], note: DMG_NOTES[kind] });
+    return targetMember;
+  };
+  const addTearAt = (label, part, pos, normal, size, withFlap) => {
+    const member = "DMG" + (idx + 1) + ":" + label;
+    const t = placeOnSurface(tearMesh(size, rng, withFlap), pos, normal);
+    tagAll(t, part, member, true);
+    modelGroup.add(t);
+    reg(label + "(" + part + ")", label.includes("ネット") || label.includes("破れ") ? "tear" : "tear", pos.clone().addScaledVector(normal, 0.25), member, part);
+  };
+  const addCrackAt = (label, part, pos, normal, size, kind) => {
+    const member = "DMG" + (idx + 1) + ":" + label;
+    const c = kind === "pane"
+      ? placeOnSurface(tagAll(new THREE.Group().add(new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.7), dmgHoleMat)) || new THREE.Group(), part, member, true), pos, normal)
+      : placeOnSurface(crackMesh(size, rng), pos, normal);
+    if (kind !== "pane") tagAll(c, part, member, true);
+    modelGroup.add(c);
+    reg(label + "(" + part + ")", kind, pos.clone().addScaledVector(normal, 0.25), member, part);
+  };
+  const bendArcOf = (memberName, label, yBase, rr, mat, topDent) => {
+    const ribs = collectByMember(memberName, "TorusGeometry");
+    const m = pick(ribs, rng);
+    if (!m) return;
+    const x = m.position.x;
+    const sideZ = Math.abs(m.rotation.z) > 0.1 ? 1 : -1;
+    const part = m.userData.part;
+    const member = "DMG" + (idx + 1) + ":" + label;
+    m.parent.remove(m);
+    const dentPos = addBentArc(modelGroup, rr, x, yBase, sideZ, 0.032, mat, part, member, rng, topDent);
+    reg(label + "(" + part + ")", "fold", dentPos.clone().add(new THREE.Vector3(0, 0.15, 0)), member, part);
+  };
+  const sagStraightOf = (memberName, label, mat, sag, sideways) => {
+    const cands = collectByMember(memberName, "CylinderGeometry").filter((m) => m.geometry.parameters.height > 2);
+    const m = pick(cands, rng);
+    if (!m) return;
+    const [p1, p2] = beamEndpoints(m);
+    const part = m.userData.part;
+    const rr = m.geometry.parameters.radiusTop;
+    const member = "DMG" + (idx + 1) + ":" + label;
+    m.parent.remove(m);
+    const mid = addSagged(modelGroup, p1, p2, rr, mat, part, member, sag, sideways);
+    reg(label + "(" + part + ")", "bend", mid.clone().add(new THREE.Vector3(0, 0.2, 0)), member, part);
+  };
+  const kinkPostOf = (memberName, label, mat) => {
+    const cands = collectByMember(memberName, "CylinderGeometry");
+    const m = pick(cands, rng);
+    if (!m) return;
+    const [pLow, pHigh] = beamEndpoints(m).sort((a, b) => a.y - b.y);
+    const part = m.userData.part;
+    const rr = m.geometry.parameters.radiusTop;
+    const member = "DMG" + (idx + 1) + ":" + label;
+    m.parent.remove(m);
+    const mid = pLow.clone().lerp(pHigh, 0.55);
+    mid.x += 0.22 * (rng() < 0.5 ? -1 : 1);
+    modelGroup.add(tag(pipeBetween(pLow, mid, rr, mat), part, member));
+    modelGroup.add(tag(pipeBetween(mid, pHigh.clone().add(new THREE.Vector3(mid.x - pHigh.x, 0, 0).multiplyScalar(0.5)), rr, mat), part, member));
+    reg(label + "(" + part + ")", "fold", mid.clone().add(new THREE.Vector3(0, 0.15, 0)), member, part);
+  };
+
+  const T = state.dmgScenario === "typhoon";
+  if (tkey === "pipe") {
+    const r = 2.7, D = 12;
+    const nT = T ? 2 + ((rng() * 2) | 0) : 1;
+    for (let i = 0; i < nT; i++) {
+      const ph = T ? 0.5 + rng() * 2.1 : Math.PI / 2 + (rng() - 0.5) * 0.5;
+      const x = -5 + rng() * 10;
+      const pos = new THREE.Vector3(x, r * Math.sin(ph), r * Math.cos(ph));
+      const nrm = new THREE.Vector3(0, Math.sin(ph), Math.cos(ph));
+      addTearAt("被覆材の破れ", ph < Math.PI / 2 ? "側屋根面A" : "側屋根面B", pos, nrm, 0.45 + rng() * 0.25, true);
+    }
+    const nB = T ? 1 + ((rng() * 2) | 0) : 2;
+    for (let i = 0; i < nB; i++) bendArcOf("アーチ・パイプ", "アーチ・パイプの腰折れ", 0, r, MAT.pipe, !T);
+    if (T && rng() > 0.4) {
+      const gx = rng() < 0.5 ? D / 2 + 0.08 : -(D / 2 + 0.08);
+      addTearAt("妻面被覆の破れ", gx > 0 ? "妻面A" : "妻面B",
+        new THREE.Vector3(gx, 1.0 + rng() * 1.0, (rng() - 0.5) * 2.4), new THREE.Vector3(Math.sign(gx), 0, 0), 0.35, true);
+    }
+    if (!T) sagStraightOf("母屋(直管)", "母屋(直管)のまがり", MAT.pipe, 0.3, false);
+  }
+  if (tkey === "steel" || tkey === "glass") {
+    const W = 8, D = 14, eave = tkey === "steel" ? 2.4 : 2.6, ridge = tkey === "steel" ? 4.0 : 4.3;
+    const rise = ridge - eave, totalW = W * spans;
+    const slopePt = () => {
+      const k = (rng() * spans) | 0, sf = rng() < 0.5 ? 1 : -1, u = 0.15 + rng() * 0.65;
+      const zc = -totalW / 2 + W / 2 + k * W;
+      const pos = new THREE.Vector3(-6 + rng() * 12, eave + rise * u + 0.06, zc + sf * (W / 2) * (1 - u));
+      const ang = Math.atan2(rise, W / 2);
+      const nrm = new THREE.Vector3(0, Math.cos(ang), sf * Math.sin(ang));
+      return { pos, nrm, part: sf > 0 ? "屋根面A" : "屋根面B" };
+    };
+    if (tkey === "steel") {
+      const nT = T ? 2 : 1;
+      for (let i = 0; i < nT; i++) { const sp = slopePt(); addTearAt("被覆材の破れ", sp.part, sp.pos, sp.nrm, 0.5, true); }
+      if (T) {
+        const sf = rng() < 0.5 ? 1 : -1;
+        addTearAt("被覆材の破れ", sf > 0 ? "側面A" : "側面B",
+          new THREE.Vector3(-5 + rng() * 10, 0.6 + rng() * 1.4, sf * (totalW / 2 + 0.06)), new THREE.Vector3(0, 0, sf), 0.42, true);
+        sagStraightOf("胴ぶち", "胴ぶちのまがり", MAT.steel, 0.22, true);
+      } else {
+        sagStraightOf("母屋", "母屋のまがり", MAT.steel, 0.3, false);
+        sagStraightOf("母屋", "母屋のまがり", MAT.steel, 0.25, false);
+      }
+    } else {
+      const nC = 2;
+      for (let i = 0; i < nC; i++) { const sp = slopePt(); addCrackAt("ガラスのひび割れ", sp.part, sp.pos, sp.nrm, 0.45, "glass"); }
+      const sf = rng() < 0.5 ? 1 : -1;
+      if (T) addCrackAt("ガラスのひび割れ", sf > 0 ? "側面A" : "側面B",
+        new THREE.Vector3(-5 + rng() * 10, 0.8 + rng() * 1.4, sf * (totalW / 2 + 0.06)), new THREE.Vector3(0, 0, sf), 0.4, "glass");
+      const sp2 = slopePt();
+      addCrackAt("ガラスの脱落", sp2.part, sp2.pos, sp2.nrm, 0.4, "pane");
+      if (!T) sagStraightOf("母屋", "母屋のまがり", MAT.steelW, 0.25, false);
+    }
+  }
+  if (tkey === "amayoke") {
+    const r = 2.7, postH = 1.8;
+    const nT = T ? 2 : 1;
+    for (let i = 0; i < nT; i++) {
+      const ph = T ? 0.6 + rng() * 1.9 : Math.PI / 2 + (rng() - 0.5) * 0.4;
+      const x = -5 + rng() * 10;
+      const pos = new THREE.Vector3(x, postH + r * Math.sin(ph), r * Math.cos(ph));
+      const nrm = new THREE.Vector3(0, Math.sin(ph), Math.cos(ph));
+      addTearAt("被覆材の破れ", ph < Math.PI / 2 ? "屋根面A" : "屋根面B", pos, nrm, 0.45, true);
+    }
+    const nB = T ? 1 : 2;
+    for (let i = 0; i < nB; i++) bendArcOf("アーチ・パイプ", "アーチ・パイプの腰折れ", postH, r, MAT.pipe, !T);
+    if (T) kinkPostOf("支柱", "支柱の腰折れ", MAT.pipe);
+  }
+  if (tkey === "net") {
+    const D = 20, W = 14, wallH = 2.6;
+    if (T) {
+      for (let i = 0; i < 2; i++) {
+        const face = (rng() * 4) | 0;
+        let pos, nrm, part = "周囲面";
+        if (face < 2) { const sf = face === 0 ? 1 : -1; pos = new THREE.Vector3(-8 + rng() * 16, 0.7 + rng() * 1.5, sf * W / 2); nrm = new THREE.Vector3(0, 0, sf); }
+        else { const sf = face === 2 ? 1 : -1; pos = new THREE.Vector3(sf * D / 2, 0.7 + rng() * 1.5, -5 + rng() * 10); nrm = new THREE.Vector3(sf, 0, 0); }
+        addTearAt("ネットの破れ", part, pos, nrm, 0.55, false);
+      }
+      kinkPostOf("周囲柱", "周囲柱の腰折れ", MAT.pipe);
+      for (let i = 0; i < 2; i++) {
+        const wires = collectByMember("つり線", "CylinderGeometry");
+        const m = pick(wires, rng);
+        if (!m) break;
+        const [pLow, pHigh] = beamEndpoints(m).sort((a, b) => a.y - b.y);
+        m.parent.remove(m);
+        const member = "DMG" + (idx + 1) + ":つり線の切断";
+        const hang = pHigh.clone().add(new THREE.Vector3(0.08, -0.7, 0.08));
+        modelGroup.add(tag(pipeBetween(pHigh, hang, 0.008, MAT.wire), "天井面", member));
+        reg("つり線の切断(天井面)", "cut", pHigh.clone().add(new THREE.Vector3(0, 0.15, 0)), member, "天井面");
+      }
+    } else {
+      addTearAt("ネットの破れ", "天井面",
+        new THREE.Vector3(-7 + rng() * 14, wallH + 0.01, -5 + rng() * 10), new THREE.Vector3(0, 1, 0), 0.6, false);
+      sagStraightOf("幹線", "幹線のまがり(たるみ)", MAT.wire, 0.35, false);
+      kinkPostOf("中つり柱", "中つり柱の腰折れ", MAT.pipe);
+    }
+  }
+  return damages;
+}
+
 function selectedTargets() {
   if (!state.selectedMember) return null;
+  const entry = currentDef && currentDef.members.find((x) => x.key === state.selectedMember);
+  if (entry && entry.targets) return new Set(entry.targets);
   const t = MEMBER_TARGETS[state.typeKey + ":" + state.selectedMember];
   return t ? new Set(t) : null;
 }
@@ -857,8 +1142,8 @@ function renderLabels() {
   currentDef.members.forEach((m, i) => {
     const div = document.createElement("div");
     div.className = "label";
-    div.innerHTML = `<div class="label-chip${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
-    div.addEventListener("click", () => { state.selectedMember = m.key; renderLabels(); renderPanel(); applyMode(); });
+    div.innerHTML = `<div class="label-chip${m.isDamage ? " dmg" : ""}${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
+    div.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
     labelsHolder.appendChild(div);
     labelEntries.push({ el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
   });
@@ -883,10 +1168,39 @@ function renderLabels() {
 
 function updateLabelPositions() {
   const w = holder.clientWidth, h = holder.clientHeight;
-  labelEntries.forEach((e) => {
-    const v = e.pos.clone().project(camera);
-    e.el.style.transform = `translate(-50%,-100%) translate(${(v.x*0.5+0.5)*w}px, ${(-v.y*0.5+0.5)*h}px)`;
-    e.el.style.display = v.z > 1 ? "none" : "block";
+  const items = labelEntries.map((e) => {
+    const pr = e.pos.clone().project(camera);
+    return { e, x: (pr.x * 0.5 + 0.5) * w, y: (-pr.y * 0.5 + 0.5) * h, z: pr.z, behind: pr.z > 1 };
+  });
+  // 優先度: 選択中 > 被害 > 通常。近いものを優先
+  const prio = (it) => {
+    const chip = it.e.el.firstElementChild;
+    let p = 0;
+    if (chip && chip.classList.contains("active")) p += 100;
+    if (chip && chip.classList.contains("dmg")) p += 10;
+    return p;
+  };
+  items.sort((a, b) => (prio(b) - prio(a)) || (a.z - b.z));
+  const placed = [];
+  items.forEach((it) => {
+    const el = it.e.el;
+    if (it.behind || it.x < -60 || it.x > w + 60 || it.y < -40 || it.y > h + 40) {
+      el.style.visibility = "hidden"; return;
+    }
+    if (!it.e.cw) { it.e.cw = el.offsetWidth || 90; it.e.ch = el.offsetHeight || 22; }
+    const cw = it.e.cw, ch = it.e.ch;
+    let y = it.y - 6; // 少し上げて被害・部材の視覚表現に重ねない
+    let ok = false;
+    for (let step = 0; step < 5; step++) {
+      const rect = { l: it.x - cw / 2 - 3, r: it.x + cw / 2 + 3, t: y - ch, b: y };
+      if (!placed.some((r) => r.l < rect.r && rect.l < r.r && r.t < rect.b && rect.t < r.b)) {
+        ok = true; placed.push(rect); break;
+      }
+      y -= ch + 4; // 重なる場合は上に段積み退避
+    }
+    if (!ok) { el.style.visibility = "hidden"; return; }
+    el.style.visibility = "visible";
+    el.style.transform = `translate(-50%,-100%) translate(${it.x}px, ${y}px)`;
   });
 }
 
@@ -930,7 +1244,8 @@ dom.addEventListener("click", (e) => {
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(markerMeshes);
   if (hits.length > 0) {
-    state.selectedMember = hits[0].object.userData.key;
+    const hk = hits[0].object.userData.key;
+    state.selectedMember = state.selectedMember === hk ? null : hk;
     renderLabels(); renderPanel(); applyMode();
   }
 });
@@ -1025,6 +1340,33 @@ function renderPanel() {
   });
   panel.appendChild(secCover);
 
+  // 損害評価の練習(被害シミュレーション)
+  const secDmg = el("div", "section", "<h2>損害評価の練習(被害シミュレーション)</h2>");
+  const rowSc = el("div", "btn-row");
+  [["none", "被害なし"], ["typhoon", "台風(風害)"], ["snow", "大雪(雪害)"]].forEach(([k, lb]) => {
+    const b = el("button", "btn" + (state.dmgScenario === k ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.dmgScenario = k; state.selectedMember = null; rebuild(false); });
+    rowSc.appendChild(b);
+  });
+  secDmg.appendChild(rowSc);
+  if (state.dmgScenario !== "none") {
+    const br = el("button", "btn", "🔄 別の被害パターンを生成");
+    br.addEventListener("click", () => { state.dmgSeed++; state.selectedMember = null; rebuild(false); });
+    br.style.marginTop = "6px";
+    secDmg.appendChild(br);
+    const dmgs = currentDef.members.filter((m) => m.isDamage);
+    secDmg.appendChild(el("div", "legend-cap", `被害箇所は赤色マーカーで表示されます(全${dmgs.length}箇所)。各ボタンを押すと該当部がハイライトされ、評価の着眼点が表示されます。`));
+    dmgs.forEach((m) => {
+      const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
+      b.style.borderColor = state.selectedMember === m.key ? "#f59e0b" : "#fca5a5";
+      b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
+      secDmg.appendChild(b);
+    });
+    const activeD = dmgs.find((m) => m.key === state.selectedMember);
+    if (activeD) secDmg.appendChild(el("div", "note-box", `<div class="title">${activeD.name}</div>${activeD.note}`));
+  }
+  panel.appendChild(secDmg);
+
   // 寸法名称
   const secDim = el("div", "section", "<h2>外面・寸法の名称(第2)</h2>");
   const bd = el("button", "btn" + (state.showDims ? " active" : ""),
@@ -1048,12 +1390,12 @@ function renderPanel() {
 
   // 部材と着眼点
   const secMem = el("div", "section", "<h2>部材と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部材はモデル上でオレンジ色に点滅表示されます</div>");
-  currentDef.members.forEach((m) => {
+  currentDef.members.filter((m) => !m.isDamage).forEach((m) => {
     const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
-    b.addEventListener("click", () => { state.selectedMember = m.key; renderLabels(); renderPanel(); applyMode(); });
+    b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
     secMem.appendChild(b);
   });
-  const active = currentDef.members.find((m) => m.key === state.selectedMember);
+  const active = currentDef.members.find((m) => m.key === state.selectedMember && !m.isDamage);
   if (active) {
     secMem.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));
   }

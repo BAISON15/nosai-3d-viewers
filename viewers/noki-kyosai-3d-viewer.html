@@ -766,17 +766,46 @@ function renderLabels() {
     const div = document.createElement("div");
     div.className = "label";
     div.innerHTML = `<div class="label-chip${state.selectedMember === mk.key ? " active" : ""}">${mk.name}</div>`;
-    div.addEventListener("click", () => { state.selectedMember = mk.key; renderLabels(); renderPanel(); applyHighlight(); });
+    div.addEventListener("click", () => { state.selectedMember = state.selectedMember === mk.key ? null : mk.key; renderLabels(); renderPanel(); applyHighlight(); });
     labelsHolder.appendChild(div);
     labelEntries.push({ el: div, pos: new THREE.Vector3(mk.pos[0], mk.pos[1], mk.pos[2]) });
   });
 }
 function updateLabelPositions() {
   const w = holder.clientWidth, h = holder.clientHeight;
-  labelEntries.forEach((e) => {
-    const p = e.pos.clone().project(camera);
-    e.el.style.transform = `translate(-50%,-100%) translate(${(p.x * 0.5 + 0.5) * w}px, ${(-p.y * 0.5 + 0.5) * h}px)`;
-    e.el.style.display = p.z > 1 ? "none" : "block";
+  const items = labelEntries.map((e) => {
+    const pr = e.pos.clone().project(camera);
+    return { e, x: (pr.x * 0.5 + 0.5) * w, y: (-pr.y * 0.5 + 0.5) * h, z: pr.z, behind: pr.z > 1 };
+  });
+  // 優先度: 選択中 > 被害 > 通常。近いものを優先
+  const prio = (it) => {
+    const chip = it.e.el.firstElementChild;
+    let p = 0;
+    if (chip && chip.classList.contains("active")) p += 100;
+    if (chip && chip.classList.contains("dmg")) p += 10;
+    return p;
+  };
+  items.sort((a, b) => (prio(b) - prio(a)) || (a.z - b.z));
+  const placed = [];
+  items.forEach((it) => {
+    const el = it.e.el;
+    if (it.behind || it.x < -60 || it.x > w + 60 || it.y < -40 || it.y > h + 40) {
+      el.style.visibility = "hidden"; return;
+    }
+    if (!it.e.cw) { it.e.cw = el.offsetWidth || 90; it.e.ch = el.offsetHeight || 22; }
+    const cw = it.e.cw, ch = it.e.ch;
+    let y = it.y - 6; // 少し上げて被害・部材の視覚表現に重ねない
+    let ok = false;
+    for (let step = 0; step < 5; step++) {
+      const rect = { l: it.x - cw / 2 - 3, r: it.x + cw / 2 + 3, t: y - ch, b: y };
+      if (!placed.some((r) => r.l < rect.r && rect.l < r.r && r.t < rect.b && rect.t < r.b)) {
+        ok = true; placed.push(rect); break;
+      }
+      y -= ch + 4; // 重なる場合は上に段積み退避
+    }
+    if (!ok) { el.style.visibility = "hidden"; return; }
+    el.style.visibility = "visible";
+    el.style.transform = `translate(-50%,-100%) translate(${it.x}px, ${y}px)`;
   });
 }
 const dom = renderer.domElement;
@@ -808,7 +837,7 @@ dom.addEventListener("click", (e) => {
   const mouse = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(markerMeshes);
-  if (hits.length > 0) { state.selectedMember = hits[0].object.userData.key; renderLabels(); renderPanel(); applyHighlight(); }
+  if (hits.length > 0) { const hk = hits[0].object.userData.key; state.selectedMember = state.selectedMember === hk ? null : hk; renderLabels(); renderPanel(); applyHighlight(); }
 });
 window.addEventListener("resize", () => {
   camera.aspect = holder.clientWidth / holder.clientHeight;
@@ -896,7 +925,7 @@ function renderPanel() {
   const secP = el("div", "section", "<h2>部位と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部位はモデル上でオレンジ色に点滅表示されます</div>");
   currentDef.members.forEach((mk) => {
     const b = el("button", "btn" + (state.selectedMember === mk.key ? " active" : ""), mk.name);
-    b.addEventListener("click", () => { state.selectedMember = mk.key; renderLabels(); renderPanel(); applyHighlight(); });
+    b.addEventListener("click", () => { state.selectedMember = state.selectedMember === mk.key ? null : mk.key; renderLabels(); renderPanel(); applyHighlight(); });
     secP.appendChild(b);
   });
   const active = currentDef.members.find((m) => m.key === state.selectedMember);
