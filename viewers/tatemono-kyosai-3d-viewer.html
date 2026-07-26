@@ -735,6 +735,8 @@ const state = {
   mode: "normal",   // normal | parts | frame | interior
   showDims: false,
   selectedMember: null,
+  detailParts: false,
+  focusDim: true,
   selectedDim: null,
   dmgScenario: "none",   // none | wind | hail | snow | flood
   dmgSeed: 1,
@@ -779,6 +781,8 @@ function rebuild(resetCam) {
   modelGroup = currentDef.group;
   scene.add(modelGroup);
 
+  buildMemberColors();
+  if (state.detailParts) currentDef.members = buildDetailedMembers();
   currentDef.members = currentDef.members.concat(applyDamage());
 
   const geo = new THREE.SphereGeometry(0.13, 16, 16);
@@ -827,6 +831,87 @@ const MEMBER_TARGETS = {
   amado:   ["雨戸・戸袋"],
   parapet: ["パラペット・笠木"],
 };
+const DETAIL_NOTES = {
+  "通し柱": "1階から2階まで通る主要な柱。折損・傾きは損害割合に大きく影響する構造部位です。",
+  "柱(隅柱)": "建物四隅の柱。折損・傾きは構造上の重要な損害です。",
+  "管柱": "各階ごとの柱。壁内にあるため、内装を剥がした状態での確認が必要になることがあります。",
+  "間柱": "壁下地を支える細い柱。外壁の飛来物衝突では、下地まで損害が及んでいるかを確認します。",
+  "筋かい": "耐力壁の斜材。地震・強風後は破断・抜けの有無を確認します。",
+  "土台": "床上浸水時は含水・汚損を確認します。基礎との緊結部(アンカーボルト)も確認対象です。",
+  "床組(大引)": "床を支える横架材。浸水時の含水・腐朽を確認します。",
+  "胴差し": "1階と2階の境の横架材。2階建てでは階ごとに損害範囲を整理します。",
+  "床梁(2階床組)": "2階床を支える梁。1階天井まで雨漏りが達している場合は波及を確認します。",
+  "桁": "柱の上端をつなぐ横架材。小屋組を受けます。",
+  "妻梁": "妻側の横架材。",
+  "小屋梁": "小屋組を受ける横架材。屋根面の変形時は小屋組への波及を確認します。",
+  "小屋束": "棟木・母屋を支える束。積雪荷重による座屈の有無を確認します。",
+  "棟木": "屋根の最頂部の横架材。棟部の損傷時は棟木への波及も確認します。",
+  "母屋": "垂木を受ける横架材。屋根面の波打ちがある場合に確認します。",
+  "垂木": "屋根面を構成する斜材。葺き材の下の損害を判断する重要部材です。",
+  "布基礎": "亀裂・不同沈下・傾きを確認します。地震等では建物の傾斜の程度が損害認定の重要な指標です。",
+  "布基礎(中通り)": "建物中央部の基礎。不同沈下の判断材料になります。",
+  "独立基礎": "点で支える基礎。沈下・傾きを確認します。",
+  "屋根葺き材": "風災ではめくれ・ずれ・飛散、雹災では割れ・貫通痕、雪害では変形が代表的です。",
+  "棟(棟瓦・棟板金)": "風の影響を最も受けやすい部位。近景・遠景の両方を写真記録します。",
+  "破風・鼻隠し": "屋根端部の化粧板。妻側を破風、軒先側を鼻隠しと呼びます。風災で捲れやすい部位です。",
+  "隅棟": "寄棟の四隅の棟。大棟と併せて飛散・ずれを確認します。",
+  "パラペット・笠木": "屋上周囲の立ち上がりと上端の笠木。笠木板金は強風で外れやすく、雨漏りの起点になります。",
+  "軒樋": "雪の重みや台風で変形・脱落しやすい部位。本数・延長を把握します。",
+  "竪樋": "縦方向の雨樋。脱落・破損を確認します。",
+  "庇": "窓や出入口上部の小庇。強風で煽られて変形・脱落しやすい付帯部位です。",
+  "外壁": "飛来物の衝突痕・ひび割れ・剥落を確認。水災では浸水痕の高さが浸水深の証拠になります。",
+  "外壁(妻壁)": "妻側の壁面。高所のため強風の影響を受けやすい部位です。",
+  "掃き出し窓(1階)": "開口部。ガラス割れ・サッシ変形を確認します。",
+  "腰窓(1階)": "開口部。飛来物の飛来方向と破損位置の整合を確認します。",
+  "窓(2階)": "2階の開口部。高所のため飛来物被害を受けやすい部位です。",
+  "雨戸・戸袋": "風災時は飛散・変形のほか、戸袋内への飛来物・浸水も確認します。",
+  "玄関戸": "開口部(建具)。浸水時は戸・枠の変形や開閉不良も損害の対象になり得ます。",
+  "附帯設備(給湯器等)": "建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。",
+  "床(1階)": "水災では浸水深(床下/床上)が損害額算定の基礎になります。反り・浮き・シミを確認します。",
+  "床(2階)": "上階からの漏水時に被害を受けます。",
+  "天井(1階)": "天井のシミは屋根損害・上階漏水のサインです。",
+  "天井(2階)": "天井のシミは屋根損害のサインです。",
+  "内壁(間仕切り)": "雨漏り・漏水によるシミ・膨れ・剥がれを確認します。",
+  "内部建具(ドア)": "内部造作。浸水・水濡れによる変形を確認します。",
+  "階段": "内部造作。浸水や消火活動による水濡れの影響を受けやすい動線部位です。",
+};
+const DETAIL_FALLBACK = (name, part, count) =>
+  `${part ? part + "の" : ""}部材「${name}」。損傷の有無・範囲を確認し、修理費(復旧に必要な額)を新調達価額の範囲で見積もります。`;
+
+/* ============================================================
+   部材の個別分割: モデルの実データから部材名ごとにエントリを自動生成
+============================================================ */
+function buildDetailedMembers() {
+  const map = new Map();
+  modelGroup.updateMatrixWorld(true);
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.member) return;
+    const name = m.userData.member;
+    if (name.indexOf("DMG") === 0) return;           // 被害エントリは対象外
+    if (!map.has(name)) map.set(name, { box: new THREE.Box3(), part: m.userData.part || "", count: 0 });
+    const e = map.get(name);
+    const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+    g.computeBoundingBox();
+    e.box.union(g.boundingBox);
+    e.count++;
+  });
+  const out = [];
+  let i = 0;
+  for (const [name, e] of map) {
+    if (e.count === 0 || e.box.isEmpty()) continue;
+    i++;
+    const c = e.box.getCenter(new THREE.Vector3());
+    const flat = new THREE.Vector3(c.x, 0, c.z);
+    let pos;
+    if (flat.length() < 0.4) pos = [c.x, e.box.max.y + 0.3, c.z];
+    else { flat.normalize().multiplyScalar(0.55); pos = [c.x + flat.x, c.y, c.z + flat.z]; }
+    const note = DETAIL_NOTES[name] || DETAIL_FALLBACK(name, e.part, e.count);
+    out.push({ key: "dp" + i, part: e.part, name: name + (e.count > 1 ? " ×" + e.count : ""), targets: [name],
+               pos, note: note + `\n\n(この部材の使用数: ${e.count}${e.part ? " / 区分: " + e.part : ""})` });
+  }
+  return out;
+}
+
 /* ============================================================
    損害評価の練習: 被害シミュレーション(建物共済)
 ============================================================ */
@@ -1077,6 +1162,50 @@ function selectedTargets() {
   return t ? new Set(t) : null;
 }
 
+/* ============================================================
+   部材ごとの色分け(柱・梁・筋かい等を見分けるための表示)
+   現モデルに存在する部材名を並べ、黄金角で色相を割り当てて識別性を確保
+============================================================ */
+const dimOutMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af, transparent: true, opacity: 0.16, depthWrite: false, roughness: 1 });
+let memberColorMap = new Map();
+const memberMatCache = new Map();
+function buildMemberColors() {
+  memberColorMap = new Map();
+  memberMatCache.clear();
+  const names = new Set();
+  modelGroup.traverse((m) => { if (m.isMesh && m.userData.member && m.userData.member.indexOf("DMG") !== 0) names.add(m.userData.member); });
+  const sorted = [...names].sort();
+  sorted.forEach((n, i) => {
+    const hue = ((i * 137.508) % 360) / 360;
+    const sat = 0.62 + (i % 3) * 0.10;
+    const lig = 0.44 + (i % 4) * 0.06;
+    memberColorMap.set(n, new THREE.Color().setHSL(hue, sat, lig));
+  });
+}
+function memberMat(name, translucent) {
+  const key = name + (translucent ? "_t" : "_s");
+  if (!memberMatCache.has(key)) {
+    const c = memberColorMap.get(name) || new THREE.Color(0xa3a3a3);
+    memberMatCache.set(key, new THREE.MeshStandardMaterial({
+      color: c, roughness: 0.65, metalness: 0.05, side: THREE.DoubleSide,
+      transparent: !!translucent, opacity: translucent ? 0.42 : 1.0,
+    }));
+  }
+  return memberMatCache.get(key);
+}
+function memberColorHex(name) {
+  const c = memberColorMap.get(name);
+  return c ? "#" + c.getHexString() : "#a3a3a3";
+}
+function memberLegendItems() {
+  const counts = new Map();
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.member || m.userData.member.indexOf("DMG") === 0) return;
+    counts.set(m.userData.member, (counts.get(m.userData.member) || 0) + 1);
+  });
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"));
+}
+
 function applyMode() {
   const tg = selectedTargets();
   const matchedLayers = new Set();
@@ -1096,6 +1225,8 @@ function applyMode() {
       vis = (d.layer === "frame" || d.layer === "found"); mat = d.baseMat;
     } else if (state.mode === "parts") {
       vis = true; mat = partMat(d.part, d.layer === "ext");
+    } else if (state.mode === "members") {
+      vis = true; mat = memberMat(d.member, d.layer === "ext");
     } else if (state.mode === "interior") {
       vis = true; mat = d.layer === "ext" ? ghostMat : d.baseMat;
     } else {
@@ -1103,6 +1234,8 @@ function applyMode() {
     }
     if (tg && tg.has(d.member)) {
       vis = true; mat = hlMat;
+    } else if (tg && state.focusDim) {
+      mat = dimOutMat;
     } else {
       if (xrayExt && d.layer === "ext") mat = ghostMat;
       if (xrayInt && d.layer === "int") mat = ghostMat;
@@ -1318,12 +1451,21 @@ function renderPanel() {
   // 表示モード
   const secMode = el("div", "section", "<h2>表示モード</h2>");
   const rowM = el("div", "btn-row");
-  [["normal","標準"],["parts","部位 色分け"],["frame","骨組み(軸組)"],["interior","内部(外装を透過)"]].forEach(([k, lb]) => {
+  [["normal","標準"],["parts","部位 色分け"],["members","部材ごとに色分け"],["frame","骨組み(軸組)"],["interior","内部(外装を透過)"]].forEach(([k, lb]) => {
     const b = el("button", "btn" + (state.mode === k ? " active" : ""), lb);
     b.addEventListener("click", () => { state.mode = k; applyMode(); renderPanel(); });
     rowM.appendChild(b);
   });
   secMode.appendChild(rowM);
+  if (state.mode === "members") {
+    const lg = el("div", "legend");
+    memberLegendItems().forEach(([nm, ct]) => {
+      lg.appendChild(el("div", "legend-item",
+        `<span class="sw" style="background:${memberColorHex(nm)}"></span>${nm}<span style="color:#94a3b8;margin-left:auto">×${ct}</span>`));
+    });
+    lg.appendChild(el("div", "legend-cap", "部材の種類ごとに色を変えています。柱・梁・筋かい・母屋・垂木などの違いを見分ける練習に使えます。外装は半透明にしているので、内部の軸組も同時に確認できます(「骨組み(軸組)」と併用すると分かりやすくなります)。"));
+    secMode.appendChild(lg);
+  }
   if (state.mode === "parts") {
     const lg = el("div", "legend");
     Object.keys(PART_COLORS).forEach((p) => {
@@ -1420,12 +1562,43 @@ function renderPanel() {
   panel.appendChild(secD);
 
   // 部材・部位
+  // 部材の分け方
+  const secGran = el("div", "section", "<h2>部材の分け方</h2>");
+  const rowGran = el("div", "btn-row");
+  [[false, "まとめて"], [true, "個別(部材ごと)"]].forEach(([v, lb]) => {
+    const b = el("button", "btn" + (state.detailParts === v ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.detailParts = v; state.selectedMember = null; rebuild(false); });
+    rowGran.appendChild(b);
+  });
+  secGran.appendChild(rowGran);
+  const bFD = el("button", "btn" + (state.focusDim ? " active" : ""), (state.focusDim ? "☑ " : "☐ ") + "選択した部材以外を淡色化");
+  bFD.style.marginTop = "6px";
+  bFD.addEventListener("click", () => { state.focusDim = !state.focusDim; applyMode(); renderPanel(); });
+  secGran.appendChild(bFD);
+  secGran.appendChild(el("div", "legend-cap", state.detailParts
+    ? "モデル上の部材名ごとに分けて表示しています(柱・梁・筋かい等を個別に選択できます)。"
+    : "関連する部材をまとめた区分で表示しています。「個別」にすると柱・梁・筋かいなどを1つずつ選択できます。"));
+  panel.appendChild(secGran);
+
   const secM = el("div", "section", "<h2>部位と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部位はモデル上でオレンジ色に点滅します。内部の部位を選ぶと外装が自動的に透けて表示されます</div>");
-  currentDef.members.filter((m) => !m.isDamage).forEach((m) => {
+  const plain = currentDef.members.filter((m) => !m.isDamage);
+  const mkBtn = (m) => {
     const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
     b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
-    secM.appendChild(b);
-  });
+    return b;
+  };
+  if (state.detailParts) {
+    const groups = new Map();
+    plain.forEach((m) => { const g = m.part || "その他"; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(m); });
+    [...groups.entries()].forEach(([g, arr]) => {
+      const h = el("div", "legend-cap", `<b style="color:#475569">${g}</b>`);
+      h.style.margin = "8px 0 3px";
+      secM.appendChild(h);
+      arr.forEach((m) => secM.appendChild(mkBtn(m)));
+    });
+  } else {
+    plain.forEach((m) => secM.appendChild(mkBtn(m)));
+  }
   const active = currentDef.members.find((m) => m.key === state.selectedMember && !m.isDamage);
   if (active) {
     secM.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));

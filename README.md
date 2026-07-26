@@ -1,11 +1,11 @@
 # 損害保険 評価研修用 3Dビューア (Agricultural & Building Insurance Assessment 3D Viewers)
 
-農業共済(NOSAI)の**園芸施設共済**および**建物共済**の評価研修を想定した、ブラウザで動くインタラクティブな3Dモデル集です。Three.js製・単一HTMLファイルで、インターネット接続があればダブルクリックで起動できます(インストール不要)。
+農業共済(NOSAI)の**園芸施設共済**および**建物共済、農機具共済**の評価研修を想定した、ブラウザで動くインタラクティブな3Dモデル集です。Three.js製・単一HTMLファイルで、インターネット接続があればダブルクリックで起動できます(インストール不要)。
 
 > **技術メモ:** Three.js は最新安定版(0.184.0, r184)を ES Modules + importmap 方式で CDN から読み込みます。
 
 **🔗 デモ: https://baison15.github.io/nosai-3d-viewers/**
-*(公開後、実際のURLに書き換えてください)*
+
 
 ## 収録ビューア
 
@@ -31,8 +31,7 @@
 ```bash
 git clone https://github.com/BAISON15/nosai-3d-viewers.git
 cd <リポジトリ名>
-# お好みのブラウザで viewers/*.html を直接開いてください
-```
+
 
 ## ⚠️ 免責事項(必ずお読みください)
 
@@ -60,9 +59,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-```
-
-`[year]` と `[your name]` は公開時にご自身の情報に置き換えてください。
 
 ## 貢献
 

@@ -677,6 +677,8 @@ const state = {
   mode: "normal",       // normal | parts | frame
   showDims: false,
   selectedMember: null,
+  detailParts: false,
+  focusDim: true,
   dmgScenario: "none",   // none | typhoon | snow
   dmgSeed: 1,
   selectedDim: null,
@@ -725,6 +727,8 @@ function rebuild(resetCam) {
   modelGroup = currentDef.group;
   scene.add(modelGroup);
 
+  buildMemberColors();
+  if (state.detailParts) currentDef.members = buildDetailedMembers();
   currentDef.members = currentDef.members.concat(applyDamage());
 
   const geo = new THREE.SphereGeometry(0.14, 16, 16);
@@ -781,6 +785,78 @@ const MEMBER_TARGETS = {
   "glass:tanidoi": ["谷樋"],
   "glass:setsuzoku": ["接続側面(柱)", "接続側面(桁)"],
 };
+const DETAIL_NOTES = {
+  "アーチ・パイプ": "Ⅱ類の主要骨材。被害態様は①ちぎれ・のび ②腰折れ ③まがり・ねじれ ④回転・移動 の別で判定します。Ⅱ類・Ⅱ類利用型の分損は「価額÷総スパン数×被害スパン数」で算出するため、被害スパンの数え方が起点になります。",
+  "母屋(直管)": "アーチをつなぐ直管。取付金具・バンド・ボルト類は独立部材とせず各部に含めて評価します。",
+  "母屋": "屋根面の部材。母屋・胴ぶち・たる木の間隔が狭く本数が多い施設は標準価額の増額事由、広く少ない施設は減額事由です(第3-1(2)エ)。",
+  "たる木(受け材)": "屋根面の部材。取替割合=取替数/総使用数、補修割合=補修数/総使用数×0.7 で算出します。",
+  "棟木": "棟木・中柱を含む面をA面、それ以外をB面と区分します(第4-1(1)イ)。",
+  "梁": "屋根面の主要部材。損傷程度「甚」は取替、「中」は取替又は補修、「軽」は補修として評価します。",
+  "柱": "側面の主要部材。損傷程度を甚・中・軽で判定します。",
+  "桁": "側面の部材。柱とともに構面を構成します。",
+  "胴ぶち": "側面の横材。間隔・本数は標準価額の増減額事由に関わります。",
+  "筋かい": "側面の斜材。補修不可能なもの、断面形状が復元しないねじれのものは取替として評価します。",
+  "妻面間柱": "妻面の部材。妻面はA面・B面に区分して評価します。",
+  "妻面胴ぶち": "妻面の横材。",
+  "出入口戸": "妻面の部材として評価します。出入口戸・天窓・側窓が多いことは増額事由です。",
+  "被覆材": "プラスチックフィルム等。被害額=価額×(100%−自然消耗割合)×損害割合。新たに被覆を要する面積が被覆面積の80%以上なら被害面積割合は100%とします。",
+  "天窓": "窓が多いこと、窓枠等にアルミを使用していることは増額事由です(一部アルミ又は総アルミのガラス室を除く)。",
+  "独立基礎": "基礎はコンクリート(亀裂・はく落・回転・移動)とアンカーボルト(のび・引抜け・まがり)に分けて確認します。",
+  "布基礎": "基礎が大きく根切りが深いことは増額事由、小さく浅いことは減額事由です。",
+  "谷樋": "連棟の樋は屋根面A面に含めて評価します(第4-1(1)オ)。",
+  "接続側面(柱)": "連棟の接続側面に使用されている部材は屋根面A面に含めます(第4-1(1)エ)。",
+  "接続側面(桁)": "連棟の接続側面に使用されている部材は屋根面A面に含めます(第4-1(1)エ)。",
+  "支柱": "雨よけ施設の支柱。80型の係数・割合は骨組が対応する30〜62型の値を準用します(別表3・5備考)。",
+  "桁(直管)": "雨よけ施設の桁。",
+  "周囲柱": "Ⅶ類は周囲面・天井面・基礎の3区分で評価します(第4-1(1)ア)。",
+  "隅柱": "周囲面の部材。",
+  "周囲線": "周囲面の部材(別表5・90-1型)。",
+  "控え線": "控え線は周囲面に含まれる部材です(別表5・90-1型)。",
+  "中つり柱": "天井面の部材。",
+  "幹線": "天井面の部材。",
+  "つり線": "天井面の部材。被害態様①「ちぎれ」は部材が2つに分離した状態を指します。",
+  "受石": "基礎の部材。",
+  "アンカー": "Ⅶ類のアンカーの被害態様は のび・まがり・引抜け・移動 です。",
+  "ネット(周囲面)": "被覆面積構成割合は周囲面23.2%・天井面76.8%(別表3・90-1型)。",
+  "ネット(天井面)": "被覆面積構成割合は周囲面23.2%・天井面76.8%(別表3・90-1型)。",
+};
+const DETAIL_FALLBACK = (name, part, count) =>
+  `${part ? part + "の" : ""}部材「${name}」。部材ごとに取替え又は補修を要するかを調査し、取替割合(取替数/総使用数)・補修割合(補修数/総使用数×0.7)を算出、別表5の部材別価額割合を乗じて損害程度割合を求めます。`;
+
+/* ============================================================
+   部材の個別分割: モデルの実データから部材名ごとにエントリを自動生成
+============================================================ */
+function buildDetailedMembers() {
+  const map = new Map();
+  modelGroup.updateMatrixWorld(true);
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.member) return;
+    const name = m.userData.member;
+    if (name.indexOf("DMG") === 0) return;           // 被害エントリは対象外
+    if (!map.has(name)) map.set(name, { box: new THREE.Box3(), part: m.userData.part || "", count: 0 });
+    const e = map.get(name);
+    const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+    g.computeBoundingBox();
+    e.box.union(g.boundingBox);
+    e.count++;
+  });
+  const out = [];
+  let i = 0;
+  for (const [name, e] of map) {
+    if (e.count === 0 || e.box.isEmpty()) continue;
+    i++;
+    const c = e.box.getCenter(new THREE.Vector3());
+    const flat = new THREE.Vector3(c.x, 0, c.z);
+    let pos;
+    if (flat.length() < 0.4) pos = [c.x, e.box.max.y + 0.3, c.z];
+    else { flat.normalize().multiplyScalar(0.55); pos = [c.x + flat.x, c.y, c.z + flat.z]; }
+    const note = DETAIL_NOTES[name] || DETAIL_FALLBACK(name, e.part, e.count);
+    out.push({ key: "dp" + i, part: e.part, name: name + (e.count > 1 ? " ×" + e.count : ""), targets: [name],
+               pos, note: note + `\n\n(この部材の使用数: ${e.count}${e.part ? " / 区分: " + e.part : ""})` });
+  }
+  return out;
+}
+
 /* ============================================================
    損害評価の練習: 被害シミュレーション
    要領第4の被害態様(①ちぎれ ②腰折れ ③まがり ⑤はく落 等)に対応
@@ -1064,6 +1140,50 @@ function selectedTargets() {
   return t ? new Set(t) : null;
 }
 
+/* ============================================================
+   部材ごとの色分け(柱・梁・筋かい等を見分けるための表示)
+   現モデルに存在する部材名を並べ、黄金角で色相を割り当てて識別性を確保
+============================================================ */
+const dimOutMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af, transparent: true, opacity: 0.16, depthWrite: false, roughness: 1 });
+let memberColorMap = new Map();
+const memberMatCache = new Map();
+function buildMemberColors() {
+  memberColorMap = new Map();
+  memberMatCache.clear();
+  const names = new Set();
+  modelGroup.traverse((m) => { if (m.isMesh && m.userData.member && m.userData.member.indexOf("DMG") !== 0) names.add(m.userData.member); });
+  const sorted = [...names].sort();
+  sorted.forEach((n, i) => {
+    const hue = ((i * 137.508) % 360) / 360;
+    const sat = 0.62 + (i % 3) * 0.10;
+    const lig = 0.44 + (i % 4) * 0.06;
+    memberColorMap.set(n, new THREE.Color().setHSL(hue, sat, lig));
+  });
+}
+function memberMat(name, translucent) {
+  const key = name + (translucent ? "_t" : "_s");
+  if (!memberMatCache.has(key)) {
+    const c = memberColorMap.get(name) || new THREE.Color(0xa3a3a3);
+    memberMatCache.set(key, new THREE.MeshStandardMaterial({
+      color: c, roughness: 0.65, metalness: 0.05, side: THREE.DoubleSide,
+      transparent: !!translucent, opacity: translucent ? 0.42 : 1.0,
+    }));
+  }
+  return memberMatCache.get(key);
+}
+function memberColorHex(name) {
+  const c = memberColorMap.get(name);
+  return c ? "#" + c.getHexString() : "#a3a3a3";
+}
+function memberLegendItems() {
+  const counts = new Map();
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.member || m.userData.member.indexOf("DMG") === 0) return;
+    counts.set(m.userData.member, (counts.get(m.userData.member) || 0) + 1);
+  });
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"));
+}
+
 function applyMode() {
   const tg = selectedTargets();
   modelGroup.traverse((m) => {
@@ -1074,10 +1194,13 @@ function applyMode() {
       vis = !d.isCover; mat = d.baseMat;
     } else if (state.mode === "parts") {
       vis = true; mat = partMat(d.part, d.isCover);
+    } else if (state.mode === "members") {
+      vis = true; mat = memberMat(d.member, d.isCover);
     } else {
       vis = true; mat = d.baseMat;
     }
     if (tg && tg.has(d.member)) { vis = true; mat = d.isCover ? hlCover : hlSolid; }
+    else if (tg && state.focusDim) { mat = dimOutMat; }
     m.visible = vis;
     m.material = mat;
   });
@@ -1311,12 +1434,21 @@ function renderPanel() {
   // 表示モード
   const secMode = el("div", "section", "<h2>表示モード</h2>");
   const row = el("div", "btn-row");
-  [["normal","標準"],["parts","構造部分 色分け"],["frame","骨組みのみ"]].forEach(([k, lb]) => {
+  [["normal","標準"],["parts","構造部分 色分け"],["members","部材ごとに色分け"],["frame","骨組みのみ"]].forEach(([k, lb]) => {
     const b = el("button", "btn" + (state.mode === k ? " active" : ""), lb);
     b.addEventListener("click", () => { state.mode = k; applyMode(); renderPanel(); });
     row.appendChild(b);
   });
   secMode.appendChild(row);
+  if (state.mode === "members") {
+    const lg = el("div", "legend");
+    memberLegendItems().forEach(([nm, ct]) => {
+      lg.appendChild(el("div", "legend-item",
+        `<span class="sw" style="background:${memberColorHex(nm)}"></span>${nm}<span style="color:#94a3b8;margin-left:auto">×${ct}</span>`));
+    });
+    lg.appendChild(el("div", "legend-cap", "部材の種類ごとに色を変えています。アーチ・母屋・胴ぶち・筋かいなど、形の似た部材の違いを見分ける練習に使えます。"));
+    secMode.appendChild(lg);
+  }
   if (state.mode === "parts") {
     const lg = el("div", "legend");
     currentDef.parts.forEach((p) => {
@@ -1389,12 +1521,43 @@ function renderPanel() {
   panel.appendChild(secDim);
 
   // 部材と着眼点
+  // 部材の分け方
+  const secGran = el("div", "section", "<h2>部材の分け方</h2>");
+  const rowGran = el("div", "btn-row");
+  [[false, "まとめて"], [true, "個別(部材ごと)"]].forEach(([v, lb]) => {
+    const b = el("button", "btn" + (state.detailParts === v ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.detailParts = v; state.selectedMember = null; rebuild(false); });
+    rowGran.appendChild(b);
+  });
+  secGran.appendChild(rowGran);
+  const bFD = el("button", "btn" + (state.focusDim ? " active" : ""), (state.focusDim ? "☑ " : "☐ ") + "選択した部材以外を淡色化");
+  bFD.style.marginTop = "6px";
+  bFD.addEventListener("click", () => { state.focusDim = !state.focusDim; applyMode(); renderPanel(); });
+  secGran.appendChild(bFD);
+  secGran.appendChild(el("div", "legend-cap", state.detailParts
+    ? "モデル上の部材名ごとに分けて表示しています(柱・梁・筋かい等を個別に選択できます)。"
+    : "関連する部材をまとめた区分で表示しています。「個別」にすると柱・梁・筋かいなどを1つずつ選択できます。"));
+  panel.appendChild(secGran);
+
   const secMem = el("div", "section", "<h2>部材と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部材はモデル上でオレンジ色に点滅表示されます</div>");
-  currentDef.members.filter((m) => !m.isDamage).forEach((m) => {
+  const plain = currentDef.members.filter((m) => !m.isDamage);
+  const mkBtn = (m) => {
     const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
     b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
-    secMem.appendChild(b);
-  });
+    return b;
+  };
+  if (state.detailParts) {
+    const groups = new Map();
+    plain.forEach((m) => { const g = m.part || "その他"; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(m); });
+    [...groups.entries()].forEach(([g, arr]) => {
+      const h = el("div", "legend-cap", `<b style="color:#475569">${g}</b>`);
+      h.style.margin = "8px 0 3px";
+      secMem.appendChild(h);
+      arr.forEach((m) => secMem.appendChild(mkBtn(m)));
+    });
+  } else {
+    plain.forEach((m) => secMem.appendChild(mkBtn(m)));
+  }
   const active = currentDef.members.find((m) => m.key === state.selectedMember && !m.isDamage);
   if (active) {
     secMem.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));

@@ -39,6 +39,9 @@
   .btn.active small { color: #b45309; }
   .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
   .btn-row .btn { flex: 1 1 45%; text-align: center; min-width: 96px; margin-bottom: 0; padding: 5px 6px; font-size: 11px; }
+  .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-bottom: 3px; }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); flex: none; }
   .legend-cap { font-size: 10px; color: #94a3b8; margin-top: 6px; line-height: 1.5; }
   .note-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; color: #475569; line-height: 1.7; margin-top: 4px; }
   .note-box .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
@@ -663,6 +666,59 @@ function buildKanriki(opt) {
   return { group: g, members, camR: 8, targetY: 1.3 };
 }
 
+const DETAIL_NOTES = {
+  "車体・シャーシ": "フレームの曲がり・亀裂は走行・作業に直結する損害です。",
+  "エンジン・ボンネット": "火災事故の起点になりやすい部位。焼損範囲(配線・補機類まで及ぶか)を確認します。",
+  "キャビン(ガラス・外装)": "転覆・衝突時に損傷しやすい部位。ガラス割れ・フレーム変形を確認します。",
+  "走行部(タイヤ・ホイール)": "衝突・落輪での変形・損傷を確認します。摩滅・自然消耗は対象外とされるのが一般的です。",
+  "3点リンク・PTO": "作業機の装着部。本体側と作業機側マストの双方の損傷を確認します。",
+  "植付部(植付爪・フロート)": "田植機の中核部位。畦や障害物との接触で損傷しやすい箇所です。",
+  "苗のせ台・予備苗台": "転倒・接触時に変形しやすい部位です。",
+  "刈取部(ディバイダ・引起し・刈刃)": "障害物や畦との接触で最も損傷しやすい部位です。",
+  "脱穀部(こぎ胴)": "石や金属の巻き込みで内部(こぎ歯・受網)が損傷することがあり、内部確認が必要です。",
+  "グレンタンク": "転覆・衝突時の外板変形を確認します。",
+  "排出オーガ": "展開したまま走行して構造物に接触する事故が典型例です。",
+  "走行部(クローラ)": "切損・脱輪・転輪の損傷を確認します。摩滅・自然消耗は対象外とされるのが一般的です。",
+  "薬液タンク": "転覆・衝突時の割れ・変形、ポンプ・配管への波及を確認します。",
+  "ブーム・ノズル(散布装置)": "展開したままの走行で電柱・支柱に接触するブーム損傷が典型事故です。",
+};
+const DETAIL_FALLBACK = (name, part, count) =>
+  `部材「${name}」。事故による損傷の有無・範囲を確認します。共済金は新調達価額を基準に修理費を補填する新価ベースが一般的です(摩滅・自然消耗による損害は対象外)。`;
+
+/* ============================================================
+   部材の個別分割: モデルの実データから部材名ごとにエントリを自動生成
+============================================================ */
+function buildDetailedMembers() {
+  const map = new Map();
+  modelGroup.updateMatrixWorld(true);
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.member) return;
+    const name = m.userData.member;
+    if (name.indexOf("DMG") === 0) return;           // 被害エントリは対象外
+    if (!map.has(name)) map.set(name, { box: new THREE.Box3(), part: m.userData.part || "", count: 0 });
+    const e = map.get(name);
+    const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+    g.computeBoundingBox();
+    e.box.union(g.boundingBox);
+    e.count++;
+  });
+  const out = [];
+  let i = 0;
+  for (const [name, e] of map) {
+    if (e.count === 0 || e.box.isEmpty()) continue;
+    i++;
+    const c = e.box.getCenter(new THREE.Vector3());
+    const flat = new THREE.Vector3(c.x, 0, c.z);
+    let pos;
+    if (flat.length() < 0.4) pos = [c.x, e.box.max.y + 0.3, c.z];
+    else { flat.normalize().multiplyScalar(0.55); pos = [c.x + flat.x, c.y, c.z + flat.z]; }
+    const note = DETAIL_NOTES[name] || DETAIL_FALLBACK(name, e.part, e.count);
+    out.push({ key: "dp" + i, part: e.part, name: name + (e.count > 1 ? " ×" + e.count : ""), targets: [name],
+               pos, note: note + `\n\n(この部材の使用数: ${e.count}${e.part ? " / 区分: " + e.part : ""})` });
+  }
+  return out;
+}
+
 /* ============================================================
    機種カタログ・状態
 ============================================================ */
@@ -684,6 +740,9 @@ const state = {
   comb2Auger: "stored",
   kanBoom: "extended",
   selectedMember: null,
+  detailParts: false,
+  memberColorMode: false,
+  focusDim: true,
 };
 
 /* ============================================================
@@ -721,11 +780,57 @@ function selectedTargets() {
   const m = currentDef.members.find((x) => x.key === state.selectedMember);
   return m ? new Set(m.targets) : null;
 }
+/* ============================================================
+   部材ごとの色分け(柱・梁・筋かい等を見分けるための表示)
+   現モデルに存在する部材名を並べ、黄金角で色相を割り当てて識別性を確保
+============================================================ */
+const dimOutMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af, transparent: true, opacity: 0.16, depthWrite: false, roughness: 1 });
+let memberColorMap = new Map();
+const memberMatCache = new Map();
+function buildMemberColors() {
+  memberColorMap = new Map();
+  memberMatCache.clear();
+  const names = new Set();
+  modelGroup.traverse((m) => { if (m.isMesh && m.userData.member && m.userData.member.indexOf("DMG") !== 0) names.add(m.userData.member); });
+  const sorted = [...names].sort();
+  sorted.forEach((n, i) => {
+    const hue = ((i * 137.508) % 360) / 360;
+    const sat = 0.62 + (i % 3) * 0.10;
+    const lig = 0.44 + (i % 4) * 0.06;
+    memberColorMap.set(n, new THREE.Color().setHSL(hue, sat, lig));
+  });
+}
+function memberMat(name, translucent) {
+  const key = name + (translucent ? "_t" : "_s");
+  if (!memberMatCache.has(key)) {
+    const c = memberColorMap.get(name) || new THREE.Color(0xa3a3a3);
+    memberMatCache.set(key, new THREE.MeshStandardMaterial({
+      color: c, roughness: 0.65, metalness: 0.05, side: THREE.DoubleSide,
+      transparent: !!translucent, opacity: translucent ? 0.42 : 1.0,
+    }));
+  }
+  return memberMatCache.get(key);
+}
+function memberColorHex(name) {
+  const c = memberColorMap.get(name);
+  return c ? "#" + c.getHexString() : "#a3a3a3";
+}
+function memberLegendItems() {
+  const counts = new Map();
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.member || m.userData.member.indexOf("DMG") === 0) return;
+    counts.set(m.userData.member, (counts.get(m.userData.member) || 0) + 1);
+  });
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"));
+}
+
 function applyHighlight() {
   const tg = selectedTargets();
   modelGroup.traverse((m) => {
     if (!m.isMesh || !m.userData.baseMat) return;
-    m.material = (tg && tg.has(m.userData.member)) ? hlMat : m.userData.baseMat;
+    if (tg && tg.has(m.userData.member)) m.material = hlMat;
+    else if (tg && state.focusDim) m.material = dimOutMat;
+    else m.material = state.memberColorMode ? memberMat(m.userData.member, false) : m.userData.baseMat;
   });
 }
 function rebuild(resetCam) {
@@ -735,6 +840,8 @@ function rebuild(resetCam) {
   currentDef = MACHINES[state.machine].build();
   modelGroup = currentDef.group;
   scene.add(modelGroup);
+  buildMemberColors();
+  if (state.detailParts) currentDef.members = buildDetailedMembers();
   const geo = new THREE.SphereGeometry(0.09, 16, 16);
   currentDef.members.forEach((mk) => {
     const m = new THREE.Mesh(geo, mat(0xffb020, { emissive: 0xff8c00, emissiveIntensity: 0.6 }));
@@ -921,6 +1028,36 @@ function renderPanel() {
     secA.appendChild(el("div", "legend-cap", "一体型のため散布装置(ブーム・タンク)は機体の一部です。"));
   }
   panel.appendChild(secA);
+
+  // 部材の分け方
+  const secGran = el("div", "section", "<h2>部材の分け方</h2>");
+  const rowGran = el("div", "btn-row");
+  [[false, "まとめて"], [true, "個別(部材ごと)"]].forEach(([v, lb]) => {
+    const b = el("button", "btn" + (state.detailParts === v ? " active" : ""), lb);
+    b.addEventListener("click", () => { state.detailParts = v; state.selectedMember = null; rebuild(false); });
+    rowGran.appendChild(b);
+  });
+  secGran.appendChild(rowGran);
+  const bFD = el("button", "btn" + (state.focusDim ? " active" : ""), (state.focusDim ? "☑ " : "☐ ") + "選択した部材以外を淡色化");
+  bFD.style.marginTop = "6px";
+  bFD.addEventListener("click", () => { state.focusDim = !state.focusDim; applyHighlight(); renderPanel(); });
+  secGran.appendChild(bFD);
+  const bMC = el("button", "btn" + (state.memberColorMode ? " active" : ""), (state.memberColorMode ? "☑ " : "☐ ") + "部材ごとに色分け");
+  bMC.style.marginTop = "6px";
+  bMC.addEventListener("click", () => { state.memberColorMode = !state.memberColorMode; applyHighlight(); renderPanel(); });
+  secGran.appendChild(bMC);
+  if (state.memberColorMode) {
+    const lg = el("div", "legend");
+    memberLegendItems().forEach(([nm, ct]) => {
+      lg.appendChild(el("div", "legend-item",
+        `<span class="sw" style="background:${memberColorHex(nm)}"></span>${nm}<span style="color:#94a3b8;margin-left:auto">×${ct}</span>`));
+    });
+    secGran.appendChild(lg);
+  }
+  secGran.appendChild(el("div", "legend-cap", state.detailParts
+    ? "モデル上の部材名ごとに分けて表示しています(柱・梁・筋かい等を個別に選択できます)。"
+    : "関連する部材をまとめた区分で表示しています。「個別」にすると柱・梁・筋かいなどを1つずつ選択できます。"));
+  panel.appendChild(secGran);
 
   const secP = el("div", "section", "<h2>部位と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部位はモデル上でオレンジ色に点滅表示されます</div>");
   currentDef.members.forEach((mk) => {
