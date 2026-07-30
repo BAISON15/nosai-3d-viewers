@@ -1,4 +1,22 @@
 <!DOCTYPE html>
+<!--
+  農業共済 評価研修用 3Dビューア (Agricultural Insurance Assessment 3D Viewers)
+  Copyright 2026 BAISON
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  This software loads Three.js (MIT License) from a CDN at runtime.
+-->
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
@@ -34,6 +52,16 @@
   .label-chip.dmg { background: #fee2e2; border-color: #f87171; color: #991b1b; }
   .label-chip.dmg.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
 
+  .walk-btn { position: absolute; bottom: 12px; right: 128px; background: rgba(15,23,42,.88); border: 1px solid #334155; color: #e2e8f0; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .walk-btn.on { background: #f59e0b; border-color: #d97706; color: #0f172a; font-weight: 600; }
+  #walk-ui { position: absolute; inset: 0; pointer-events: none; display: none; }
+  #walk-ui.on { display: block; }
+  #walk-pad { position: absolute; left: 14px; bottom: 62px; display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 46px); gap: 5px; pointer-events: auto; }
+  #walk-pad button, #walk-updown button { background: rgba(15,23,42,.72); border: 1px solid #475569; color: #e2e8f0; border-radius: 8px; font-size: 15px; cursor: pointer; user-select: none; touch-action: none; }
+  #walk-pad button:active, #walk-updown button:active { background: #f59e0b; color: #0f172a; }
+  #walk-updown { position: absolute; right: 14px; bottom: 62px; display: grid; grid-template-rows: repeat(2, 46px); gap: 5px; pointer-events: auto; }
+  #walk-updown button { width: 46px; }
+  #walk-hud { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,.82); color: #e2e8f0; font-size: 11px; padding: 5px 12px; border-radius: 999px; white-space: nowrap; }
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
 
@@ -70,8 +98,20 @@
     <div id="viewport">
       <div id="canvas-holder"></div>
       <div id="labels"></div>
+      <div id="walk-ui">
+        <div id="walk-hud"></div>
+        <div id="walk-pad">
+          <button data-mv="ql">↖</button><button data-mv="f">▲</button><button data-mv="qr">↗</button>
+          <button data-mv="l">◀</button><button data-mv="b">▼</button><button data-mv="r">▶</button>
+        </div>
+        <div id="walk-updown">
+          <button data-mv="up">▲<br><span style="font-size:9px">上</span></button>
+          <button data-mv="dn">▼<br><span style="font-size:9px">下</span></button>
+        </div>
+      </div>
+      <button class="walk-btn" id="walk-toggle">歩行モード (F)</button>
       <button class="reset-btn" id="reset-view">視点をリセット</button>
-      <div class="hint">ドラッグ: 回転 / ホイール・ピンチ: ズーム / 橙色の点: 部位の着眼点</div>
+      <div class="hint">ドラッグ: 回転 / ホイール・ピンチ: ズーム / 橙色の点: 部位の着眼点 / <b>F</b>キー: 歩行モード</div>
     </div>
     <aside id="panel"></aside>
   </main>
@@ -119,6 +159,7 @@ const PART_COLORS = {
   "内装":          "#d946ef",
   "床":            "#65a30d",
   "基礎":          "#64748b",
+  "附帯設備":      "#0891b2",
 };
 const partMatCache = {};
 function partMat(part, translucent) {
@@ -319,6 +360,471 @@ function triMesh(a, b, c, mat) {
   geo.setAttribute("uv", new THREE.Float32BufferAttribute([0,0, 1,0, 0.5,1], 2));
   geo.computeVertexNormals();
   return new THREE.Mesh(geo, mat);
+}
+
+/* ============================================================
+   写真再現モデル(キューブ型・片流れ) — cube-house-model.html の移植
+   木造2階建/窯業系サイディング/片流れ屋根。敷地・外構・隣家も再現
+============================================================ */
+const CSPEC = {
+  W: 9.10, D: 7.28, baseH: 0.45, f1: 2.95, f2: 2.90,
+  pitch: 0.05, splitX: 0.95, bFront: 0.50, bDrop: 0.40,
+};
+CSPEC.eaveA = CSPEC.baseH + CSPEC.f1 + CSPEC.f2;
+CSPEC.eaveB = CSPEC.eaveA - CSPEC.bDrop;
+
+/* --- 手続き的テクスチャ --- */
+function cValueNoise(seed) {
+  const G = 256, r = mulberry32(seed), g = new Float32Array(G * G);
+  for (let i = 0; i < G * G; i++) g[i] = r();
+  const at = (x, y) => g[(y & 255) * G + (x & 255)];
+  return (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    return (at(xi, yi) * (1 - u) + at(xi + 1, yi) * u) * (1 - v) + (at(xi, yi + 1) * (1 - u) + at(xi + 1, yi + 1) * u) * v;
+  };
+}
+function cFbm(n, x, y, oct) { let a = .5, f = 1, s = 0, t = 0; for (let i = 0; i < (oct || 3); i++) { s += a * n(x * f, y * f); t += a; a *= .5; f *= 2; } return s / t; }
+function cSurface(w, h, seed, height, shade, nScale) {
+  const n = cValueNoise(seed);
+  const H = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) H[y * w + x] = height(x / w, y / h, n);
+  const cc = document.createElement("canvas"); cc.width = w; cc.height = h;
+  const nc = document.createElement("canvas"); nc.width = w; nc.height = h;
+  const c2 = cc.getContext("2d"), n2 = nc.getContext("2d");
+  const cd = c2.createImageData(w, h), nd = n2.createImageData(w, h);
+  const G = (x, y) => H[((y + h) % h) * w + ((x + w) % w)];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4, hv = H[y * w + x], col = shade(hv, x / w, y / h, n);
+    cd.data[i] = col[0]; cd.data[i + 1] = col[1]; cd.data[i + 2] = col[2]; cd.data[i + 3] = 255;
+    const dx = (G(x + 1, y) - G(x - 1, y)) * (nScale || 6), dy = (G(x, y + 1) - G(x, y - 1)) * (nScale || 6);
+    const l = Math.hypot(-dx, -dy, 1);
+    nd.data[i] = (-dx / l * .5 + .5) * 255; nd.data[i + 1] = (-dy / l * .5 + .5) * 255;
+    nd.data[i + 2] = (1 / l * .5 + .5) * 255; nd.data[i + 3] = 255;
+  }
+  c2.putImageData(cd, 0, 0); n2.putImageData(nd, 0, 0);
+  const t = new THREE.CanvasTexture(cc); t.colorSpace = THREE.SRGBColorSpace;
+  const nt = new THREE.CanvasTexture(nc);
+  for (const tx of [t, nt]) { tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.anisotropy = 4; }
+  return { map: t, normalMap: nt };
+}
+const SIDE_U = 3.030, SIDE_V = 0.910;
+function cSidingTex(rgb, seed) {
+  return cSurface(256, 1024, seed,
+    (u, v, n) => {
+      const mm = v * 910;
+      const rib = Math.pow(.5 + .5 * Math.cos(mm / 7 * Math.PI * 2), .55);
+      const course = Math.abs(((mm + 227.5) % 455) - 227.5);
+      const seam = course < 3.5 ? .05 : 1;
+      const butt = u * 3030 < 5 ? .05 : 1;
+      return (rib * .78 + .22) * seam * butt * (.9 + cFbm(n, u * 22, v * 130, 2) * .2);
+    },
+    (h, u, v, n) => {
+      const g = .84 + h * .20;
+      const b = .97 + cFbm(n, u * 5 + 40, v * 9, 2) * .06;
+      return [rgb[0] * g * b, rgb[1] * g * b, rgb[2] * g * b];
+    }, 4);
+}
+let CTEX = null;
+function cubeTextures() {
+  if (CTEX) return CTEX;
+  CTEX = {
+    dark:  cSidingTex([74, 82, 92], 11),
+    light: cSidingTex([166, 172, 175], 23),
+    gravel: cSurface(256, 256, 31, (u, v, n) => cFbm(n, u * 74, v * 74, 2), (h) => { const g = .60 + h * .55; return [148 * g, 146 * g, 142 * g]; }, 9),
+    conc:  cSurface(256, 256, 47, (u, v, n) => cFbm(n, u * 30, v * 30, 3) * .6 + cFbm(n, u * 120, v * 120, 2) * .4, (h) => { const g = .88 + h * .20; return [196 * g, 193 * g, 187 * g]; }, 3),
+    tile:  cSurface(256, 256, 59, (u, v) => { const gx = Math.abs(((u * 2) % 1) - .5) < .022, gy = Math.abs(((v * 2) % 1) - .5) < .022; return (gx || gy) ? .15 : 1; }, (h) => { const g = .80 + h * .24; return [216 * g, 210 * g, 196 * g]; }, 8),
+    stone: cSurface(256, 256, 67, (u, v, n) => { const c = cFbm(n, u * 7, v * 7, 1); const e = Math.abs(c - .5) < .035 ? .1 : 1; return e * (cFbm(n, u * 46, v * 46, 2) * .55 + .45); }, (h) => { const g = .72 + h * .42; return [178 * g, 170 * g, 156 * g]; }, 7),
+    wood:  cSurface(512, 128, 83, (u, v, n) => cFbm(n, u * 3, v * 46, 3), (h) => { const g = .72 + h * .46; return [176 * g, 132 * g, 86 * g]; }, 3),
+  };
+  return CTEX;
+}
+function cMeshFenceTex() {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"); g.clearRect(0, 0, 64, 64);
+  g.strokeStyle = "#2a2f33"; g.lineWidth = 4.5;
+  for (let i = 0; i <= 64; i += 16) {
+    g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 64); g.stroke();
+    g.beginPath(); g.moveTo(0, i); g.lineTo(64, i); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+
+function buildCubeHouse() {
+  const T = cubeTextures();
+  const NS = (v) => new THREE.Vector2(v, v);
+  const CM = {
+    dark:   new THREE.MeshStandardMaterial({ ...T.dark, roughness: .90, normalScale: NS(.80) }),
+    light:  new THREE.MeshStandardMaterial({ ...T.light, roughness: .88, normalScale: NS(.80) }),
+    fascia: new THREE.MeshStandardMaterial({ color: 0x24282d, roughness: .55 }),
+    glass:  new THREE.MeshPhysicalMaterial({ color: 0x26323d, roughness: .06, metalness: .15, reflectivity: .7 }),
+    sash:   new THREE.MeshStandardMaterial({ color: 0x1d2126, roughness: .45, metalness: .35 }),
+    wood:   new THREE.MeshStandardMaterial({ ...T.wood, roughness: .72, normalScale: NS(.6) }),
+    gravel: new THREE.MeshStandardMaterial({ ...T.gravel, roughness: .98, normalScale: NS(1.2) }),
+    conc:   new THREE.MeshStandardMaterial({ ...T.conc, roughness: .94, normalScale: NS(.5) }),
+    tile:   new THREE.MeshStandardMaterial({ ...T.tile, roughness: .55, normalScale: NS(.8) }),
+    stone:  new THREE.MeshStandardMaterial({ ...T.stone, roughness: .90, normalScale: NS(1.0) }),
+    metal:  new THREE.MeshStandardMaterial({ color: 0xb9bec2, roughness: .35, metalness: .6 }),
+    pipeD:  new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: .5, metalness: .25 }),
+    cream:  new THREE.MeshStandardMaterial({ color: 0xe6e0d2, roughness: .55 }),
+    white:  new THREE.MeshStandardMaterial({ color: 0xdfe1e0, roughness: .6 }),
+    neigh:  new THREE.MeshStandardMaterial({ color: 0xb7ada0, roughness: .95 }),
+    terra:  new THREE.MeshStandardMaterial({ color: 0xb35f3c, roughness: .85 }),
+    base:   new THREE.MeshStandardMaterial({ ...T.conc, roughness: .95, color: 0xa8a49c, normalScale: NS(.4) }),
+    recess: new THREE.MeshStandardMaterial({ color: 0x3d444c, roughness: .86, side: THREE.DoubleSide }),
+    recessD:new THREE.MeshStandardMaterial({ ...T.dark, roughness: .90, normalScale: NS(.75), side: THREE.DoubleSide }),
+    recessL:new THREE.MeshStandardMaterial({ ...T.light, roughness: .88, normalScale: NS(.75), side: THREE.DoubleSide }),
+    core:   new THREE.MeshStandardMaterial({ color: 0x171b1f, roughness: 1 }),
+  };
+  const S = CSPEC;
+  const zF = S.D / 2, zR = -S.D / 2, xW = -S.W / 2, xE = S.W / 2;
+  const A = { x0: xW, x1: S.splitX, zF: zF, zR: zR, top: S.eaveA };
+  const B = { x0: S.splitX, x1: xE, zF: zF + S.bFront, zR: zR, top: S.eaveB };
+  const g = new THREE.Group();
+  const site = new THREE.Group();   // 敷地・外構(評価対象外の背景として非タグ)
+  g.add(site);
+
+  const P = { wall: "外壁", roof: "屋根", open: "開口部", gut: "雨樋・附帯", found: "基礎", eq: "附帯設備" };
+  const T2 = (m, part, member) => { m.userData.part = part; m.userData.member = member; m.userData.layer = "ext"; m.userData.baseMat = m.material; return m; };
+
+  /* 壁パネル(開口部で分割・UV連続) */
+  function planarUV(geo, u0, v0, w, h, TU, TV) {
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) {
+      const u = uv.getX(i), v = uv.getY(i);
+      uv.setXY(i, (u0 + u * w) / TU, (v0 + v * h) / TV);
+    }
+    uv.needsUpdate = true;
+  }
+  function wallPanels(f) {
+    const vs = new Set([f.v0, f.v1]);
+    for (const o of f.holes || []) { vs.add(o.v0); vs.add(o.v1); }
+    const V = [...vs].filter((x) => x >= f.v0 - 1e-6 && x <= f.v1 + 1e-6).sort((a, b) => a - b);
+    const out = [];
+    for (let j = 0; j < V.length - 1; j++) {
+      if (V[j + 1] - V[j] < 1e-4) continue;
+      const vm = (V[j] + V[j + 1]) / 2;
+      const act = (f.holes || []).filter((o) => vm > o.v0 && vm < o.v1);
+      const us = new Set([f.u0, f.u1]);
+      for (const o of act) { us.add(o.u0); us.add(o.u1); }
+      const U = [...us].filter((x) => x >= f.u0 - 1e-6 && x <= f.u1 + 1e-6).sort((a, b) => a - b);
+      for (let i = 0; i < U.length - 1; i++) {
+        if (U[i + 1] - U[i] < 1e-4) continue;
+        const um = (U[i] + U[i + 1]) / 2;
+        if (act.some((o) => um > o.u0 && um < o.u1)) continue;
+        out.push({ u0: U[i], u1: U[i + 1], v0: V[j], v1: V[j + 1] });
+      }
+    }
+    return out;
+  }
+  function buildWall(dir, at, f, mat, member) {
+    for (const p of wallPanels(f)) {
+      const w = p.u1 - p.u0, h = p.v1 - p.v0;
+      const geo = new THREE.PlaneGeometry(w, h);
+      planarUV(geo, p.u0, p.v0, w, h, SIDE_U, SIDE_V);
+      const m = new THREE.Mesh(geo, mat);
+      const cu = (p.u0 + p.u1) / 2, cv = (p.v0 + p.v1) / 2;
+      if (dir === "S") m.position.set(cu, cv, at);
+      if (dir === "N") { m.position.set(cu, cv, at); m.rotation.y = Math.PI; }
+      if (dir === "E") { m.position.set(at, cv, cu); m.rotation.y = Math.PI / 2; }
+      if (dir === "W") { m.position.set(at, cv, cu); m.rotation.y = -Math.PI / 2; }
+      g.add(T2(m, P.wall, member || "外壁"));
+    }
+  }
+  function addSash(dir, at, cu, cv, w, h, off) {
+    const grp = new THREE.Group();
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.07), CM.sash);
+    const gl = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.10, h - 0.10), CM.glass);
+    gl.position.z = 0.02; fr.add(gl);
+    const inner = new THREE.Mesh(new THREE.BoxGeometry(w - 0.10, h - 0.10, 0.02), new THREE.MeshStandardMaterial({ color: 0x11161b, roughness: .9 }));
+    inner.position.z = -0.03; fr.add(inner);
+    grp.add(fr);
+    const d = (off === undefined ? -0.03 : off);
+    if (dir === "S") grp.position.set(cu, cv, at + d);
+    if (dir === "N") { grp.position.set(cu, cv, at - d); grp.rotation.y = Math.PI; }
+    if (dir === "E") { grp.position.set(at + d, cv, cu); grp.rotation.y = Math.PI / 2; }
+    if (dir === "W") { grp.position.set(at - d, cv, cu); grp.rotation.y = -Math.PI / 2; }
+    grp.traverse((m) => { if (m.isMesh) T2(m, P.open, "サッシ・窓"); });
+    g.add(grp);
+  }
+  function addRecess(dir, at, cu, cv, w, h, depth, sideMat, member) {
+    const grp = new THREE.Group();
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(w, h), CM.recess); back.position.z = -depth; grp.add(back);
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(w, depth), CM.recess);
+    top.rotation.x = Math.PI / 2; top.position.set(0, h / 2, -depth / 2); grp.add(top);
+    const bot = new THREE.Mesh(new THREE.PlaneGeometry(w, depth), CM.recess);
+    bot.rotation.x = -Math.PI / 2; bot.position.set(0, -h / 2, -depth / 2); grp.add(bot);
+    for (const sd of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(depth, h), sideMat || CM.recess);
+      p.rotation.y = -sd * Math.PI / 2; p.position.set(sd * w / 2, 0, -depth / 2); grp.add(p);
+    }
+    if (dir === "S") grp.position.set(cu, cv, at);
+    if (dir === "N") { grp.position.set(cu, cv, at); grp.rotation.y = Math.PI; }
+    if (dir === "E") { grp.position.set(at, cv, cu); grp.rotation.y = Math.PI / 2; }
+    if (dir === "W") { grp.position.set(at, cv, cu); grp.rotation.y = -Math.PI / 2; }
+    grp.traverse((m) => { if (m.isMesh) T2(m, P.wall, member || "外壁(凹み部)"); });
+    g.add(grp);
+  }
+  function louver(w, h, cu, cv, at, dir, member) {
+    const n = Math.max(3, Math.round(h / 0.20));
+    const bh = h / n * 0.72;
+    const grp = new THREE.Group();
+    for (let i = 0; i < n; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, bh, 0.035), CM.wood);
+      b.position.y = -h / 2 + (i + 0.5) * (h / n); grp.add(b);
+    }
+    if (dir === "S") grp.position.set(cu, cv, at);
+    if (dir === "E") { grp.position.set(at, cv, cu); grp.rotation.y = Math.PI / 2; }
+    grp.traverse((m) => { if (m.isMesh) T2(m, P.open, member || "木目ルーバー"); });
+    g.add(grp);
+  }
+
+  /* 基礎 */
+  for (const V of [A, B]) {
+    const w = V.x1 - V.x0, d = V.zF - V.zR;
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, S.baseH, d + 0.16), CM.base);
+    b.position.set((V.x0 + V.x1) / 2, S.baseH / 2, (V.zF + V.zR) / 2);
+    g.add(T2(b, P.found, "基礎(布基礎)"));
+  }
+  /* 主棟A 正面 */
+  const balc = { u0: A.x0 + 0.55, u1: A.x0 + 4.75, v0: 3.95, v1: 5.85 };
+  const liv  = { u0: A.x0 + 0.75, u1: A.x0 + 4.15, v0: S.baseH, v1: 2.95 };
+  buildWall("S", A.zF, { u0: A.x0, u1: A.x1, v0: S.baseH, v1: A.top, holes: [balc, liv] }, CM.light, "外壁(サイディング・淡色)");
+  addRecess("S", A.zF, (balc.u0 + balc.u1) / 2, (balc.v0 + balc.v1) / 2, balc.u1 - balc.u0, balc.v1 - balc.v0, 1.55, CM.recessD, "インナーバルコニー");
+  addRecess("S", A.zF, (liv.u0 + liv.u1) / 2, (liv.v0 + liv.v1) / 2, liv.u1 - liv.u0, liv.v1 - liv.v0, 0.95, CM.recessD, "1階 掃出し窓の凹み");
+  addSash("S", A.zF - 1.50, (balc.u0 + balc.u1) / 2, 4.88, 3.30, 1.78);
+  addSash("S", A.zF - 0.92, (liv.u0 + liv.u1) / 2, 1.75, 3.00, 2.25);
+  louver(3.95, 1.00, (balc.u0 + balc.u1) / 2, 4.48, A.zF - 0.26, "S", "バルコニー手すり(木目ルーバー)");
+  louver(3.60, 1.35, (liv.u0 + liv.u1) / 2 + 0.15, 1.30, A.zF + 0.62, "S", "目隠しフェンス(木目ルーバー)");
+  /* 西面 */
+  const wWin = [
+    { u0: 0.70, u1: 2.30, v0: 4.55, v1: 5.05 },
+    { u0: -2.30, u1: -1.80, v0: 3.95, v1: 5.25 },
+    { u0: 1.70, u1: 2.30, v0: 1.55, v1: 2.45 },
+    { u0: -1.00, u1: -0.45, v0: 1.70, v1: 2.30 },
+  ];
+  buildWall("W", A.x0, { u0: A.zR, u1: A.zF, v0: S.baseH, v1: A.top, holes: wWin }, CM.light, "外壁(サイディング・淡色)");
+  for (const o of wWin) addSash("W", A.x0, (o.u0 + o.u1) / 2, (o.v0 + o.v1) / 2, o.u1 - o.u0, o.v1 - o.v0);
+  /* 背面 */
+  const nWin = [
+    { u0: -3.20, u1: -2.60, v0: 1.65, v1: 2.35 },
+    { u0: -1.20, u1: 0.60, v0: 1.60, v1: 2.40 },
+    { u0: 2.10, u1: 2.70, v0: 1.65, v1: 2.35 },
+    { u0: -2.90, u1: -2.35, v0: 4.35, v1: 5.00 },
+    { u0: 0.20, u1: 1.90, v0: 4.35, v1: 5.00 },
+  ];
+  buildWall("N", zR, { u0: xW, u1: xE, v0: S.baseH, v1: B.top, holes: nWin }, CM.dark, "外壁(サイディング・濃色)");
+  buildWall("N", zR, { u0: xW, u1: S.splitX, v0: B.top, v1: A.top, holes: [] }, CM.dark, "外壁(サイディング・濃色)");
+  for (const o of nWin) addSash("N", zR, (o.u0 + o.u1) / 2, (o.v0 + o.v1) / 2, o.u1 - o.u0, o.v1 - o.v0);
+  /* 玄関棟B */
+  const ent = { u0: B.x0 + 0.75, u1: B.x0 + 2.85, v0: 0.60, v1: 3.05 };
+  buildWall("S", B.zF, { u0: B.x0, u1: B.x1, v0: S.baseH, v1: B.top, holes: [ent] }, CM.light, "外壁(サイディング・淡色)");
+  addRecess("S", B.zF, (ent.u0 + ent.u1) / 2, (ent.v0 + ent.v1) / 2, ent.u1 - ent.u0, ent.v1 - ent.v0, 0.95, CM.recessL, "玄関ポーチ");
+  {
+    const cx = (ent.u0 + ent.u1) / 2 - 0.10, z = B.zF - 0.92;
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(1.28, 2.32, 0.09), CM.sash);
+    fr.position.set(cx, 0.60 + 1.16, z); g.add(T2(fr, P.open, "玄関ドア"));
+    for (let i = 0; i < 9; i++) {
+      const sl = new THREE.Mesh(new THREE.BoxGeometry(0.105, 2.18, 0.045), CM.wood);
+      sl.position.set(cx - 0.52 + i * 0.115, 0.60 + 1.16, z + 0.05); g.add(T2(sl, P.open, "玄関ドア"));
+    }
+    const fix = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 2.18), CM.glass);
+    fix.position.set(cx + 0.56, 0.60 + 1.16, z + 0.05); g.add(T2(fix, P.open, "玄関ドア"));
+    const pf = new THREE.Mesh(new THREE.BoxGeometry(2.10, 0.10, 0.95), CM.tile);
+    pf.position.set((ent.u0 + ent.u1) / 2, 0.58, B.zF - 0.47); g.add(T2(pf, P.wall, "玄関ポーチ床(タイル)"));
+    const lt = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.24, 0.10), CM.sash);
+    lt.position.set(ent.u0 - 0.30, 2.30, B.zF - 0.02); g.add(T2(lt, P.eq, "ブラケット照明"));
+  }
+  /* 東面 */
+  const eWin = [
+    { u0: 1.90, u1: 3.40, v0: 4.60, v1: 5.05 },
+    { u0: -1.55, u1: -1.00, v0: 1.65, v1: 2.30 },
+    { u0: -2.90, u1: -2.35, v0: 4.25, v1: 4.90 },
+  ];
+  const eDoor = { u0: 0.05, u1: 0.90, v0: S.baseH, v1: 2.50 };
+  buildWall("E", B.x1, { u0: B.zR, u1: B.zF, v0: S.baseH, v1: B.top, holes: [...eWin, eDoor] }, CM.dark, "外壁(サイディング・濃色)");
+  for (const o of eWin) addSash("E", B.x1, (o.u0 + o.u1) / 2, (o.v0 + o.v1) / 2, o.u1 - o.u0, o.v1 - o.v0);
+  {
+    const cu = (eDoor.u0 + eDoor.u1) / 2;
+    const d = new THREE.Mesh(new THREE.BoxGeometry(0.06, eDoor.v1 - eDoor.v0, eDoor.u1 - eDoor.u0), CM.sash);
+    d.position.set(B.x1 - 0.03, (eDoor.v0 + eDoor.v1) / 2, cu); g.add(T2(d, P.open, "勝手口"));
+    for (let i = 0; i < 13; i++) {
+      const bl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.055, 0.72), CM.metal);
+      bl.position.set(B.x1 + 0.02, eDoor.v0 + 0.22 + i * 0.145, cu); g.add(T2(bl, P.open, "勝手口"));
+    }
+    const kan = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.07, 1.35), CM.fascia);
+    kan.position.set(B.x1 + 0.26, 2.72, cu); g.add(T2(kan, P.gut, "庇"));
+    const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.19, 12), CM.white);
+    lg.rotation.z = Math.PI / 2; lg.position.set(B.x1 + 0.10, 2.52, cu - 0.80); g.add(T2(lg, P.eq, "外部照明"));
+    const vf = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.22, 0.30), CM.white);
+    vf.position.set(B.x1 + 0.05, 3.55, cu - 1.85); g.add(T2(vf, P.eq, "換気フード"));
+  }
+  buildWall("W", B.x0, { u0: A.zF, u1: B.zF, v0: S.baseH, v1: B.top, holes: [] }, CM.dark, "外壁(サイディング・濃色)");
+  /* 内部充填 */
+  function addCore(V, frontInset) {
+    const x0 = V.x0 + 0.12, x1 = V.x1 - 0.12, z0 = V.zR + 0.12, z1 = V.zF - frontInset;
+    const c = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, V.top - S.baseH - 0.02, z1 - z0), CM.core);
+    c.position.set((x0 + x1) / 2, (S.baseH + V.top) / 2, (z0 + z1) / 2);
+    g.add(c);
+  }
+  addCore(A, 1.61); addCore(B, 1.01);
+  /* パラペット・片流れ屋根 */
+  function capVolume(V) {
+    const w = V.x1 - V.x0, d = V.zF - V.zR, cx = (V.x0 + V.x1) / 2, cz = (V.zF + V.zR) / 2;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.09, 0.17, d + 0.09), CM.fascia);
+    band.position.set(cx, V.top + 0.085, cz); g.add(T2(band, P.roof, "笠木・見切り"));
+    const rise = d * S.pitch;
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, 0.09, Math.hypot(d, rise) + 0.16), CM.fascia);
+    slab.position.set(cx, V.top + 0.20 + rise / 2, cz);
+    slab.rotation.x = Math.atan2(rise, d);
+    g.add(T2(slab, P.roof, "屋根(緩勾配 片流れ)"));
+  }
+  capVolume(A); capVolume(B);
+  /* 縦樋 */
+  function downpipe(x, z, h) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.075, h, 0.075), CM.pipeD);
+    p.position.set(x, h / 2, z); g.add(T2(p, P.gut, "縦樋"));
+    for (let y = 1.2; y < h; y += 1.8) {
+      const bd = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.055, 0.11), CM.metal);
+      bd.position.set(x, y, z); g.add(T2(bd, P.gut, "縦樋"));
+    }
+    const dr = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 10), CM.conc);
+    dr.position.set(x, 0.03, z); g.add(T2(dr, P.gut, "縦樋"));
+  }
+  downpipe(A.x0 - 0.09, A.zF - 0.30, S.eaveA);
+  downpipe(A.x0 - 0.09, zR + 0.30, S.eaveA);
+  downpipe(B.x1 + 0.09, B.zF - 0.35, S.eaveB);
+  downpipe(B.x1 + 0.09, zR + 0.30, S.eaveB);
+  downpipe(S.splitX + 0.10, A.zF + 0.10, S.eaveB);
+
+  /* ===== 敷地・外構(背景・非タグ) ===== */
+  const gnd = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), CM.gravel);
+  gnd.rotation.x = -Math.PI / 2; site.add(gnd);
+  CM.gravel.map.repeat.set(240, 240); CM.gravel.normalMap.repeat.set(240, 240);
+  function slab(mat, w, d, x, z, y, rep) {
+    const geo = new THREE.PlaneGeometry(w, d); geo.rotateX(-Math.PI / 2);
+    planarUV(geo, 0, 0, w, d, rep || 1, rep || 1);
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y || 0.02, z); site.add(m); return m;
+  }
+  slab(CM.conc, S.W + 1.5, 0.95, 0, zR - 0.48, 0.03, 1.5);
+  slab(CM.conc, 0.95, S.D + 1.0, xW - 0.48, 0, 0.03, 1.5);
+  slab(CM.conc, 0.95, S.D + 1.4, xE + 0.48, -0.2, 0.03, 1.5);
+  slab(CM.stone, 7.2, 4.6, -1.2, zF + 3.6, 0.025, 2.0);
+  for (let i = 0; i < 2; i++) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.14, 0.42), CM.tile);
+    st.position.set(2.75, 0.07 + i * 0.14, B.zF + 0.62 - i * 0.42); site.add(st);
+  }
+  slab(CM.tile, 2.9, 0.85, 2.75, B.zF + 0.42, 0.30, 0.6);
+  /* エコキュート */
+  {
+    const grp = new THREE.Group();
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.85, 0.72), CM.cream); t.position.y = 1.02; grp.add(t);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.74), CM.cream); cap.position.y = 1.97; grp.add(cap);
+    for (const y of [1.62, 0.42]) {
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.17, 0.13), CM.cream);
+      lid.position.set(0.23, y, 0.16); grp.add(lid);
+    }
+    const bs = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.12, 0.78), CM.conc); bs.position.y = 0.06; grp.add(bs);
+    grp.position.set(B.x1 + 0.62, 0, -1.35);
+    grp.traverse((m) => { if (m.isMesh) T2(m, P.eq, "エコキュート(貯湯タンク)"); });
+    g.add(grp);
+    const hp = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.68, 0.82), CM.white);
+    hp.position.set(B.x1 + 0.62, 0.50, -2.75); g.add(T2(hp, P.eq, "エコキュート(ヒートポンプ)"));
+    const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.03, 16), CM.sash);
+    fan.rotation.z = Math.PI / 2; fan.position.set(B.x1 + 0.81, 0.52, -2.75);
+    g.add(T2(fan, P.eq, "エコキュート(ヒートポンプ)"));
+  }
+  /* 室外機 */
+  function acUnit(x, z, ry) {
+    const grp = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.63, 0.33), CM.white); b.position.y = 0.50; grp.add(b);
+    const f = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.03, 16), CM.sash);
+    f.rotation.x = Math.PI / 2; f.position.set(-0.06, 0.50, 0.18); grp.add(f);
+    for (const bx of [-0.3, 0.3]) {
+      const bl = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.37), CM.conc);
+      bl.position.set(bx, 0.065, 0); grp.add(bl);
+    }
+    grp.position.set(x, 0, z); grp.rotation.y = ry;
+    grp.traverse((m) => { if (m.isMesh) T2(m, P.eq, "室外機"); });
+    g.add(grp);
+  }
+  acUnit(B.x1 + 0.60, 1.85, Math.PI / 2);
+  acUnit(A.x0 - 0.60, -1.60, -Math.PI / 2);
+  /* 立水栓 */
+  {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.02, 0.12), CM.white);
+    p.position.set(B.x1 + 0.42, 0.51, 2.95); g.add(T2(p, P.eq, "立水栓"));
+    const pan = new THREE.Mesh(new THREE.BoxGeometry(0.60, 0.14, 0.42), CM.white);
+    pan.position.set(B.x1 + 0.62, 0.07, 2.95); g.add(T2(pan, P.eq, "立水栓"));
+  }
+  /* 門柱(表札は空欄) */
+  {
+    const grp = new THREE.Group();
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.62, 0.32), new THREE.MeshStandardMaterial({ color: 0x8d8d84, roughness: .6, metalness: .15 }));
+    post.position.y = 0.81; grp.add(post);
+    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.10, 1.92, 0.10), CM.wood);
+    sleeve.position.set(0.26, 0.96, 0.11); grp.add(sleeve);
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.17), new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: .8 }));
+    plate.position.set(0, 1.30, 0.161); grp.add(plate);
+    const cam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.20, 0.03), CM.metal);
+    cam.position.set(0, 1.05, 0.165); grp.add(cam);
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.85, 0.02), new THREE.MeshStandardMaterial({ color: 0xf6f4ea, emissive: 0x555044 }));
+    led.position.set(-0.16, 0.62, 0.161); grp.add(led);
+    grp.position.set(4.95, 0, zF + 3.9); grp.rotation.y = -0.06;
+    site.add(grp);
+  }
+  /* メッシュフェンス */
+  {
+    const tex = cMeshFenceTex();
+    const fmat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: .45, side: THREE.DoubleSide, roughness: .6, metalness: .2, color: 0x9aa0a4 });
+    function fence(x, z, len, ry) {
+      const geo = new THREE.PlaneGeometry(len, 0.85);
+      const m = new THREE.Mesh(geo, fmat.clone());
+      m.material.map = tex.clone(); m.material.map.needsUpdate = true;
+      m.material.map.repeat.set(len / 0.32, 0.85 / 0.32);
+      m.material.map.wrapS = m.material.map.wrapT = THREE.RepeatWrapping;
+      m.position.set(x, 0.60, z); m.rotation.y = ry; site.add(m);
+      for (let i = 0; i <= Math.round(len / 2); i++) {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.05, 8), CM.pipeD);
+        const t = -len / 2 + i * (len / Math.max(1, Math.round(len / 2)));
+        p.position.set(x + Math.cos(ry) * t, 0.52, z - Math.sin(ry) * t); site.add(p);
+      }
+    }
+    fence(xE + 2.6, -0.5, 12, Math.PI / 2);
+    fence(xW - 2.6, -0.5, 12, Math.PI / 2);
+  }
+  /* 隣家(背景) */
+  {
+    const n1 = new THREE.Mesh(new THREE.BoxGeometry(9, 5.4, 8), CM.neigh);
+    n1.position.set(-13.5, 2.7, 3.5); site.add(n1);
+    const r1 = new THREE.Mesh(new THREE.ConeGeometry(7.4, 2.0, 4), CM.terra);
+    r1.rotation.y = Math.PI / 4; r1.position.set(-13.5, 6.4, 3.5); site.add(r1);
+    const n2 = new THREE.Mesh(new THREE.BoxGeometry(8.5, 6.3, 9), new THREE.MeshStandardMaterial({ color: 0x7d7166, roughness: .94 }));
+    n2.position.set(13.2, 3.15, -1.5); site.add(n2);
+    const n3 = new THREE.Mesh(new THREE.BoxGeometry(10, 6.0, 9), CM.neigh);
+    n3.position.set(1, 3.0, -15.5); site.add(n3);
+    slab(CM.conc, 26, 7, 0, zF + 9.5, 0.015, 3);
+  }
+
+  const members = [
+    { key: "c_roof", name: "屋根(片流れ)・笠木", targets: ["屋根(緩勾配 片流れ)", "笠木・見切り"], pos: [0, S.eaveA + 0.6, 0], note: "緩勾配の片流れ屋根。写真からの推定で0.5寸相当のほぼフラットな勾配です。金属屋根は端部(けらば・軒先)の捲れ、笠木・見切りは強風での外れを確認します。" },
+    { key: "c_wall_l", name: "外壁(サイディング・淡色)", targets: ["外壁(サイディング・淡色)"], pos: [-3.0, 3.2, zF + 0.4], note: "窯業系サイディング(細横ボーダー柄、働き幅455mm・定尺3030mm想定)。シーリングの劣化、飛来物の衝突痕、凍害による欠けを確認します。" },
+    { key: "c_wall_d", name: "外壁(サイディング・濃色)", targets: ["外壁(サイディング・濃色)"], pos: [xE + 0.5, 3.4, -2.0], note: "2色張り分けの濃色面。色違いの面ごとに数量を拾うと、張替え範囲の見積りがしやすくなります。" },
+    { key: "c_open", name: "開口部(サッシ・玄関・勝手口)", targets: ["サッシ・窓", "玄関ドア", "勝手口", "木目ルーバー", "バルコニー手すり(木目ルーバー)", "目隠しフェンス(木目ルーバー)"], pos: [-2.4, 1.9, zF + 0.7], note: "サッシ・ガラス・玄関ドア・勝手口。木目ルーバー(手すり・目隠し)は風災で外れやすい部位です。" },
+    { key: "c_balc", name: "インナーバルコニー", targets: ["インナーバルコニー"], pos: [-2.4, 5.0, zF + 0.5], note: "外壁面より内側に入り込んだバルコニー。防水層・排水ドレンの詰まり、笠木との取合いからの漏水を確認します。" },
+    { key: "c_porch", name: "玄関ポーチ", targets: ["玄関ポーチ", "玄関ポーチ床(タイル)"], pos: [2.7, 2.0, B.zF + 0.4], note: "玄関まわりの凹み部とタイル床。タイルの浮き・割れ、ポーチ天井の雨染みを確認します。" },
+    { key: "c_gut", name: "雨樋・庇", targets: ["縦樋", "庇"], pos: [xW - 0.4, 3.0, zF - 0.3], note: "縦樋と勝手口の庇。雪の重み・強風で変形・脱落しやすく、本数と延長を把握します。" },
+    { key: "c_found", name: "基礎", targets: ["基礎(布基礎)"], pos: [0, 0.25, zF + 0.3], note: "布基礎。ひび割れ・不同沈下、水災時の洗掘を確認します。" },
+    { key: "c_eq", name: "附帯設備(エコキュート・室外機等)", targets: ["エコキュート(貯湯タンク)", "エコキュート(ヒートポンプ)", "室外機", "立水栓", "ブラケット照明", "外部照明", "換気フード"], pos: [xE + 1.4, 2.2, -1.4], note: "エコキュート・室外機・立水栓・外部照明・換気フード。建物共済では附帯設備は建物に含めて評価されるのが一般的です。冠水・転倒・飛来物衝突を確認します。" },
+  ];
+  const dims = [
+    { name: "間口", from: [xW, 0.06, zF + 1.2], to: [xE, 0.06, zF + 1.2] },
+    { name: "奥行", from: [xE + 1.2, 0.06, zR], to: [xE + 1.2, 0.06, zF] },
+    { name: "軒高(主棟)", from: [xW - 1.0, 0, zF], to: [xW - 1.0, S.eaveA, zF] },
+    { name: "軒高(玄関棟)", from: [xE + 1.0, 0, B.zF], to: [xE + 1.0, S.eaveB, B.zF] },
+  ];
+  return { group: g, members, dims, camR: 22, targetY: 3.0 };
 }
 
 function buildHouse(stories, roofShape, roofKey, wallKey) {
@@ -642,7 +1148,57 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   g.add(tag(box(0.09, 2.1, 1.0, MAT.door, W / 2 + 0.1, foundH + 1.07, 1.6), "開口部", "玄関戸", "ext"));
 
   /* ---- 附帯設備 ---- */
-  g.add(tag(box(0.35, 0.9, 0.25, MAT.equip, 3.0, 0.9, -(D / 2 + 0.25)), "雨樋・附帯", "附帯設備(給湯器等)", "ext"));
+  /* ---- 附帯設備(エコキュート・室外機・立水栓・電気メーター) ---- */
+  const EQP = "附帯設備";
+  {
+    const bx = W / 2 + 0.75, bz = -1.2;
+    g.add(tag(box(0.62, 0.1, 0.86, MAT.conc, bx, 0.05, bz), EQP, "エコキュート(基礎)", "ext"));
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 1.85, 18), MAT.equip);
+    tank.position.set(bx, 1.02, bz);
+    g.add(tag(tank, EQP, "エコキュート(貯湯タンク)", "ext"));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.07, 18), MAT.equip);
+    cap.position.set(bx, 1.98, bz);
+    g.add(tag(cap, EQP, "エコキュート(貯湯タンク)", "ext"));
+    [1.55, 0.5].forEach((y) => g.add(tag(box(0.03, 0.17, 0.14, MAT.gutter, bx - 0.29, y, bz + 0.12), EQP, "エコキュート(貯湯タンク)", "ext")));
+    g.add(tag(box(0.05, 0.75, 0.05, MAT.gutter, bx - 0.34, 0.4, bz - 0.2), EQP, "エコキュート(配管)", "ext"));
+    const hx = W / 2 + 0.7, hz = -2.6;
+    g.add(tag(box(0.55, 0.12, 0.95, MAT.conc, hx, 0.06, hz), EQP, "エコキュート(基礎)", "ext"));
+    g.add(tag(box(0.38, 0.68, 0.82, MAT.equip, hx, 0.46, hz), EQP, "エコキュート(ヒートポンプ)", "ext"));
+    const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.04, 16), MAT.black);
+    fan.rotation.z = Math.PI / 2;
+    fan.position.set(hx + 0.2, 0.48, hz);
+    g.add(tag(fan, EQP, "エコキュート(ヒートポンプ)", "ext"));
+    g.add(tag(box(0.05, 0.5, 0.05, MAT.gutter, hx - 0.22, 0.9, hz + 0.3), EQP, "エコキュート(配管)", "ext"));
+  }
+  const acAt = (ax, az, ry) => {
+    const u = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.66, 0.32), MAT.equip);
+    body.position.set(0, 0.5, 0);
+    u.add(body);
+    const f = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.035, 16), MAT.black);
+    f.rotation.x = Math.PI / 2; f.position.set(-0.08, 0.5, 0.17);
+    u.add(f);
+    [-0.3, 0.3].forEach((bx2) => {
+      const blk = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.13, 0.38), MAT.conc);
+      blk.position.set(bx2, 0.065, 0); u.add(blk);
+    });
+    const pipe = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.45, 0.05), MAT.gutter);
+    pipe.position.set(0.36, 0.85, -0.1); u.add(pipe);
+    u.position.set(ax, 0, az); u.rotation.y = ry;
+    u.traverse((m) => { if (m.isMesh) { m.userData.part = EQP; m.userData.member = "室外機"; m.userData.layer = "ext"; m.userData.baseMat = m.material; } });
+    g.add(u);
+  };
+  acAt(-(W / 2 + 0.55), -1.0, Math.PI / 2);
+  if (n === 2) acAt(-(W / 2 + 0.55), 1.2, Math.PI / 2);
+  {
+    const sx = -(W / 2 + 0.9), sz = 2.4;
+    g.add(tag(box(0.12, 1.0, 0.12, MAT.equip, sx, 0.5, sz), EQP, "立水栓", "ext"));
+    g.add(tag(box(0.62, 0.14, 0.44, MAT.equip, sx - 0.25, 0.07, sz), EQP, "立水栓", "ext"));
+    const fc = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 8), MAT.gutter);
+    fc.rotation.z = Math.PI / 2; fc.position.set(sx - 0.12, 0.9, sz);
+    g.add(tag(fc, EQP, "立水栓", "ext"));
+  }
+  g.add(tag(box(0.1, 0.34, 0.26, MAT.equip, W / 2 + 0.13, foundH + 1.55, 0.9), EQP, "電気メーター", "ext"));
 
   /* ---- 内装(1階) ---- */
   const f1 = foundH + 0.16;
@@ -697,7 +1253,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     { key:"kiso",  name:"基礎", pos:[0, 0.25, D / 2 + 0.15], note:"亀裂・不同沈下・傾きを確認します。地震等では建物の傾斜の程度が損害認定の重要な指標になります。" },
     { key:"naiso", name:"内壁・天井", pos:[0.8, foundH + 1.5, -1.2], note:"雨漏り・漏水によるシミ・膨れ・剥がれを確認。天井のシミは屋根損害のサインです。「内部表示」で間仕切り・天井を確認できます。" },
     { key:"yuka",  name:"床", pos:[-1.5, foundH + 0.35, 1.5], note:"水災では浸水深(床下浸水/床上浸水)が損害額算定の基礎になります。フローリングの反り・浮き・シミも確認します。" },
-    { key:"setsubi", name:"附帯設備", pos:[3.0, 1.0, -(D / 2 + 0.45)], note:"建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。給排水設備の事故による水濡れも火災共済の対象事故の例に挙げられます。" },
+    { key:"setsubi", name:"附帯設備(エコキュート・室外機等)", pos:[W / 2 + 1.4, 2.3, -1.2], note:"建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。エコキュート(貯湯タンク・ヒートポンプ)や室外機は、風災での転倒・飛来物衝突、水災での冠水、雪害での落雪による変形を確認します。給排水設備の事故による水濡れも火災共済の対象事故の例に挙げられます。" },
   ];
   if (roofShape !== "rikuyane") {
     const hafuPos = {
@@ -737,6 +1293,9 @@ const state = {
   selectedMember: null,
   detailParts: false,
   focusDim: true,
+  walk: false,
+  walkPass: true,   // 壁をすり抜けて内部も歩ける
+  buildingModel: "standard",   // standard | cube
   selectedDim: null,
   dmgScenario: "none",   // none | wind | hail | snow | flood
   dmgSeed: 1,
@@ -745,7 +1304,7 @@ const state = {
 const holder = document.getElementById("canvas-holder");
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdbe7ef);
-scene.fog = new THREE.Fog(0xdbe7ef, 28, 60);
+scene.fog = new THREE.Fog(0xdbe7ef, 45, 95);
 
 const camera = new THREE.PerspectiveCamera(45, holder.clientWidth / holder.clientHeight, 0.1, 300);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -764,6 +1323,104 @@ scene.add(fillL);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x7fa06b, roughness: 1 }));
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
+/* ============================================================
+   周辺環境(隣家・前面道路・塀) — 参考用の背景。評価対象の建物ではありません
+============================================================ */
+const envGroup = new THREE.Group();
+scene.add(envGroup);
+const ENV = {
+  road:   new THREE.MeshStandardMaterial({ color: 0x9aa0a4, roughness: 0.95 }),
+  line:   new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.9 }),
+  gravel: new THREE.MeshStandardMaterial({ color: 0xb8b5ab, roughness: 1 }),
+  block:  new THREE.MeshStandardMaterial({ color: 0xbdb9ae, roughness: 0.95 }),
+  hedge:  new THREE.MeshStandardMaterial({ color: 0x4f7a44, roughness: 1 }),
+  pole:   new THREE.MeshStandardMaterial({ color: 0xc9c6bd, roughness: 0.85 }),
+  wire:   new THREE.MeshStandardMaterial({ color: 0x3b4148, roughness: 0.6 }),
+};
+function envBox(w, h, d, mat, x, y, z, ry) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  if (ry) m.rotation.y = ry;
+  envGroup.add(m);
+  return m;
+}
+function neighborHouse(x, z, w, d, wallH, rise, wallCol, roofCol, ry) {
+  const g = new THREE.Group();
+  const wm = new THREE.MeshStandardMaterial({ color: wallCol, roughness: 0.85 });
+  const rm = new THREE.MeshStandardMaterial({ color: roofCol, roughness: 0.7, side: THREE.DoubleSide });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), wm);
+  body.position.y = wallH / 2;
+  g.add(body);
+  const ov = 0.4, half = d / 2 + ov;
+  const ang = Math.atan2(rise, half);
+  const slope = Math.sqrt(half * half + rise * rise);
+  [1, -1].forEach((sf) => {
+    const pnl = new THREE.Mesh(new THREE.BoxGeometry(w + ov * 2, 0.09, slope), rm);
+    pnl.rotation.x = sf > 0 ? ang : -ang;
+    pnl.position.set(0, wallH + rise / 2, (sf * half) / 2);
+    g.add(pnl);
+  });
+  const tri = new THREE.Shape();
+  tri.moveTo(-d / 2, 0); tri.lineTo(d / 2, 0); tri.lineTo(0, rise); tri.lineTo(-d / 2, 0);
+  const tg = new THREE.ShapeGeometry(tri);
+  [w / 2 + 0.02, -(w / 2 + 0.02)].forEach((px) => {
+    const t = new THREE.Mesh(tg, wm);
+    t.rotation.y = Math.PI / 2; t.position.set(px, wallH, 0);
+    g.add(t);
+  });
+  // 窓(簡略)
+  const gm = new THREE.MeshStandardMaterial({ color: 0x3a5260, roughness: 0.25 });
+  for (let i = -1; i <= 1; i++) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.0, 0.06), gm);
+    win.position.set(i * (w / 3.2), wallH * 0.55, d / 2 + 0.02);
+    g.add(win);
+  }
+  g.position.set(x, 0, z);
+  if (ry) g.rotation.y = ry;
+  envGroup.add(g);
+  return g;
+}
+function buildNeighborhood() {
+  // 前面道路(南 +Z)
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(70, 6.5), ENV.road);
+  road.rotation.x = -Math.PI / 2; road.position.set(0, 0.012, 13.5);
+  envGroup.add(road);
+  for (let x = -32; x < 32; x += 4) {
+    const ln = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.14), ENV.line);
+    ln.rotation.x = -Math.PI / 2; ln.position.set(x, 0.02, 13.5);
+    envGroup.add(ln);
+  }
+  // 敷地の砂利・ブロック塀
+  const gvl = new THREE.Mesh(new THREE.PlaneGeometry(15, 17), ENV.gravel);
+  gvl.rotation.x = -Math.PI / 2; gvl.position.set(0, 0.008, 1.5);
+  envGroup.add(gvl);
+  [[-7.5, 1.5, 0.34, 17], [7.5, 1.5, 0.34, 17]].forEach(([bx, bz, bw, bd]) => {
+    envBox(bw, 0.85, bd, ENV.block, bx, 0.42, bz);
+  });
+  envBox(15, 0.85, 0.34, ENV.block, 0, 0.42, -7);
+  // 生垣(道路側の一部)
+  envBox(4.5, 1.1, 0.6, ENV.hedge, -4.6, 0.55, 9.6);
+  // 隣家(西・東・北)
+  neighborHouse(-15.5, 2.0, 8.5, 7, 3.0, 1.7, 0xd8d2c4, 0x8d5a45);
+  neighborHouse(16.0, -1.5, 9, 7.5, 5.6, 1.9, 0xc9c8c2, 0x54606b);
+  neighborHouse(1.5, -17.0, 10, 7, 3.1, 1.8, 0xcfd6d2, 0x6b6f57);
+  // 隣家の塀
+  envBox(0.3, 1.6, 16, ENV.block, -10.5, 0.8, 1.0);
+  envBox(0.3, 1.6, 16, ENV.block, 10.8, 0.8, -1.0);
+  // 電柱+電線
+  [[-9.0, 11.2], [11.5, 11.2]].forEach(([px, pz]) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 8.5, 10), ENV.pole);
+    pole.position.set(px, 4.25, pz);
+    envGroup.add(pole);
+    envBox(1.6, 0.09, 0.09, ENV.wire, px, 7.6, pz);
+  });
+  const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 20.5, 6), ENV.wire);
+  wire.rotation.z = Math.PI / 2;
+  wire.position.set(1.25, 7.5, 11.2);
+  envGroup.add(wire);
+}
+buildNeighborhood();
+
 const grid = new THREE.GridHelper(100, 100, 0x5c7a52, 0x6f8f63);
 grid.position.y = 0.001;
 scene.add(grid);
@@ -777,7 +1434,15 @@ function rebuild(resetCam) {
   markerMeshes.forEach((m) => scene.remove(m));
   markerMeshes = [];
 
-  currentDef = buildHouse(state.stories, state.roofShape, state.roofKey, state.wallKey);
+  if (state.buildingModel === "cube") {
+    currentDef = buildCubeHouse();
+    envGroup.visible = false;
+    ground.visible = false; grid.visible = false;
+  } else {
+    currentDef = buildHouse(state.stories, state.roofShape, state.roofKey, state.wallKey);
+    envGroup.visible = true;
+    ground.visible = true; grid.visible = true;
+  }
   modelGroup = currentDef.group;
   scene.add(modelGroup);
 
@@ -805,6 +1470,7 @@ function rebuild(resetCam) {
     state.selectedMember = null;
   }
   applyMode();
+  if (state.walk) buildWalkColliders();
   renderLabels();
   renderPanel();
 }
@@ -823,7 +1489,7 @@ const MEMBER_TARGETS = {
   kiso:    ["布基礎", "布基礎(中通り)"],
   naiso:   ["内壁(間仕切り)", "天井(1階)", "天井(2階)", "内部建具(ドア)"],
   yuka:    ["床(1階)", "床(2階)"],
-  setsubi: ["附帯設備(給湯器等)"],
+  setsubi: ["エコキュート(貯湯タンク)","エコキュート(ヒートポンプ)","エコキュート(基礎)","エコキュート(配管)","室外機","立水栓","電気メーター"],
   doushi:  ["胴差し", "床梁(2階床組)"],
   kaidan:  ["階段"],
   hafu:    ["破風・鼻隠し"],
@@ -866,7 +1532,13 @@ const DETAIL_NOTES = {
   "窓(2階)": "2階の開口部。高所のため飛来物被害を受けやすい部位です。",
   "雨戸・戸袋": "風災時は飛散・変形のほか、戸袋内への飛来物・浸水も確認します。",
   "玄関戸": "開口部(建具)。浸水時は戸・枠の変形や開閉不良も損害の対象になり得ます。",
-  "附帯設備(給湯器等)": "建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。",
+  "エコキュート(貯湯タンク)": "貯湯タンクは高さ・重量があり、強風での転倒や地震での移動・転倒が想定されます。据付脚・アンカーの状態も確認します。",
+  "エコキュート(ヒートポンプ)": "屋外機のため、飛来物の衝突・冠水・落雪による変形を確認します。ファンガードの変形は運転に影響します。",
+  "エコキュート(基礎)": "機器を据え付けるコンクリート基礎。水災では洗掘・沈下の有無を確認します。",
+  "エコキュート(配管)": "給湯・給水配管。凍結破損や、機器の移動に伴う配管の破断を確認します。",
+  "室外機": "空調の屋外機。飛来物の衝突、転倒、冠水を確認します。冠水した室外機は内部の電装品まで被害が及ぶことがあります。",
+  "立水栓": "屋外水栓。凍結破損や衝突による折損を確認します。",
+  "電気メーター": "外壁に設置される電気設備。浸水痕の高さの判断材料にもなります。",
   "床(1階)": "水災では浸水深(床下/床上)が損害額算定の基礎になります。反り・浮き・シミを確認します。",
   "床(2階)": "上階からの漏水時に被害を受けます。",
   "天井(1階)": "天井のシミは屋根損害・上階漏水のサインです。",
@@ -994,7 +1666,7 @@ function placeOn(obj, pos, normal) {
 
 function applyDamage() {
   const out = [];
-  if (state.dmgScenario === "none") return out;
+  if (state.dmgScenario === "none" || state.buildingModel === "cube") return out;
   const sc = state.dmgScenario;
   const seedMix = { wind: 131, hail: 313, snow: 977, flood: 613 }[sc] || 1;
   const rng = mulberry32(state.dmgSeed * 7919 + seedMix);
@@ -1369,13 +2041,103 @@ function updateLabelPositions() {
 /* ============================================================
    操作
 ============================================================ */
+/* ============================================================
+   歩行モード(ウォークスルー)
+============================================================ */
+const walkState = {
+  pos: new THREE.Vector3(0, 1.6, 9),
+  yaw: 0, pitch: -0.03, eye: 1.6,
+  keys: {}, touch: {},
+};
+const walkUI = document.getElementById("walk-ui");
+const walkHud = document.getElementById("walk-hud");
+let walkColliders = [];
+
+function buildWalkColliders() {
+  walkColliders = [];
+  if (!modelGroup) return;
+  modelGroup.updateMatrixWorld(true);
+  modelGroup.traverse((m) => {
+    if (!m.isMesh || !m.userData.member) return;
+    const mem = m.userData.member;
+    if (mem !== "外壁" && mem !== "外壁(妻壁)" && mem !== "布基礎" && mem !== "布基礎(中通り)") return;
+    const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+    g.computeBoundingBox();
+    walkColliders.push(g.boundingBox.expandByScalar(0.28));
+  });
+}
+function walkBlocked(x, z, y) {
+  if (state.walkPass) return false;
+  for (const b of walkColliders) {
+    if (x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && y > b.min.y && y < b.max.y) return true;
+  }
+  return false;
+}
+function setWalk(on) {
+  state.walk = on;
+  walkUI.classList.toggle("on", on);
+  document.getElementById("walk-toggle").classList.toggle("on", on);
+  if (on) {
+    buildWalkColliders();
+    // 建物の南側手前から開始
+    walkState.pos.set(0, walkState.eye, 9);
+    walkState.yaw = 0; walkState.pitch = -0.03;
+  } else if (document.pointerLockElement === dom) {
+    document.exitPointerLock();
+  }
+  updateWalkHud();
+  renderPanel();
+}
+function updateWalkHud() {
+  if (!state.walk) return;
+  const locked = document.pointerLockElement === dom;
+  const floor = walkState.eye > 3.0 ? "2階の目線" : (walkState.eye > 2.2 ? "中間" : "1階の目線");
+  walkHud.innerHTML = locked
+    ? `歩行中 — W A S D 移動 / Shift 早歩き / Q E 高さ / Esc 解除 ・ ${floor}(視点 ${walkState.eye.toFixed(1)}m)`
+    : `画面をクリックすると視点操作が始まります ・ ${floor}(視点 ${walkState.eye.toFixed(1)}m)`;
+}
+function stepWalk(dt) {
+  const k = walkState.keys, t = walkState.touch;
+  camera.rotation.set(walkState.pitch, walkState.yaw, 0, "YXZ");
+  const fast = k.ShiftLeft || k.ShiftRight;
+  const sp = (fast ? 3.4 : 1.5) * dt;
+  let f = (k.KeyW || k.ArrowUp || t.f || t.ql || t.qr ? 1 : 0) - (k.KeyS || k.ArrowDown || t.b ? 1 : 0);
+  let sd = (k.KeyD || k.ArrowRight || t.r || t.qr ? 1 : 0) - (k.KeyA || k.ArrowLeft || t.l || t.ql ? 1 : 0);
+  if (k.KeyQ || t.dn) walkState.eye = Math.max(0.4, walkState.eye - 1.2 * dt);
+  if (k.KeyE || t.up) walkState.eye = Math.min(9.0, walkState.eye + 1.2 * dt);
+  if (f || sd) {
+    const dir = new THREE.Vector3(-Math.sin(walkState.yaw), 0, -Math.cos(walkState.yaw));
+    const rgt = new THREE.Vector3(Math.cos(walkState.yaw), 0, -Math.sin(walkState.yaw));
+    const nx = walkState.pos.x + (dir.x * f + rgt.x * sd) * sp;
+    const nz = walkState.pos.z + (dir.z * f + rgt.z * sd) * sp;
+    const y = walkState.eye;
+    if (!walkBlocked(nx, walkState.pos.z, y)) walkState.pos.x = Math.max(-30, Math.min(30, nx));
+    if (!walkBlocked(walkState.pos.x, nz, y)) walkState.pos.z = Math.max(-30, Math.min(30, nz));
+  }
+  camera.position.set(walkState.pos.x, walkState.eye, walkState.pos.z);
+}
+
 const dom = renderer.domElement;
 dom.style.touchAction = "none";
 const drag = { on: false, x: 0, y: 0 };
 let lastPinch = null;
 
-dom.addEventListener("pointerdown", (e) => { drag.on = true; drag.x = e.clientX; drag.y = e.clientY; });
+dom.addEventListener("pointerdown", (e) => {
+  if (state.walk) { if (document.pointerLockElement !== dom && dom.requestPointerLock) dom.requestPointerLock(); drag.on = true; drag.x = e.clientX; drag.y = e.clientY; return; }
+  drag.on = true; drag.x = e.clientX; drag.y = e.clientY;
+});
 window.addEventListener("pointermove", (e) => {
+  if (state.walk) {
+    if (document.pointerLockElement === dom) {
+      walkState.yaw -= e.movementX * 0.0024;
+      walkState.pitch = Math.max(-1.3, Math.min(1.3, walkState.pitch - e.movementY * 0.0024));
+    } else if (drag.on) {
+      walkState.yaw -= (e.clientX - drag.x) * 0.005;
+      walkState.pitch = Math.max(-1.3, Math.min(1.3, walkState.pitch - (e.clientY - drag.y) * 0.005));
+      drag.x = e.clientX; drag.y = e.clientY;
+    }
+    return;
+  }
   if (!drag.on) return;
   orbit.theta -= (e.clientX - drag.x) * 0.006;
   orbit.phi   -= (e.clientY - drag.y) * 0.006;
@@ -1385,9 +2147,11 @@ window.addEventListener("pointermove", (e) => {
 window.addEventListener("pointerup", () => { drag.on = false; });
 dom.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if (state.walk) return;
   orbit.radius = Math.max(5, Math.min(40, orbit.radius + e.deltaY * 0.012));
 }, { passive: false });
 dom.addEventListener("touchmove", (e) => {
+  if (state.walk) return;
   if (e.touches.length === 2) {
     const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
     if (lastPinch !== null) orbit.radius = Math.max(5, Math.min(40, orbit.radius - (d - lastPinch) * 0.03));
@@ -1398,6 +2162,7 @@ dom.addEventListener("touchmove", (e) => {
 dom.addEventListener("touchend", () => { lastPinch = null; });
 
 dom.addEventListener("click", (e) => {
+  if (state.walk && document.pointerLockElement === dom) return;
   const rect = dom.getBoundingClientRect();
   const mouse = new THREE.Vector2(
     ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1410,6 +2175,25 @@ dom.addEventListener("click", (e) => {
     state.selectedMember = state.selectedMember === hk ? null : hk;
     renderLabels(); renderPanel(); applyMode();
   }
+});
+
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyF" && !e.repeat) { setWalk(!state.walk); e.preventDefault(); return; }
+  if (!state.walk) return;
+  walkState.keys[e.code] = true;
+  if (["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
+});
+window.addEventListener("keyup", (e) => { walkState.keys[e.code] = false; });
+document.addEventListener("pointerlockchange", () => { walkState.keys = {}; updateWalkHud(); });
+document.getElementById("walk-toggle").addEventListener("click", () => setWalk(!state.walk));
+document.querySelectorAll("#walk-pad button, #walk-updown button").forEach((b) => {
+  const k = b.dataset.mv;
+  const on = (ev) => { ev.preventDefault(); walkState.touch[k] = true; };
+  const off = (ev) => { ev.preventDefault(); walkState.touch[k] = false; };
+  b.addEventListener("pointerdown", on);
+  b.addEventListener("pointerup", off);
+  b.addEventListener("pointerleave", off);
+  b.addEventListener("pointercancel", off);
 });
 
 window.addEventListener("resize", () => {
@@ -1438,6 +2222,57 @@ function renderPanel() {
   panel.innerHTML = "";
 
   // 階数
+  // 建物モデル
+  const secModel = el("div", "section", "<h2>建物モデル</h2>");
+  const rowMd = el("div", "btn-row");
+  [["standard", "標準(木造在来)"], ["cube", "キューブ型(写真再現)"]].forEach(([k, lb]) => {
+    const b = el("button", "btn" + (state.buildingModel === k ? " active" : ""), lb);
+    b.addEventListener("click", () => {
+      if (state.buildingModel === k) return;
+      state.buildingModel = k; state.selectedMember = null; state.selectedDim = null;
+      rebuild(true);
+    });
+    rowMd.appendChild(b);
+  });
+  secModel.appendChild(rowMd);
+  secModel.appendChild(el("div", "legend-cap", state.buildingModel === "cube"
+    ? "写真を基に再現した木造2階建・窯業系サイディング・片流れ屋根のモデルです。敷地(砂利・犬走り・乱形石アプローチ)、門柱、メッシュフェンス、隣家までそのまま再現しています。寸法は写真からの推定値です。<b>階数・屋根形状・屋根材/外壁材の切替と被害シミュレーションは、このモデルでは使用できません</b>(標準モデルでご利用ください)。"
+    : "汎用の木造在来工法モデルです。階数・屋根形状・仕上材の切替と被害シミュレーションが使えます。"));
+  panel.appendChild(secModel);
+
+  // 視点モード
+  const secView = el("div", "section", "<h2>視点モード</h2>");
+  const rowV = el("div", "btn-row");
+  [[false, "オービット(全体を見る)"], [true, "歩行モード"]].forEach(([v, lb]) => {
+    const b = el("button", "btn" + (state.walk === v ? " active" : ""), lb);
+    b.addEventListener("click", () => { if (state.walk !== v) setWalk(v); });
+    rowV.appendChild(b);
+  });
+  secView.appendChild(rowV);
+  if (state.walk) {
+    const rowH = el("div", "btn-row");
+    const heights = [["1階の目線", 1.6], ["2階の目線", 1.6 + 2.75], ["見下ろし", 6.5]];
+    heights.forEach(([lb, h]) => {
+      if (lb === "2階の目線" && state.stories < 2) return;
+      const b = el("button", "btn" + (Math.abs(walkState.eye - h) < 0.05 ? " active" : ""), lb);
+      b.addEventListener("click", () => { walkState.eye = h; updateWalkHud(); renderPanel(); });
+      rowH.appendChild(b);
+    });
+    rowH.style.marginTop = "6px";
+    secView.appendChild(rowH);
+    const bp = el("button", "btn" + (state.walkPass ? " active" : ""), (state.walkPass ? "☑ " : "☐ ") + "壁をすり抜ける(内部も歩ける)");
+    bp.style.marginTop = "6px";
+    bp.addEventListener("click", () => { state.walkPass = !state.walkPass; if (!state.walkPass) buildWalkColliders(); renderPanel(); });
+    secView.appendChild(bp);
+    const bs = el("button", "btn", "開始位置に戻る");
+    bs.style.marginTop = "6px";
+    bs.addEventListener("click", () => { walkState.pos.set(0, walkState.eye, 9); walkState.yaw = 0; walkState.pitch = -0.03; });
+    secView.appendChild(bs);
+    secView.appendChild(el("div", "legend-cap", "PCは画面クリックで視点操作を開始(W A S D 移動 / Shift 早歩き / Q E 高さ / Esc 解除)。スマホ・タブレットは画面ドラッグで見回し、左下の十字ボタンで移動します。<b>F</b>キーでいつでも切替できます。"));
+  }
+  panel.appendChild(secView);
+
+  if (state.buildingModel === "standard") {
   const secN = el("div", "section", "<h2>階数</h2>");
   const rowN = el("div", "btn-row");
   [[1, "平屋(1階建て)"], [2, "2階建て"]].forEach(([v, lb]) => {
@@ -1447,6 +2282,7 @@ function renderPanel() {
   });
   secN.appendChild(rowN);
   panel.appendChild(secN);
+  }   // ← 階数(標準モデルのみ)
 
   // 表示モード
   const secMode = el("div", "section", "<h2>表示モード</h2>");
@@ -1477,6 +2313,7 @@ function renderPanel() {
   }
   panel.appendChild(secMode);
 
+  if (state.buildingModel === "standard") {
   // 屋根形状
   const secShape = el("div", "section", "<h2>屋根形状</h2>");
   const rowS = el("div", "btn-row");
@@ -1539,6 +2376,7 @@ function renderPanel() {
     if (activeD) secDmg.appendChild(el("div", "note-box", `<div class="title">${activeD.name}</div>${activeD.note}`));
   }
   panel.appendChild(secDmg);
+  }   // ← 屋根形状〜被害シミュレーション(標準モデルのみ)
 
   // 寸法
   const secD = el("div", "section", "<h2>寸法の名称</h2>");
@@ -1617,13 +2455,22 @@ function renderPanel() {
 /* ============================================================
    ループ
 ============================================================ */
+let _lastT = performance.now();
 function animate() {
-  camera.position.set(
-    orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
-    orbit.target.y + orbit.radius * Math.cos(orbit.phi),
-    orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
-  );
-  camera.lookAt(orbit.target);
+  const now = performance.now();
+  const dt = Math.min((now - _lastT) / 1000, 0.1);
+  _lastT = now;
+  if (state.walk) {
+    stepWalk(dt);
+    if ((now / 250 | 0) % 2 === 0) updateWalkHud();
+  } else {
+    camera.position.set(
+      orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
+      orbit.target.y + orbit.radius * Math.cos(orbit.phi),
+      orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
+    );
+    camera.lookAt(orbit.target);
+  }
   hlMat.emissiveIntensity = 0.35 + 0.3 * Math.sin(performance.now() * 0.004);
   dimHlMat.emissiveIntensity = 0.5 + 0.3 * Math.sin(performance.now() * 0.004);
   renderer.render(scene, camera);
