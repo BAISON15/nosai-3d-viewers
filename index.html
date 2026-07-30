@@ -31,6 +31,11 @@
   .card h2 { margin: 0 0 8px; font-size: 16px; }
   .card p { margin: 0; font-size: 13px; color: #475569; line-height: 1.7; }
   .card .go { margin-top: 12px; font-size: 12px; color: #2563eb; font-weight: 600; }
+  .features {
+    margin-top: 24px; font-size: 11.5px; color: #475569; line-height: 1.8;
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px 16px;
+  }
+  .features strong { color: #92400e; }
   .disclaimer {
     margin-top: 24px; font-size: 11px; color: #64748b; line-height: 1.8;
     background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px;
@@ -42,34 +47,38 @@
 <body>
 <header>
   <h1>損害保険 評価研修用 3Dビューア</h1>
-  <p>農業共済(NOSAI)の評価研修を想定したインタラクティブな3Dモデル集 / Three.js製・単一HTML</p>
+  <p>園芸施設共済・建物共済・農機具共済の評価研修を想定したインタラクティブな3Dモデル集 / Three.js製・単一HTML</p>
 </header>
 <main>
   <a class="card" href="viewers/engei-kyosai-3d-viewer.html">
     <span class="tag">園芸施設共済</span>
     <h2>園芸施設 3Dビューア</h2>
-    <p>パイプハウス(Ⅱ類)・鉄骨屋根型(Ⅳ類)・雨よけ施設(Ⅵ類)・多目的ネットハウス(Ⅶ類)・ガラス室の5型式を切替表示。施設構造部分(妻面/側面/屋根面/基礎ほか)の色分けや被覆材の切替、部材ごとの評価着眼点マーカー付き。</p>
+    <p>パイプハウス(Ⅱ類)・鉄骨屋根型(Ⅳ類)・雨よけ施設(Ⅵ類)・多目的ネットハウス(Ⅶ類)・ガラス室の5型式。鉄骨屋根型とガラス室は単棟/2連棟/3連棟に対応(谷樋・接続側面を再現)。施設構造部分の色分け、被覆材切替、寸法線表示、部材ハイライトに加え、<b>台風・大雪の被害シミュレーション</b>で損害評価の練習ができます。</p>
     <div class="go">ビューアを開く →</div>
   </a>
   <a class="card" href="viewers/noki-kyosai-3d-viewer.html">
     <span class="tag">農機具共済</span>
     <h2>農機具 3Dビューア</h2>
-    <p>乗用型トラクタ・乗用型田植機・自脱型/普通型コンバイン・薬剤散布用乗用管理機の5機種。トラクタは附属装置(作業機)15種の着脱に対応(3点リンク・PTOシャフト接合を再現)。オーガ・ブームの格納/展開切替、部位ごとの評価着眼点マーカー付き。</p>
+    <p>乗用型トラクタ・乗用型田植機・自脱型/普通型コンバイン・薬剤散布用乗用管理機の5機種。トラクタはロータリー・プラウ・あぜ塗機・ブームスプレーヤなど附属装置15種の着脱に対応(3点リンク/ドローバー接合・PTOシャフトを再現)。オーガ・ブームの格納/展開切替、部材ハイライト付き。</p>
     <div class="go">ビューアを開く →</div>
   </a>
   <a class="card" href="viewers/tatemono-kyosai-3d-viewer.html">
     <span class="tag">建物共済</span>
     <h2>一般住宅 3Dビューア</h2>
-    <p>木造在来工法の一般住宅を平屋/2階建てで切替。軸組・外装(屋根材/外壁材テクスチャ切替)・内装まで再現し、部位色分け・骨組み表示・内部透過表示に対応。</p>
+    <p>木造在来工法の一般住宅を平屋/2階建て、切妻/寄棟/片流れ/陸屋根の4屋根形状で切替。軸組・外装(屋根材/外壁材テクスチャ、破風・雨樋・庇・雨戸・パラペット等)・内装まで再現。部位色分け・骨組み表示・内部透過表示・寸法線表示に加え、<b>台風・雹・大雪・水災の被害シミュレーション</b>で損害評価の練習ができます。</p>
     <div class="go">ビューアを開く →</div>
   </a>
 
+  <div class="features">
+    <strong>3ビューア共通の機能:</strong> 部材を選ぶとオレンジ色にハイライトされ、選択した部材以外は淡色化されるため、柱・梁・筋かいなど形の似た部材の違いを視覚的に確認できます。部材の分け方は「まとめて」と「個別(部材ごと・使用数付き)」を切替でき、部材ごとの色分け表示にも対応。各部材には評価上の着眼点が表示されます。
+  </div>
+
   <div class="disclaimer">
-    <strong>免責事項:</strong> 本モデルは研修・学習用の簡略化されたイメージであり、農林水産省「園芸施設共済評価要領」や各農業共済組合の正式な損害評価基準・様式を完全に再現したものではありません。実際の引受評価・損害評価は必ず公式な評価要領・約款・基準に基づいて行ってください。詳細は <a href="README.md">README</a> を参照してください。
+    <strong>免責事項:</strong> 本モデルは研修・学習用の簡略化されたイメージであり、農林水産省「園芸施設共済評価要領」や各農業共済組合の正式な損害評価基準・様式を完全に再現したものではありません。被害シミュレーションで生成される被害は研修用に自動生成した架空の想定被害であり、実際の被害の分布・程度や損害割合の算定例を示すものではありません。実際の引受評価・損害評価は必ず公式な評価要領・約款・基準に基づいて行ってください。詳細は <a href="README.md">README</a> を参照してください。
   </div>
 </main>
 <footer>
-  <a href="https://github.com/">GitHub</a> · Apache License 2.0
+  <a href="https://github.com/BAISON15/nosai-3d-viewers/">GitHub</a> · Apache License 2.0
 </footer>
 </body>
 </html>
