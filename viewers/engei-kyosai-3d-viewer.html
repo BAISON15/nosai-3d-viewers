@@ -713,13 +713,16 @@ renderer.setSize(holder.clientWidth, holder.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 holder.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 0.9));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8d9aa5, 1.25));  // 天空光+地面反射。日陰側が黒く潰れないよう底上げ
 const dir = new THREE.DirectionalLight(0xfff4e0, 1.1);
 dir.position.set(10, 16, 8);
 scene.add(dir);
-const fill = new THREE.DirectionalLight(0xcfe0ff, 0.3);
-fill.position.set(-8, 6, -10);
+const fill = new THREE.DirectionalLight(0xcfe0ff, 0.60);
+fill.position.set(-12, 7, -10);
 scene.add(fill);
+const fill2 = new THREE.DirectionalLight(0xdfe8f2, 0.35);   // 北東からの補助光
+fill2.position.set(9, 5, -9);
+scene.add(fill2);
 
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshStandardMaterial({ color: 0x7fa06b, roughness: 1 }));
 ground.rotation.x = -Math.PI / 2;
@@ -1286,7 +1289,7 @@ function renderLabels() {
     div.innerHTML = `<div class="label-chip${m.isDamage ? " dmg" : ""}${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
     div.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
     labelsHolder.appendChild(div);
-    labelEntries.push({ el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
+    labelEntries.push({ occluded: false, el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
   });
   if (state.showDims) {
     currentDef.dims.forEach((d) => {
@@ -1301,14 +1304,40 @@ function renderLabels() {
       const lp = (d.from && d.to)
         ? [(d.from[0] + d.to[0]) / 2, (d.from[1] + d.to[1]) / 2 + 0.16, (d.from[2] + d.to[2]) / 2]
         : d.pos;
-      labelEntries.push({ el: div, pos: new THREE.Vector3(lp[0], lp[1], lp[2]) });
+      labelEntries.push({ occluded: false, el: div, pos: new THREE.Vector3(lp[0], lp[1], lp[2]) });
     });
   }
   updateDimObjects();
 }
 
+function occluderTargets() { return modelGroup ? [modelGroup] : []; }
+/* ラベルの遮蔽判定: 壁などの陰にあるラベルは隠す(半透明の面は遮蔽物とみなさない) */
+const occRay = new THREE.Raycaster();
+let occTick = 0;
+function updateOcclusion(force) {
+  occTick++;
+  if (!force && occTick % 3 !== 0) return;
+  const targets = occluderTargets();
+  if (!targets.length) return;
+  const camPos = camera.position;
+  labelEntries.forEach((e) => {
+    const v = e.pos.clone().sub(camPos);
+    const dist = v.length();
+    if (dist < 0.6) { e.occluded = false; return; }
+    occRay.set(camPos, v.normalize());
+    occRay.far = dist - 0.35;
+    const hits = occRay.intersectObjects(targets, true);
+    e.occluded = hits.some((h) => {
+      const o = h.object, mat = o.material;
+      if (!o.visible || !mat) return false;
+      if (mat.transparent && (mat.opacity === undefined ? 1 : mat.opacity) < 0.6) return false;
+      return true;
+    });
+  });
+}
 function updateLabelPositions() {
   const w = holder.clientWidth, h = holder.clientHeight;
+  updateOcclusion(false);
   const items = labelEntries.map((e) => {
     const pr = e.pos.clone().project(camera);
     return { e, x: (pr.x * 0.5 + 0.5) * w, y: (-pr.y * 0.5 + 0.5) * h, z: pr.z, behind: pr.z > 1 };
@@ -1325,7 +1354,7 @@ function updateLabelPositions() {
   const placed = [];
   items.forEach((it) => {
     const el = it.e.el;
-    if (it.behind || it.x < -60 || it.x > w + 60 || it.y < -40 || it.y > h + 40) {
+    if (it.behind || it.e.occluded || it.x < -60 || it.x > w + 60 || it.y < -40 || it.y > h + 40) {
       el.style.visibility = "hidden"; return;
     }
     if (!it.e.cw) { it.e.cw = el.offsetWidth || 90; it.e.ch = el.offsetHeight || 22; }

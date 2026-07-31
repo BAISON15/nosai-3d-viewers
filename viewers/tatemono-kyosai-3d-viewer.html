@@ -483,6 +483,7 @@ function buildCubeHouse() {
   const B = { x0: S.splitX, x1: xE, zF: zF + S.bFront, zR: zR, top: S.eaveB };
   const g = new THREE.Group();
   const site = new THREE.Group();   // 敷地・外構(評価対象外の背景として非タグ)
+  site.userData.isSite = true;
   g.add(site);
 
   const P = { wall: "外壁", roof: "屋根", open: "開口部", gut: "雨樋・附帯", found: "基礎", eq: "附帯設備" };
@@ -1147,11 +1148,17 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   }
   g.add(tag(box(0.09, 2.1, 1.0, MAT.door, W / 2 + 0.1, foundH + 1.07, 1.6), "開口部", "玄関戸", "ext"));
 
-  /* ---- 附帯設備 ---- */
-  /* ---- 附帯設備(エコキュート・室外機・立水栓・電気メーター) ---- */
+  /* ---- 附帯設備 ----
+     配置の考え方: 玄関(東面)のアプローチを避け、窓と竪樋にも干渉しない位置に置く。
+       ・エコキュート … 北面の窓と窓の間(x≈±0.6の空き)
+       ・室外機       … 開口部のない西面
+       ・立水栓       … 南西の庭先  ・電気メーター … 玄関と反対の西面    */
   const EQP = "附帯設備";
+  const zN = -(D / 2 + 0.05);
+  const xWface = -(W / 2 + 0.05);
+  // エコキュート(北面・窓の間)
   {
-    const bx = W / 2 + 0.75, bz = -1.2;
+    const bx = -0.62, bz = zN - 0.48;
     g.add(tag(box(0.62, 0.1, 0.86, MAT.conc, bx, 0.05, bz), EQP, "エコキュート(基礎)", "ext"));
     const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 1.85, 18), MAT.equip);
     tank.position.set(bx, 1.02, bz);
@@ -1159,17 +1166,19 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.07, 18), MAT.equip);
     cap.position.set(bx, 1.98, bz);
     g.add(tag(cap, EQP, "エコキュート(貯湯タンク)", "ext"));
-    [1.55, 0.5].forEach((y) => g.add(tag(box(0.03, 0.17, 0.14, MAT.gutter, bx - 0.29, y, bz + 0.12), EQP, "エコキュート(貯湯タンク)", "ext")));
-    g.add(tag(box(0.05, 0.75, 0.05, MAT.gutter, bx - 0.34, 0.4, bz - 0.2), EQP, "エコキュート(配管)", "ext"));
-    const hx = W / 2 + 0.7, hz = -2.6;
-    g.add(tag(box(0.55, 0.12, 0.95, MAT.conc, hx, 0.06, hz), EQP, "エコキュート(基礎)", "ext"));
-    g.add(tag(box(0.38, 0.68, 0.82, MAT.equip, hx, 0.46, hz), EQP, "エコキュート(ヒートポンプ)", "ext"));
+    [1.55, 0.5].forEach((y) => g.add(tag(box(0.14, 0.17, 0.03, MAT.gutter, bx + 0.1, y, bz - 0.29), EQP, "エコキュート(貯湯タンク)", "ext")));
+    g.add(tag(box(0.05, 0.75, 0.05, MAT.gutter, bx - 0.18, 0.4, bz + 0.3), EQP, "エコキュート(配管)", "ext"));
+    // ヒートポンプ(タンクの東隣、送風は北向き)
+    const hx = 0.62, hz = zN - 0.5;
+    g.add(tag(box(0.95, 0.12, 0.55, MAT.conc, hx, 0.06, hz), EQP, "エコキュート(基礎)", "ext"));
+    g.add(tag(box(0.82, 0.68, 0.38, MAT.equip, hx, 0.46, hz), EQP, "エコキュート(ヒートポンプ)", "ext"));
     const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.04, 16), MAT.black);
-    fan.rotation.z = Math.PI / 2;
-    fan.position.set(hx + 0.2, 0.48, hz);
+    fan.rotation.x = Math.PI / 2;
+    fan.position.set(hx, 0.48, hz - 0.2);
     g.add(tag(fan, EQP, "エコキュート(ヒートポンプ)", "ext"));
-    g.add(tag(box(0.05, 0.5, 0.05, MAT.gutter, hx - 0.22, 0.9, hz + 0.3), EQP, "エコキュート(配管)", "ext"));
+    g.add(tag(box(0.05, 0.5, 0.05, MAT.gutter, hx - 0.3, 0.9, hz + 0.22), EQP, "エコキュート(配管)", "ext"));
   }
+  // 室外機(開口部のない西面。送風は西向き)
   const acAt = (ax, az, ry) => {
     const u = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.66, 0.32), MAT.equip);
@@ -1188,17 +1197,19 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     u.traverse((m) => { if (m.isMesh) { m.userData.part = EQP; m.userData.member = "室外機"; m.userData.layer = "ext"; m.userData.baseMat = m.material; } });
     g.add(u);
   };
-  acAt(-(W / 2 + 0.55), -1.0, Math.PI / 2);
-  if (n === 2) acAt(-(W / 2 + 0.55), 1.2, Math.PI / 2);
+  acAt(xWface - 0.4, -1.0, -Math.PI / 2);
+  if (n === 2) acAt(xWface - 0.4, 0.6, -Math.PI / 2);
+  // 立水栓(南西の庭先)
   {
-    const sx = -(W / 2 + 0.9), sz = 2.4;
+    const sx = -(W / 2 + 0.6), sz = D / 2 + 0.4;   // 南西の角の外側(戸袋・窓の正面を避ける)
     g.add(tag(box(0.12, 1.0, 0.12, MAT.equip, sx, 0.5, sz), EQP, "立水栓", "ext"));
-    g.add(tag(box(0.62, 0.14, 0.44, MAT.equip, sx - 0.25, 0.07, sz), EQP, "立水栓", "ext"));
+    g.add(tag(box(0.62, 0.14, 0.44, MAT.equip, sx, 0.07, sz + 0.3), EQP, "立水栓", "ext"));
     const fc = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 8), MAT.gutter);
-    fc.rotation.z = Math.PI / 2; fc.position.set(sx - 0.12, 0.9, sz);
+    fc.rotation.x = Math.PI / 2; fc.position.set(sx, 0.9, sz + 0.12);
     g.add(tag(fc, EQP, "立水栓", "ext"));
   }
-  g.add(tag(box(0.1, 0.34, 0.26, MAT.equip, W / 2 + 0.13, foundH + 1.55, 0.9), EQP, "電気メーター", "ext"));
+  // 電気メーター(西面・室外機から離す)
+  g.add(tag(box(0.1, 0.34, 0.26, MAT.equip, xWface - 0.08, foundH + 1.55, 2.2), EQP, "電気メーター", "ext"));
 
   /* ---- 内装(1階) ---- */
   const f1 = foundH + 0.16;
@@ -1253,7 +1264,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     { key:"kiso",  name:"基礎", pos:[0, 0.25, D / 2 + 0.15], note:"亀裂・不同沈下・傾きを確認します。地震等では建物の傾斜の程度が損害認定の重要な指標になります。" },
     { key:"naiso", name:"内壁・天井", pos:[0.8, foundH + 1.5, -1.2], note:"雨漏り・漏水によるシミ・膨れ・剥がれを確認。天井のシミは屋根損害のサインです。「内部表示」で間仕切り・天井を確認できます。" },
     { key:"yuka",  name:"床", pos:[-1.5, foundH + 0.35, 1.5], note:"水災では浸水深(床下浸水/床上浸水)が損害額算定の基礎になります。フローリングの反り・浮き・シミも確認します。" },
-    { key:"setsubi", name:"附帯設備(エコキュート・室外機等)", pos:[W / 2 + 1.4, 2.3, -1.2], note:"建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。エコキュート(貯湯タンク・ヒートポンプ)や室外機は、風災での転倒・飛来物衝突、水災での冠水、雪害での落雪による変形を確認します。給排水設備の事故による水濡れも火災共済の対象事故の例に挙げられます。" },
+    { key:"setsubi", name:"附帯設備(エコキュート・室外機等)", pos:[0, 2.4, -(D / 2 + 1.1)], note:"建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。エコキュート(貯湯タンク・ヒートポンプ)や室外機は、風災での転倒・飛来物衝突、水災での冠水、雪害での落雪による変形を確認します。給排水設備の事故による水濡れも火災共済の対象事故の例に挙げられます。" },
   ];
   if (roofShape !== "rikuyane") {
     const hafuPos = {
@@ -1296,6 +1307,8 @@ const state = {
   walk: false,
   walkPass: true,   // 壁をすり抜けて内部も歩ける
   buildingModel: "standard",   // standard | cube
+  showEnv: true,      // 周辺環境(隣家・道路・塀)の表示
+  envFade: true,      // 視界を遮る周辺物を自動で半透明化
   selectedDim: null,
   dmgScenario: "none",   // none | wind | hail | snow | flood
   dmgSeed: 1,
@@ -1312,13 +1325,16 @@ renderer.setSize(holder.clientWidth, holder.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 holder.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 0.9));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8d9aa5, 1.25));  // 天空光+地面反射。日陰側が黒く潰れないよう底上げ
 const dirL = new THREE.DirectionalLight(0xfff4e0, 1.1);
 dirL.position.set(10, 16, 8);
 scene.add(dirL);
-const fillL = new THREE.DirectionalLight(0xcfe0ff, 0.3);
-fillL.position.set(-8, 6, -10);
+const fillL = new THREE.DirectionalLight(0xcfe0ff, 0.60);   // 北西からの補助光(西面も起こす)
+fillL.position.set(-12, 7, -10);
 scene.add(fillL);
+const fillL2 = new THREE.DirectionalLight(0xdfe8f2, 0.35);  // 北東からの補助光
+fillL2.position.set(9, 5, -10);
+scene.add(fillL2);
 
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x7fa06b, roughness: 1 }));
 ground.rotation.x = -Math.PI / 2;
@@ -1346,7 +1362,7 @@ function envBox(w, h, d, mat, x, y, z, ry) {
 }
 function neighborHouse(x, z, w, d, wallH, rise, wallCol, roofCol, ry) {
   const g = new THREE.Group();
-  const wm = new THREE.MeshStandardMaterial({ color: wallCol, roughness: 0.85 });
+  const wm = new THREE.MeshStandardMaterial({ color: wallCol, roughness: 0.85, side: THREE.DoubleSide });   // 妻壁の三角は左右で向きが逆になるため両面描画
   const rm = new THREE.MeshStandardMaterial({ color: roofCol, roughness: 0.7, side: THREE.DoubleSide });
   const body = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), wm);
   body.position.y = wallH / 2;
@@ -1440,9 +1456,10 @@ function rebuild(resetCam) {
     ground.visible = false; grid.visible = false;
   } else {
     currentDef = buildHouse(state.stories, state.roofShape, state.roofKey, state.wallKey);
-    envGroup.visible = true;
     ground.visible = true; grid.visible = true;
   }
+  clearEnvFade();
+  applyEnvVisibility();
   modelGroup = currentDef.group;
   scene.add(modelGroup);
 
@@ -1979,7 +1996,7 @@ function renderLabels() {
     div.innerHTML = `<div class="label-chip${m.isDamage ? " dmg" : ""}${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
     div.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
     labelsHolder.appendChild(div);
-    labelEntries.push({ el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
+    labelEntries.push({ occluded: false, el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
   });
   if (state.showDims) {
     currentDef.dims.forEach((d) => {
@@ -1994,14 +2011,92 @@ function renderLabels() {
       const lp = (d.from && d.to)
         ? [(d.from[0] + d.to[0]) / 2, (d.from[1] + d.to[1]) / 2 + 0.16, (d.from[2] + d.to[2]) / 2]
         : d.pos;
-      labelEntries.push({ el: div, pos: new THREE.Vector3(lp[0], lp[1], lp[2]) });
+      labelEntries.push({ occluded: false, el: div, pos: new THREE.Vector3(lp[0], lp[1], lp[2]) });
     });
   }
   updateDimObjects();
 }
 
+function occluderTargets() {
+  const t = [];
+  if (modelGroup) t.push(modelGroup);
+  if (envGroup && envGroup.visible) t.push(envGroup);
+  return t;
+}
+/* 周辺環境(隣家・塀・道路)の表示制御と自動フェード
+   建物とカメラの間に入る周辺物だけを半透明にして、対象建物が隠れないようにする */
+const envFadeMat = new THREE.MeshStandardMaterial({ color: 0xc3ccd3, transparent: true, opacity: 0.13, depthWrite: false, roughness: 1 });
+const envRay = new THREE.Raycaster();
+let envTick = 0;
+const fadedEnv = new Set();
+function siteGroup() {
+  if (state.buildingModel === "cube") {
+    return modelGroup ? modelGroup.children.find((c) => c.userData && c.userData.isSite) : null;
+  }
+  return envGroup;
+}
+function clearEnvFade() {
+  fadedEnv.forEach((m) => { if (m.userData.origMat) { m.material = m.userData.origMat; delete m.userData.origMat; } });
+  fadedEnv.clear();
+}
+function applyEnvVisibility() {
+  const g = siteGroup();
+  if (g) g.visible = state.showEnv;
+  if (!state.showEnv) clearEnvFade();
+  // 標準モデルの地面・グリッドはキューブ型では非表示のまま
+  if (state.buildingModel !== "cube") { ground.visible = true; grid.visible = true; }
+}
+function updateEnvFade() {
+  const g = siteGroup();
+  if (!g || !g.visible || !state.envFade || state.walk) { if (fadedEnv.size) clearEnvFade(); return; }
+  envTick++;
+  if (envTick % 4 !== 0) return;
+  const t = orbit.target, hit = new Set();
+  const offs = [[0, 0, 0], [2.2, 0.6, 0], [-2.2, 0.6, 0], [0, 2.0, 1.6], [0, 2.0, -1.6], [0, -0.8, 0], [2.2, 2.0, 0], [-2.2, 2.0, 0]];
+  for (const o of offs) {
+    const p = new THREE.Vector3(t.x + o[0], t.y + o[1], t.z + o[2]);
+    const v = p.clone().sub(camera.position);
+    const d = v.length();
+    if (d < 0.5) continue;
+    envRay.set(camera.position, v.normalize());
+    envRay.far = d - 0.2;
+    envRay.intersectObjects([g], true).forEach((h) => hit.add(h.object));
+  }
+  fadedEnv.forEach((m) => {
+    if (!hit.has(m)) { if (m.userData.origMat) { m.material = m.userData.origMat; delete m.userData.origMat; } fadedEnv.delete(m); }
+  });
+  hit.forEach((m) => {
+    if (!fadedEnv.has(m)) { m.userData.origMat = m.material; m.material = envFadeMat; fadedEnv.add(m); }
+  });
+}
+
+/* ラベルの遮蔽判定: 壁などの陰にあるラベルは隠す(半透明の面は遮蔽物とみなさない) */
+const occRay = new THREE.Raycaster();
+let occTick = 0;
+function updateOcclusion(force) {
+  occTick++;
+  if (!force && occTick % 3 !== 0) return;
+  const targets = occluderTargets();
+  if (!targets.length) return;
+  const camPos = camera.position;
+  labelEntries.forEach((e) => {
+    const v = e.pos.clone().sub(camPos);
+    const dist = v.length();
+    if (dist < 0.6) { e.occluded = false; return; }
+    occRay.set(camPos, v.normalize());
+    occRay.far = dist - 0.35;
+    const hits = occRay.intersectObjects(targets, true);
+    e.occluded = hits.some((h) => {
+      const o = h.object, mat = o.material;
+      if (!o.visible || !mat) return false;
+      if (mat.transparent && (mat.opacity === undefined ? 1 : mat.opacity) < 0.6) return false;
+      return true;
+    });
+  });
+}
 function updateLabelPositions() {
   const w = holder.clientWidth, h = holder.clientHeight;
+  updateOcclusion(false);
   const items = labelEntries.map((e) => {
     const pr = e.pos.clone().project(camera);
     return { e, x: (pr.x * 0.5 + 0.5) * w, y: (-pr.y * 0.5 + 0.5) * h, z: pr.z, behind: pr.z > 1 };
@@ -2018,7 +2113,7 @@ function updateLabelPositions() {
   const placed = [];
   items.forEach((it) => {
     const el = it.e.el;
-    if (it.behind || it.x < -60 || it.x > w + 60 || it.y < -40 || it.y > h + 40) {
+    if (it.behind || it.e.occluded || it.x < -60 || it.x > w + 60 || it.y < -40 || it.y > h + 40) {
       el.style.visibility = "hidden"; return;
     }
     if (!it.e.cw) { it.e.cw = el.offsetWidth || 90; it.e.ch = el.offsetHeight || 22; }
@@ -2249,6 +2344,17 @@ function renderPanel() {
     rowV.appendChild(b);
   });
   secView.appendChild(rowV);
+  const bEnv = el("button", "btn" + (state.showEnv ? " active" : ""), (state.showEnv ? "☑ " : "☐ ") + "周辺環境(隣家・道路・塀)を表示");
+  bEnv.style.marginTop = "6px";
+  bEnv.addEventListener("click", () => { state.showEnv = !state.showEnv; applyEnvVisibility(); renderPanel(); });
+  secView.appendChild(bEnv);
+  if (state.showEnv) {
+    const bFade = el("button", "btn" + (state.envFade ? " active" : ""), (state.envFade ? "☑ " : "☐ ") + "視界を遮る隣家・塀を自動で透過");
+    bFade.style.marginTop = "6px";
+    bFade.addEventListener("click", () => { state.envFade = !state.envFade; if (!state.envFade) clearEnvFade(); renderPanel(); });
+    secView.appendChild(bFade);
+    secView.appendChild(el("div", "legend-cap", "カメラと建物の間に入った隣家・塀・電柱だけを自動で薄く表示します(歩行モードでは実際の見え方を優先して無効)。"));
+  }
   if (state.walk) {
     const rowH = el("div", "btn-row");
     const heights = [["1階の目線", 1.6], ["2階の目線", 1.6 + 2.75], ["見下ろし", 6.5]];
@@ -2471,6 +2577,7 @@ function animate() {
     );
     camera.lookAt(orbit.target);
   }
+  updateEnvFade();
   hlMat.emissiveIntensity = 0.35 + 0.3 * Math.sin(performance.now() * 0.004);
   dimHlMat.emissiveIntensity = 0.5 + 0.3 * Math.sin(performance.now() * 0.004);
   renderer.render(scene, camera);
