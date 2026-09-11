@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<!--
+  農業共済 評価研修用 3Dビューア (Agricultural Insurance Assessment 3D Viewers)
+  3D水稲栽培シミュレーション 〜一年の米づくり〜
+  Copyright 2026 BAISON
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  This software loads Three.js (MIT License) from a CDN at runtime.
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>3D水稲栽培シミュレーション 〜一年の米づくり〜</title>
+<!-- three.js 0.184.0 / ES Modules + importmap -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.184.0/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+  }
+}
+</script>
+<script>
+  // モジュールの読み込みに失敗した場合の案内（起動できれば __booted が立つ）
+  window.__booted = false;
+  window.addEventListener('load', ()=> setTimeout(()=>{
+    if(window.__booted) return;
+    const m = document.getElementById('modal');
+    if(m) m.innerHTML = '<div class="sheet"><h2>3Dを読み込めませんでした</h2>' +
+      '<p>three.js (0.184.0) の読み込みに失敗しました。ネットワーク接続を確認して、' +
+      'ページを再読み込みしてください。</p></div>';
+  }, 6000));
+</script>
+<style>
+  :root{
+    --gold:#F0BC3C; --green:#6DBE5B; --blue:#4FA3D9; --red:#E0654B;
+    --card:rgba(11,24,30,.76); --line:rgba(255,255,255,.14);
+    --txt:#F2EEE3; --dim:#9DA9AF;
+    --sans:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",sans-serif;
+    --mincho:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{font-family:var(--sans);background:#08151B;color:var(--txt);-webkit-font-smoothing:antialiased}
+  #view{position:fixed;inset:0;z-index:1}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  #ui{position:fixed;inset:0;z-index:10;pointer-events:none;display:flex;flex-direction:column;
+      justify-content:space-between;padding:12px 14px calc(12px + env(safe-area-inset-bottom));gap:10px}
+  .on{pointer-events:auto}
+  .card{background:var(--card);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+        border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .top,.bottom{width:100%;max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+
+  .meters{display:flex;gap:20px;padding:11px 17px;flex:1}
+  .m{display:flex;flex-direction:column;gap:3px;min-width:70px}
+  .m .k{font-size:10.5px;color:var(--dim);letter-spacing:.05em}
+  .m .v{font-size:18px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+  .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.13);overflow:hidden;margin-top:4px}
+  .bar i{display:block;height:100%;width:0;border-radius:3px;transition:width .4s ease,background .4s}
+  .aim{font-size:10px;color:var(--dim);margin-top:3px}
+
+  .guide{padding:13px 17px}
+  .gh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .chip{font-size:11px;font-weight:700;color:#241A05;background:var(--gold);padding:3px 10px;border-radius:20px}
+  .gt{font-family:var(--mincho);font-size:19px;font-weight:600;letter-spacing:.04em}
+  .gw{margin-left:auto;font-size:11px;color:var(--dim)}
+  .gd{font-size:13px;line-height:1.8;color:#DDD8CB;margin-top:6px;max-width:72ch}
+  .task{margin-top:9px;font-size:13px;padding:7px 12px;border-radius:8px;
+        background:rgba(240,188,60,.13);border:1px solid rgba(240,188,60,.32)}
+  .task.done{background:rgba(109,190,91,.13);border-color:rgba(109,190,91,.35)}
+
+  .acts{padding:11px 12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  button{font:600 14px var(--sans);color:var(--txt);cursor:pointer;padding:12px 17px;border-radius:11px;
+         border:1px solid var(--line);background:rgba(255,255,255,.09);
+         transition:background .15s,transform .1s}
+  button:hover:not(:disabled){background:rgba(255,255,255,.18)}
+  button:active:not(:disabled){transform:scale(.97)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  .b-water{background:rgba(79,163,217,.24);border-color:rgba(79,163,217,.45)}
+  .b-main{background:linear-gradient(135deg,#F0BC3C,#D2941A);color:#241A05;border-color:transparent}
+  .b-weed{background:rgba(224,101,75,.22);border-color:rgba(224,101,75,.45)}
+  .b-next{background:linear-gradient(135deg,#6DBE5B,#3B8A42);color:#0D1F10;border-color:transparent}
+
+  .veil{position:fixed;inset:0;z-index:20;background:rgba(5,13,18,.84);display:flex;
+        align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+  .veil.hide{display:none}
+  .sheet{width:100%;max-width:560px;background:#0F212A;border:1px solid var(--line);
+         border-radius:18px;padding:26px 24px}
+  .sheet h2{font-family:var(--mincho);font-size:23px;font-weight:600;letter-spacing:.05em;margin-bottom:12px}
+  .sheet p{font-size:13.5px;line-height:1.9;color:#DDD8CB;margin-bottom:13px}
+  .sheet ul{list-style:none;font-size:13px;line-height:1.75;margin-bottom:14px}
+  .sheet li{padding:9px 13px;border-radius:10px;background:rgba(255,255,255,.055);margin-bottom:7px;color:#DDD8CB}
+  .sheet li b{color:var(--gold)}
+  .aimbox{display:inline-block;font-size:12.5px;color:var(--blue);border:1px solid rgba(79,163,217,.4);
+          background:rgba(79,163,217,.12);border-radius:8px;padding:6px 12px;margin-bottom:14px}
+  .note{font-size:12px;color:var(--dim)}
+  .scores{display:flex;gap:24px;flex-wrap:wrap;margin:14px 0 18px}
+  .scores .n{font-size:36px;font-weight:700;color:var(--gold);line-height:1;font-variant-numeric:tabular-nums}
+  .scores .u{font-size:11.5px;color:var(--dim);margin-top:5px;max-width:150px;line-height:1.5}
+  .rows{width:100%;border-collapse:collapse;font-size:12.5px}
+  .rows th,.rows td{border-bottom:1px solid var(--line);padding:7px 5px;text-align:left}
+  .rows th{font-weight:400;font-size:11px;color:var(--dim)}
+  .rows td.r{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  .words{margin-top:20px}
+  .words h3{font-family:var(--mincho);font-size:16px;margin-bottom:6px}
+  .words dt{color:var(--gold);font-size:12.5px;margin-top:7px}
+  .words dd{font-size:12.5px;color:#BEB9AD;line-height:1.7}
+
+  .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:30;font-size:12.5px;
+         background:rgba(20,36,44,.95);border:1px solid var(--line);color:var(--txt);
+         padding:9px 17px;border-radius:22px;opacity:0;pointer-events:none;transition:opacity .25s}
+  .toast.show{opacity:1}
+  .look{position:fixed;left:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:9;
+        font-size:11px;color:var(--dim)}
+  @media (max-width:640px){
+    #ui{padding:8px 9px calc(8px + env(safe-area-inset-bottom));gap:8px}
+    .meters{gap:13px;padding:9px 12px}
+    .m{min-width:58px}.m .v{font-size:15px}
+    .gt{font-size:17px}.gd{font-size:12.5px}
+    button{font-size:13px;padding:11px 13px}
+    .look{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="view"><canvas id="c"></canvas></div>
+
+<div id="ui">
+  <div class="top">
+    <div class="row">
+      <div class="card meters on">
+        <div class="m"><span class="k">季節</span><span class="v" id="m-season" style="color:var(--blue)">春 (4月)</span></div>
+        <div class="m"><span class="k">工程</span><span class="v" id="m-stage" style="color:var(--gold)">1 / 7</span></div>
+      </div>
+      <div class="card meters on">
+        <div class="m">
+          <span class="k">田んぼの水</span><span class="v" id="m-water">0cm</span>
+          <div class="bar"><i id="b-water" style="background:var(--blue)"></i></div>
+          <span class="aim" id="m-aim">目安 5cm</span>
+        </div>
+        <div class="m">
+          <span class="k">稲の育ち</span><span class="v" id="m-growth">0%</span>
+          <div class="bar"><i id="b-growth" style="background:var(--green)"></i></div>
+        </div>
+        <div class="m">
+          <span class="k">雑草・害虫</span><span class="v" id="m-weed">少ない</span>
+          <div class="bar"><i id="b-weed" style="background:var(--green)"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card guide on">
+      <div class="gh">
+        <span class="chip" id="g-when">春 4月</span>
+        <span class="gt" id="g-title">土づくり・代かき</span>
+        <span class="gw" id="g-weather"></span>
+      </div>
+      <p class="gd" id="g-desc"></p>
+      <p class="task" id="g-task"></p>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="card acts on" id="acts">
+      <button class="b-water" id="btn-in">💧 給水 ＋1cm</button>
+      <button class="b-water" id="btn-out">☀️ 排水 −1cm</button>
+      <button class="b-main" id="btn-main">🚜 作業する</button>
+      <button class="b-weed" id="btn-weed">🌿 草取り・防除</button>
+      <button class="b-next" id="btn-next">⏩ 次の季節へ</button>
+    </div>
+  </div>
+</div>
+
+<div class="look">ドラッグで見まわす ／ ホイールで拡大縮小</div>
+<div class="toast" id="toast"></div>
+
+<div class="veil" id="modal">
+  <div class="sheet">
+    <h2 id="mo-title">お米ができるまでの一年</h2>
+    <p id="mo-body"></p>
+    <div id="mo-extra"></div>
+    <button class="b-main" id="mo-ok">はじめる</button>
+  </div>
+</div>
+
+<div class="veil hide" id="result">
+  <div class="sheet">
+    <h2 id="rs-title">🌾 収穫おつかれさまでした</h2>
+    <p id="rs-lead"></p>
+    <div class="scores">
+      <div><div class="n" id="rs-yield">—</div><div class="u">10アール（約25m×40m）あたりの玄米（kg・目安）</div></div>
+      <div><div class="n" id="rs-grade">—</div><div class="u">お米の等級の目安</div></div>
+      <div><div class="n" id="rs-score">—</div><div class="u">田んぼの管理の点数</div></div>
+    </div>
+    <table class="rows"><thead><tr><th>工程</th><th>ふりかえり</th><th class="r">点</th></tr></thead>
+      <tbody id="rs-log"></tbody></table>
+    <div class="words">
+      <h3>この一年に出てきた言葉</h3>
+      <dl id="rs-words"></dl>
+    </div>
+    <div style="margin-top:20px"><button class="b-main" onclick="location.reload()">もう一年やる</button></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+"use strict";
+
+/* =========================================================
+   1. 一年の流れ（7工程）
+   ========================================================= */
+const STAGES = [
+  {
+    season:"春 (4月)", when:"春 4月", title:"田起こし・代かき", weather:"晴れ 18℃",
+    aim:5, growthTo:0, weedRate:0,
+    desc:"米づくりは土からです。まず水を入れない乾いた状態でトラクタが土を掘り起こし、空気を入れます（田起こし）。そのあと水を張り、土をこねて表面を平らにならします。これが代かき（しろかき）です。",
+    task:"① 水を抜いたまま田起こし → ② 水を3〜7cm張って代かき、の順に進めます。",
+    steps:[
+      { icon:"🚜", action:"田起こしをする", mode:"till", aim:0,
+        need:{water:[0,1], msg:"田起こしは乾いた田んぼで行います。水を抜いてから耕しましょう。"} },
+      { icon:"🚜", action:"代かきをする", mode:"puddle", aim:5,
+        need:{water:[3,7], msg:"代かきは水を張ってから。3〜7cmにしてください。"} }
+    ]
+  },
+  {
+    season:"春 (5月)", when:"春 5月", title:"田植え", weather:"晴れ 24℃",
+    aim:4, growthTo:12, weedRate:0, steps:[{ icon:"🌾", action:"田植機で植える", mode:"plant",
+      need:{water:[2,7], msg:"水が合っていません。4cm前後にしてから植えましょう。"} }],
+    desc:"ハウスで30日ほど育てた苗を、田植機で植えていきます。水が深すぎると苗が浮き、浅すぎると土が乾いて根が傷みます。",
+    task:"水深を4cm前後にして、田植えをしてください。",
+  },
+  {
+    season:"初夏 (6月)", when:"初夏 6月", title:"分げつ期・追肥", weather:"くもり 25℃",
+    aim:3, growthTo:45, weedRate:0.8, steps:[{ icon:"🎒", action:"背負動散で追肥をまく", mode:"fert" }],
+    desc:"株もとから新しい茎がどんどん増えます。これを分げつ（ぶんげつ）といいます。水を浅くすると水温と地温が上がり、茎が増えやすくなります。水を張った田んぼにトラクタは入れないので、追肥は背負式の動力散布機を背負って歩いてまきます（近年はドローンを使う地域もあります）。",
+    task:"水を浅め（3cm前後）に保ち、追肥をまいてください。雑草が増えたら草取りを。"
+  },
+  {
+    season:"夏 (7月)", when:"夏 7月", title:"中干し・畦の草刈り", weather:"晴れ 30℃",
+    aim:0, growthTo:65, weedRate:0.5,
+    steps:[
+      { icon:"☀️", action:"中干しを始める", mode:"dry",
+        need:{water:[0,0], msg:"まだ水が残っています。排水してから中干しを始めましょう。"} },
+      { icon:"🌱", action:"畦の草を刈る", mode:"mow" }
+    ],
+    desc:"茎が十分に増えたら水を抜き、田面に軽くひびが入るまで1週間ほど干します（中干し）。あわせて畦（あぜ）の草刈りもこの時期に。畦の雑草はカメムシのすみかで、放っておくと来月の出穂期に穂を吸いにきます。",
+    task:"① 水を抜いて中干し → ② 畦の草を刈る、の順に進めます。草刈りは出穂の2週間前までに終えるのが目安です。",
+  },
+  {
+    season:"晩夏 (8月)", when:"晩夏 8月", title:"出穂・カメムシ防除", weather:"晴れ 33℃",
+    aim:5, growthTo:85, weedRate:1.0, steps:[{ icon:"🛸", action:"ドローンで防除する", mode:"spray",
+      need:{water:[3,9], msg:"出穂期は水が要ります。5cm前後に張ってから防除しましょう。"} }],
+    desc:"穂が出て花が咲きます。乾かすと実りが悪くなるので水をしっかり張ります。この時期にカメムシが穂を吸うと、玄米に黒い点がついて等級が下がります。水を張った田んぼに機械は入れないので、防除はドローンや無人ヘリで上からまきます（畦畔から動力噴霧機のホースでまく方法もあります）。畦の草刈りは先月のうちに済ませておきます。",
+    task:"水を5cm前後に戻し、ドローンで田んぼ全体を防除してください。",
+  },
+  {
+    season:"初秋 (9月)", when:"初秋 9月", title:"登熟・落水", weather:"晴れ 28℃",
+    aim:0, growthTo:97, weedRate:0.3,
+    steps:[
+      { icon:"💧", action:"間断灌漑をする", mode:"irrigate", aim:3,
+        need:{water:[2,12], msg:"間断灌漑は水を入れるところから始めます。3cmほど張ってください。"} },
+      { icon:"☀️", action:"落水する", mode:"drain", aim:0 }
+    ],
+    desc:"粒に栄養がたまり、穂が黄色く色づいてきます（登熟・とうじゅく）。この時期は、水を入れては自然に落とすことをくり返す間断灌漑（かんだんかんがい）で、根に酸素を送りながら実らせます。出穂から30日ほどたったら、収穫に向けて水を落とします（落水）。",
+    task:"① 間断灌漑で根を守りながら実らせる → ② 落水して田んぼを乾かす、の順に進めます。",
+  },
+  {
+    season:"秋 (10月)", when:"秋 10月", title:"稲刈り", weather:"晴れ 24℃",
+    aim:0, growthTo:100, weedRate:0, steps:[{ icon:"🚜", action:"コンバインで刈る", mode:"harvest",
+      need:{water:[0,0], msg:"田んぼがぬかるんでいます。水を抜いてから刈りましょう。"} }],
+    desc:"穂の9割ほどが黄色くなったら刈り取りです。コンバインが刈り取りともみの取り出しを同時に行います。田んぼが乾いていないと機械が沈みます。",
+    task:"水を完全に抜いてから、稲刈りをしてください。",
+    need:{water:[0,0], msg:"田んぼがぬかるんでいます。水を抜いてから刈りましょう。"}
+  }
+];
+
+const WORDS = [
+  ["代かき（しろかき）","水を張った田んぼの土をこねて、表面を平らにならす作業。"],
+  ["分げつ（ぶんげつ）","1本の苗の株もとから、新しい茎が枝分かれして増えること。"],
+  ["中干し（なかぼし）","7月ごろ、いったん水を抜いて田んぼを乾かすこと。根が強くなる。"],
+  ["出穂（しゅっすい）","茎の中で育った穂が外に出てくること。8月ごろ。"],
+  ["斑点米（はんてんまい）","カメムシに吸われて黒い点がついたお米。等級が下がる。"],
+  ["畦畔（けいはん）の草刈り","畦の草はカメムシのすみか。出穂の2週間前までに刈っておく。"],
+  ["登熟（とうじゅく）","咲いたあとの穂に栄養がたまり、粒が実っていくこと。"],
+  ["落水（らくすい）","稲刈りに備えて、田んぼの水を抜くこと。"],
+  ["倒伏（とうふく）","強い風や雨で稲が倒れること。刈り取りが難しくなる。"]
+];
+
+/* =========================================================
+   2. 状態
+   ========================================================= */
+const GRID = 6, CELLS = GRID*GRID, CELL = 1.6, FIELD = GRID*CELL, WATER_MAX = 12;
+const state = {
+  idx: 0, step: 0, water: 0, growth: 0, weed: 0, quality: 100, dryDay: 0, mowed: false,
+  done: false, working: false, finished: false, log: []
+};
+const cells = [];
+for(let i=0;i<CELLS;i++) cells.push({tilled:false,puddled:false,planted:false,harvested:false,dry:false,crack:0});
+
+const weedOrder = [...Array(CELLS).keys()].sort(()=>Math.random()-0.5);
+const el = id => document.getElementById(id);
+function toast(msg){
+  const t = el('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+/* =========================================================
+   3. 稲と雑草の形（湾曲したリボンを組み合わせる）
+   ========================================================= */
+function ribbon(angle, lean, length, width, curve){
+  const SEG=5, pos=[], idx=[];
+  for(let i=0;i<=SEG;i++){
+    const t=i/SEG, bend=curve*t*t;
+    const r=Math.sin(lean+bend)*length*t, y=Math.cos(lean+bend)*length*t;
+    const x=Math.cos(angle)*r, z=Math.sin(angle)*r;
+    const w=width*(1-t*0.8)*(t<0.2?t/0.2:1);
+    const nx=-Math.sin(angle)*w, nz=Math.cos(angle)*w;
+    pos.push(x-nx,y,z-nz, x+nx,y,z+nz);
+    if(i<SEG){ const a=i*2; idx.push(a,a+1,a+2, a+1,a+3,a+2); }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+function merge(list){
+  let vc=0, ic=0;
+  list.forEach(g=>{ vc+=g.attributes.position.count; ic+=g.index.count; });
+  const pos=new Float32Array(vc*3), nor=new Float32Array(vc*3), idx=new Uint16Array(ic);
+  let vo=0, io=0;
+  list.forEach(g=>{
+    pos.set(g.attributes.position.array, vo*3);
+    nor.set(g.attributes.normal.array, vo*3);
+    const gi=g.index.array;
+    for(let k=0;k<gi.length;k++) idx[io+k]=gi[k]+vo;
+    vo+=g.attributes.position.count; io+=gi.length; g.dispose();
+  });
+  const out=new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
+  out.setIndex(new THREE.BufferAttribute(idx,1));
+  return out;
+}
+// 稲：細い葉が8枚、まっすぐ立ち上がってから軽く先が垂れる
+const kabuGeo = s => merge([0,1,2,3,4,5,6,7].map(i=>
+  ribbon((i/8)*Math.PI*2 + s*1.3, 0.07+((i+s)%3)*0.055, 1.05+((i*7+s*3)%5)*0.05, 0.048, 0.30+((i+s)%4)*0.09)));
+const hoGeo = s => merge([0,1,2].map(i=> ribbon((i/3)*Math.PI*2+s, 0.10, 0.60, 0.042, 1.95)));
+// 畦の草：背が低く、外へ開いた短い草の株。稲と見間違えないようにする
+const weedGeo = () => merge([0,1,2,3,4,5].map(i=>
+  ribbon((i/6)*Math.PI*2+0.6, 0.34+((i%3)*0.10), 0.52+((i%2)*0.08), 0.032, 0.55)));
+// 田んぼの雑草（コナギ・ヒエのイメージ）。稲より背が高く、葉が広くて外へ寝る
+const paddyWeedGeo = () => merge([
+  ...[0,1,2,3,4].map(i=> ribbon((i/5)*Math.PI*2+0.4, 0.50+((i%3)*0.08), 1.45+((i%2)*0.2), 0.125, 0.30)),
+  ribbon(0.0, 0.02, 2.05, 0.045, 0.10),      // まっすぐ立つ茎
+  ribbon(0.9, 0.04, 1.85, 0.06, 0.85)        // 先の穂
+]);
+
+/* =========================================================
+   4. シーン（田面は1枚の泥、機械が通った跡が残る）
+   ========================================================= */
+const canvas = el('c');
+let renderer, scene, camera, sun, hemi, water, ground, paddy;
+let leafMat, hoMat, weedMat, waterMat, waterNormal, canalMat, canalNormal, inflow;
+let inflowTimer = 0;
+let paddyCtx, paddyTex, dryBackup = null, pmrem;
+const TEX = 512;
+const plants = [], weeds = [], azeGrass = [];
+
+function pos2(i){
+  const gx=i%GRID, gz=Math.floor(i/GRID);
+  return {x:(gx-(GRID-1)/2)*CELL, z:(gz-(GRID-1)/2)*CELL};
+}
+function cellAt(x,z){
+  const gx=Math.min(GRID-1, Math.max(0, Math.floor((x+FIELD/2)/CELL)));
+  const gz=Math.min(GRID-1, Math.max(0, Math.floor((z+FIELD/2)/CELL)));
+  return gz*GRID+gx;
+}
+// 平面はX軸まわりに-90度倒してあり、さらにテクスチャは上下反転して貼られる。
+// その結果、キャンバスのY座標はワールドZとそのまま同じ向きになる。
+function texUV(x,z){ return {u:(x+FIELD/2)/FIELD*TEX, v:(z+FIELD/2)/FIELD*TEX}; }
+
+/* ---- 田面のテクスチャ（ここに作業の跡を描いていく） ---- */
+function mudBase(){
+  const c = paddyCtx;
+  c.fillStyle = '#8B7B57'; c.fillRect(0,0,TEX,TEX);
+  for(let i=0;i<900;i++){
+    c.globalAlpha = 0.05 + Math.random()*0.12;
+    c.fillStyle = Math.random()<0.5 ? '#6A5C3E' : '#A3936C';
+    c.beginPath(); c.arc(Math.random()*TEX, Math.random()*TEX, 3+Math.random()*20, 0, 7); c.fill();
+  }
+  c.globalAlpha = 1;
+  paddyTex.needsUpdate = true;
+}
+const WORK = {
+  till:   {col:'#5A4530', grain:'#412F1F', tire:'#3B2C1C', tw:0.17},
+  puddle: {col:'#4E4739', grain:'#413B2F', tire:'#443D30', tw:0.13},
+  plant:  {col:'#4A4335', grain:'#3E382C', tire:'#3C3629', tw:0.10},
+  harvest:{col:'#9A8A5F', grain:'#7E7049', tire:'#7A6C46', tw:0.15},
+  fert:   null, spray:null, mow:null, irrigate:null, drain:null, dry:null
+};
+let trackPath = [];
+
+/* 区画を、縁をくずした形で塗る（重ねて塗るので継ぎ目も塗り残しも出ない） */
+function paintCellTex(i, mode){
+  const st = WORK[mode];
+  if(!st) return;
+  const c = paddyCtx, p = pos2(i), t = texUV(p.x, p.z);
+  const half = CELL/FIELD*TEX/2;
+  c.fillStyle = st.col;
+  c.beginPath();
+  for(let a=0;a<14;a++){
+    const ang = a/14*Math.PI*2;
+    const rr = half*(1.35 + Math.random()*0.25);       // 隣とかならず重なる大きさ
+    const x = t.u+Math.cos(ang)*rr, y = t.v+Math.sin(ang)*rr;
+    a ? c.lineTo(x,y) : c.moveTo(x,y);
+  }
+  c.closePath(); c.fill();
+  for(let k=0;k<26;k++){                                // 土の粒立ち
+    c.globalAlpha = 0.06+Math.random()*0.14;
+    c.fillStyle = Math.random()<0.5 ? st.grain : '#FFFFFF';
+    c.beginPath();
+    c.arc(t.u+(Math.random()-0.5)*half*2.2, t.v+(Math.random()-0.5)*half*2.2,
+          2+Math.random()*10, 0, 7);
+    c.fill();
+  }
+  c.globalAlpha = 1;
+  redrawTracks(mode);                                   // 塗りの上に車輪跡を描き直す
+  paddyTex.needsUpdate = true;
+}
+
+/* 機械が通った線を車輪の跡として重ねる */
+function redrawTracks(mode){
+  const st = WORK[mode];
+  if(!st || trackPath.length < 2) return;
+  const c = paddyCtx;
+  c.lineCap='round'; c.lineJoin='round';
+  c.strokeStyle = st.tire;
+  c.lineWidth = CELL/FIELD*TEX*st.tw;
+  const off = CELL/FIELD*TEX*0.22;
+  [1,-1].forEach(sgn=>{
+    c.beginPath();
+    for(let k=1;k<trackPath.length;k++){
+      const a=trackPath[k-1], b=trackPath[k];
+      const dx=b.u-a.u, dy=b.v-a.v, len=Math.hypot(dx,dy);
+      if(len<0.5) continue;
+      const nx=-dy/len*off*sgn, ny=dx/len*off*sgn;
+      c.moveTo(a.u+nx, a.v+ny); c.lineTo(b.u+nx, b.v+ny);
+    }
+    c.stroke();
+  });
+}
+function addTrackPoint(mode, x, z){
+  if(!WORK[mode]) return;
+  const t = texUV(x,z);
+  const last = trackPath[trackPath.length-1];
+  if(last && Math.hypot(t.u-last.u, t.v-last.v) < 4) return;   // 点が多くなりすぎないように
+  trackPath.push(t);
+  redrawTracks(mode);
+  paddyTex.needsUpdate = true;
+}
+function drawCracks(day){                          // 中干しで田面が乾いてひび割れる
+  const c = paddyCtx;
+  c.globalAlpha = 0.06; c.fillStyle = '#BCAB80'; c.fillRect(0,0,TEX,TEX); c.globalAlpha = 1;
+  c.strokeStyle = 'rgba(48,36,22,0.5)'; c.lineWidth = 1.4 + day*0.15;
+  for(let i=0;i<22;i++){
+    let x=Math.random()*TEX, y=Math.random()*TEX;
+    c.beginPath(); c.moveTo(x,y);
+    for(let k=0;k<4;k++){ x+=(Math.random()-0.5)*46; y+=(Math.random()-0.5)*46; c.lineTo(x,y); }
+    c.stroke();
+  }
+  paddyTex.needsUpdate = true;
+}
+
+/* ---- 空・水面のテクスチャ ---- */
+/* 全天球の空。太陽も描き込み、これを環境マップにして水面へ映す */
+function skyTexture(skyHex, sunHex, power){
+  const W=1024, H=512;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const g=cv.getContext('2d');
+  const sky=new THREE.Color(skyHex);
+  const zenith=sky.clone().multiplyScalar(0.62).offsetHSL(0,0.06,0);
+  const haze =sky.clone().lerp(new THREE.Color(0xFFFFFF),0.55);
+  const under=sky.clone().lerp(new THREE.Color(0x4A4A38),0.72);
+  const gr=g.createLinearGradient(0,0,0,H);
+  gr.addColorStop(0,   '#'+zenith.getHexString());
+  gr.addColorStop(0.42,'#'+sky.getHexString());
+  gr.addColorStop(0.50,'#'+haze.getHexString());
+  gr.addColorStop(1,   '#'+under.getHexString());
+  g.fillStyle=gr; g.fillRect(0,0,W,H);
+
+  // 太陽（光源の向きと同じ位置に置く）
+  const d=new THREE.Vector3(16,20,11).normalize();
+  const su=(Math.atan2(d.z,d.x)/(Math.PI*2)+0.5)*W;
+  const sv=(1-(Math.asin(d.y)/Math.PI+0.5))*H;
+  const glow=g.createRadialGradient(su,sv,2,su,sv,150);
+  const sc=new THREE.Color(sunHex);
+  glow.addColorStop(0,'rgba(255,255,245,'+(0.95*power)+')');
+  glow.addColorStop(0.06,'rgba('+Math.round(sc.r*255)+','+Math.round(sc.g*255)+','+Math.round(sc.b*255)+',0.75)');
+  glow.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=glow; g.beginPath(); g.arc(su,sv,150,0,7); g.fill();
+
+  // 雲
+  g.globalAlpha=0.20;
+  for(let i=0;i<26;i++){
+    const x=Math.random()*W, y=90+Math.random()*130;
+    g.fillStyle='#FFFFFF';
+    g.beginPath(); g.ellipse(x,y,40+Math.random()*90,9+Math.random()*13,0,0,7); g.fill();
+  }
+  g.globalAlpha=1;
+
+  const t=new THREE.CanvasTexture(cv);
+  t.mapping=THREE.EquirectangularReflectionMapping;
+  t.colorSpace=THREE.SRGBColorSpace;
+  return t;
+}
+function buildSky(skyHex, sunHex, power){
+  const tex = skyTexture(skyHex, sunHex, power);
+  const env = pmrem.fromEquirectangular(tex).texture;
+  if(scene.background && scene.background.dispose) scene.background.dispose();
+  if(scene.environment) scene.environment.dispose();
+  scene.background = tex;
+  scene.environment = env;      // 水面がこの空を映す
+}
+function waterNormalTexture(){
+  const n=192, cv=document.createElement('canvas'); cv.width=cv.height=n;
+  const g=cv.getContext('2d'), img=g.createImageData(n,n);
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++){
+    const i=(y*n+x)*4;
+    const nx=Math.sin(x*0.20)*0.4 + Math.sin((x*0.08+y*0.13))*0.6;
+    const ny=Math.cos(y*0.17)*0.4 + Math.sin((x*0.11-y*0.06))*0.6;
+    img.data[i]=128+nx*46; img.data[i+1]=128+ny*46; img.data[i+2]=248; img.data[i+3]=255;
+  }
+  g.putImageData(img,0,0);
+  const t=new THREE.CanvasTexture(cv);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,4);
+  return t;
+}
+function grassTexture(base, dark){
+  const n=128, cv=document.createElement('canvas'); cv.width=cv.height=n;
+  const g=cv.getContext('2d');
+  g.fillStyle=base; g.fillRect(0,0,n,n);
+  for(let i=0;i<1400;i++){
+    g.globalAlpha=0.06+Math.random()*0.16;
+    g.strokeStyle=Math.random()<0.5?dark:'#FFFFFF';
+    g.lineWidth=1;
+    const x=Math.random()*n, y=Math.random()*n;
+    g.beginPath(); g.moveTo(x,y); g.lineTo(x+(Math.random()-0.5)*3, y-2-Math.random()*4); g.stroke();
+  }
+  const t=new THREE.CanvasTexture(cv);
+  t.colorSpace=THREE.SRGBColorSpace;
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(30,30);
+  return t;
+}
+
+function initScene(){
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;   // 水面のきらめきの白飛びを抑える
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xA8C8D8, 30, 95);
+  camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+
+  pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+
+  hemi = new THREE.HemisphereLight(0xC6E0EE, 0x4C5A3C, 1.35); scene.add(hemi);
+  sun = new THREE.DirectionalLight(0xFFF3DC, 2.2); sun.position.set(16,20,11);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048,2048);
+  const sc = sun.shadow.camera;
+  sc.left=-11; sc.right=11; sc.top=11; sc.bottom=-11; sc.near=1; sc.far=60;
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.02;
+  scene.add(sun);
+
+  // まわりの地面
+  ground = new THREE.Mesh(new THREE.PlaneGeometry(300,300),
+           new THREE.MeshLambertMaterial({color:0x7C8A52, map:grassTexture('#7C8A52','#4E5C30')}));
+  ground.rotation.x=-Math.PI/2; ground.position.y=-0.34; ground.receiveShadow=true; scene.add(ground);
+
+  // 田面（1枚の泥。継ぎ目は出ない）
+  const pc = document.createElement('canvas'); pc.width=pc.height=TEX;
+  paddyCtx = pc.getContext('2d');
+  paddyTex = new THREE.CanvasTexture(pc);
+  paddyTex.colorSpace = THREE.SRGBColorSpace;
+  paddyTex.anisotropy = 8;
+  paddy = new THREE.Mesh(new THREE.PlaneGeometry(FIELD, FIELD),
+          new THREE.MeshLambertMaterial({map:paddyTex}));
+  paddy.rotation.x=-Math.PI/2; paddy.position.y=0; paddy.receiveShadow=true; scene.add(paddy);
+  mudBase();
+
+  // 畦（草に覆われた土手）
+  const azeTex = grassTexture('#6E7C43','#485229'); azeTex.repeat.set(6,1);
+  const azeMat = new THREE.MeshLambertMaterial({color:0x7A8450, map:azeTex});
+  const h=0.34, half=FIELD/2+0.42;
+  [[0,half,FIELD+1.7,0.84],[0,-half,FIELD+1.7,0.84]].forEach(v=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(v[2],h,v[3]), azeMat);
+    m.position.set(v[0], h/2-0.32, v[1]); scene.add(m);
+  });
+  [[half,0,0.84,FIELD+1.7],[-half,0,0.84,FIELD+1.7]].forEach(v=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(v[2],h,v[3]), azeMat);
+    m.position.set(v[0], h/2-0.32, v[1]); scene.add(m);
+  });
+
+  // 用水路（水が流れている）と水口
+  const conc = new THREE.MeshLambertMaterial({color:0xA9A9A0});
+  const cz = half + 1.15;
+  [-0.42,0.42].forEach(off=>{
+    const w=new THREE.Mesh(new THREE.BoxGeometry(FIELD+3.4,0.42,0.18), conc);
+    w.position.set(0,-0.18,cz+off); scene.add(w);
+  });
+  const chBottom=new THREE.Mesh(new THREE.BoxGeometry(FIELD+3.4,0.1,0.9), conc);
+  chBottom.position.set(0,-0.36,cz); scene.add(chBottom);
+
+  canalNormal = waterNormalTexture();
+  canalNormal.repeat.set(14,1);
+  canalMat = new THREE.MeshPhysicalMaterial({
+    color:0x4E7488, roughness:0.12, metalness:0.0,
+    transparent:true, opacity:0.92,
+    normalMap:canalNormal, normalScale:new THREE.Vector2(0.55,0.55),
+    envMapIntensity:1.2, clearcoat:1.0, clearcoatRoughness:0.08
+  });
+  const canal = new THREE.Mesh(new THREE.PlaneGeometry(FIELD+3.4, 0.82, 40, 1), canalMat);
+  canal.rotation.x=-Math.PI/2; canal.position.set(0,-0.16,cz); scene.add(canal);
+
+  // 水口（用水路から田んぼへ引き込むパイプ）
+  const pipe=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,1.7,10),
+             new THREE.MeshLambertMaterial({color:0x5E6266}));
+  pipe.rotation.x=Math.PI/2; pipe.position.set(-2.0,0.13,half+0.32); scene.add(pipe);
+  const gate=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.34,0.05),
+             new THREE.MeshLambertMaterial({color:0x7C8288}));
+  gate.position.set(-2.0,0.16,cz-0.45); scene.add(gate);       // 水路側のゲート板
+
+  // 取水中に出る流れとしぶき
+  inflow = new THREE.Group();
+  const jet = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.075,0.6,8),
+              new THREE.MeshPhysicalMaterial({color:0xBFD9E4, roughness:0.15, metalness:0,
+                transparent:true, opacity:0.72, envMapIntensity:1.2}));
+  jet.rotation.x = 1.15;
+  jet.position.set(0,-0.02,-0.22);
+  inflow.add(jet); inflow.userData.jet = jet;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.12,0.30,20),
+               new THREE.MeshBasicMaterial({color:0xE4F1F6, transparent:true,
+                 opacity:0.5, side:THREE.DoubleSide}));
+  ring.rotation.x = -Math.PI/2;
+  inflow.add(ring); inflow.userData.ring = ring;
+  inflow.position.set(-2.0, 0.06, half-0.55);
+  inflow.visible = false;
+  scene.add(inflow);
+
+  // 畦の上の草（カメムシのすみか）
+  const azeGrassMat = new THREE.MeshLambertMaterial({color:0x97A75C, side:THREE.DoubleSide});
+  const azeGeo = weedGeo();
+  const cn = [[-half,-half],[half,-half],[half,half],[-half,half],[-half,-half]];
+  for(let e=0;e<4;e++){
+    for(let t=0;t<22;t++){
+      const u=(t+0.5)/22;
+      const g=new THREE.Mesh(azeGeo, azeGrassMat);
+      g.position.set(cn[e][0]+(cn[e+1][0]-cn[e][0])*u+(Math.random()-0.5)*0.4, 0.02,
+                     cn[e][1]+(cn[e+1][1]-cn[e][1])*u+(Math.random()-0.5)*0.4);
+      g.rotation.y=Math.random()*3; g.scale.setScalar(0.75+Math.random()*0.5);
+      scene.add(g); azeGrass.push(g);
+    }
+  }
+
+  // 遠くの山と木
+  const hillMat = new THREE.MeshLambertMaterial({color:0x51704F});
+  for(let i=0;i<9;i++){
+    const r=11+Math.random()*9;
+    const m=new THREE.Mesh(new THREE.ConeGeometry(r,r*0.72,6), hillMat);
+    const a=(i/9)*Math.PI*2+0.3;
+    m.position.set(Math.cos(a)*56, r*0.34-1.3, Math.sin(a)*56);
+    m.rotation.y=Math.random()*3; scene.add(m);
+  }
+  const treeMat=new THREE.MeshLambertMaterial({color:0x4A6B3C});
+  for(let i=0;i<10;i++){
+    const a=Math.random()*Math.PI*2, d=13+Math.random()*8;
+    const x=Math.cos(a)*d, z=Math.sin(a)*d;
+    if(Math.abs(x)<half+2.4 && Math.abs(z)<half+2.4) continue;
+    const t=new THREE.Mesh(new THREE.ConeGeometry(0.8,2.6,7), treeMat);
+    t.position.set(x,1.0,z); scene.add(t);
+    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,1.0,6),
+             new THREE.MeshLambertMaterial({color:0x5B4A33}));
+    tr.position.set(x,0.2,z); scene.add(tr);
+  }
+
+  // 稲（田面いっぱいに条を組んで植える）
+  leafMat = new THREE.MeshLambertMaterial({color:0x4C8A36, side:THREE.DoubleSide});
+  hoMat   = new THREE.MeshLambertMaterial({color:0xD8A32B, side:THREE.DoubleSide});
+  weedMat = new THREE.MeshLambertMaterial({color:0xD3E03A, side:THREE.DoubleSide});
+  const kg=[0,1,2,3].map(kabuGeo), hg=[0,1,2].map(hoGeo), wg=paddyWeedGeo();
+  const ROWS = 13;
+  for(let r=0;r<ROWS;r++) for(let q=0;q<ROWS;q++){
+    const x=-FIELD/2+(q+0.5)*(FIELD/ROWS)+(Math.random()-0.5)*0.10;
+    const z=-FIELD/2+(r+0.5)*(FIELD/ROWS)+(Math.random()-0.5)*0.10;
+    const g=new THREE.Group();
+    g.position.set(x,0,z); g.rotation.y=Math.random()*Math.PI*2; g.visible=false;
+    g.add(new THREE.Mesh(kg[(r*ROWS+q)%4], leafMat));
+    const ho=new THREE.Mesh(hg[(r+q)%3], hoMat);
+    ho.position.y=0.80; ho.visible=false; g.add(ho);
+    scene.add(g);
+    plants.push({g, ho, cell:cellAt(x,z)});
+  }
+
+  // 田んぼの雑草
+  for(let i=0;i<CELLS;i++){
+    const p=pos2(i);
+    const w=new THREE.Mesh(wg, weedMat);
+    w.position.set(p.x+(Math.random()-0.5)*0.9, 0, p.z+(Math.random()-0.5)*0.9);
+    w.rotation.y=Math.random()*3;
+    w.rotation.z=(Math.random()-0.5)*0.3;
+    w.visible=false;
+    scene.add(w); weeds.push(w);
+  }
+
+  // 水面（空を映し、日ざしが反射する）
+  waterNormal = waterNormalTexture();
+  waterMat = new THREE.MeshPhysicalMaterial({
+    color:0x5E8496, roughness:0.09, metalness:0.0,
+    transparent:true, opacity:0.90,
+    normalMap:waterNormal, normalScale:new THREE.Vector2(0.35,0.35),
+    envMapIntensity:1.35, clearcoat:1.0, clearcoatRoughness:0.05
+  });
+  water = new THREE.Mesh(new THREE.PlaneGeometry(FIELD+0.5, FIELD+0.5, 24, 24), waterMat);
+  water.rotation.x=-Math.PI/2; water.visible=false; scene.add(water);
+
+  resize(); addEventListener('resize', resize);
+}
+function resize(){
+  const w=canvas.clientWidth, h=canvas.clientHeight;
+  if(!w||!h) return;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+
+/* ---- 見まわす操作 ---- */
+const cam={th:-0.62, ph:0.88, d:21, t:new THREE.Vector3(0,0.5,0)};
+function applyCam(){
+  cam.ph=Math.max(0.16,Math.min(1.45,cam.ph));
+  cam.d =Math.max(9, Math.min(44, cam.d));
+  camera.position.set(
+    cam.t.x+cam.d*Math.sin(cam.ph)*Math.cos(cam.th),
+    cam.t.y+cam.d*Math.cos(cam.ph),
+    cam.t.z+cam.d*Math.sin(cam.ph)*Math.sin(cam.th));
+  camera.lookAt(cam.t);
+}
+let drag=false, lx=0, ly=0, pinch=0;
+canvas.addEventListener('pointerdown', e=>{ drag=true; lx=e.clientX; ly=e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e=>{
+  if(!drag) return;
+  cam.th -= (e.clientX-lx)*0.006; cam.ph -= (e.clientY-ly)*0.006;
+  lx=e.clientX; ly=e.clientY; applyCam();
+});
+canvas.addEventListener('pointerup', ()=>{ drag=false; });
+canvas.addEventListener('pointercancel', ()=>{ drag=false; });
+canvas.addEventListener('wheel', e=>{ e.preventDefault(); cam.d+=e.deltaY*0.02; applyCam(); }, {passive:false});
+canvas.addEventListener('touchmove', e=>{
+  if(e.touches.length!==2) return;
+  e.preventDefault();
+  const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+  if(pinch){ cam.d+=(pinch-d)*0.04; applyCam(); }
+  pinch=d;
+}, {passive:false});
+canvas.addEventListener('touchend', ()=>{ pinch=0; });
+
+/* =========================================================
+   5. 農業機械
+   ========================================================= */
+const machines = {};
+let runner = null;   // 走行中の機械
+
+function box(w,h,d,c){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({color:c})); }
+function tire(r,w,c){
+  const g=new THREE.CylinderGeometry(r,r,w,12); g.rotateZ(Math.PI/2);
+  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({color:c||0x23282C}));
+}
+function put(p,m,x,y,z){ m.position.set(x,y,z); p.add(m); return m; }
+
+function tractor(){
+  const g=new THREE.Group(), wh=[];
+  put(g, box(0.86,0.42,1.7,0xE07A2F), 0,0.62,0.05);
+  put(g, box(0.66,0.34,0.8,0xE07A2F), 0,0.70,0.95);
+  put(g, box(0.15,0.24,0.15,0x3A3A3A), 0.22,1.0,1.15);
+  put(g, box(0.74,0.5,0.62,0x2B333A), 0,1.08,-0.25);
+  put(g, box(0.96,0.07,0.86,0xD9D9D0), 0,1.42,-0.25);
+  [[-0.52,0.44,-0.5],[0.52,0.44,-0.5]].forEach(p=>{ const t=tire(0.44,0.28); put(g,t,p[0],p[1],p[2]); wh.push(t); });
+  [[-0.46,0.26,1.0],[0.46,0.26,1.0]].forEach(p=>{ const t=tire(0.26,0.22); put(g,t,p[0],p[1],p[2]); wh.push(t); });
+  g.userData.wheels=wh;
+  return g;
+}
+function buildMachines(){
+  // ロータリ（田起こし）
+  const rotary = tractor();
+  put(rotary, box(1.55,0.42,0.55,0x4A5258), 0,0.42,-1.25);
+  put(rotary, box(1.6,0.14,0.7,0x6A737A), 0,0.70,-1.30);
+  machines.till = rotary;
+
+  // 代かきハロー
+  const harrow = tractor();
+  put(harrow, box(2.35,0.2,0.42,0x5A6268), 0,0.34,-1.35);
+  put(harrow, box(2.35,0.3,0.1,0x77808A), 0,0.55,-1.55);
+  machines.puddle = harrow;
+
+  // 田植機
+  const planter=new THREE.Group(), pw=[];
+  put(planter, box(0.9,0.36,1.5,0xC0392B), 0,0.5,0.1);
+  put(planter, box(0.5,0.34,0.44,0x2B2B2B), 0,0.85,-0.05);
+  put(planter, box(1.7,0.07,0.95,0x2F6F3F), 0,1.02,-0.95).rotation.x=-0.55;
+  for(let i=-2;i<=2;i++){                       // 苗のせ台に積んだ苗の束
+    const nae = put(planter, box(0.26,0.10,0.8,0x8FBF6A), i*0.32,1.10,-0.98);
+    nae.rotation.x = -0.55;
+  }
+  put(planter, box(1.75,0.06,0.12,0x9AA0A6), 0,1.22,-1.28).rotation.x=-0.55;
+  put(planter, box(1.55,0.22,0.42,0x8A9298), 0,0.26,-1.45);
+  for(let i=-2;i<=2;i++) put(planter, box(0.08,0.3,0.22,0x5A6268), i*0.35,0.2,-1.6);
+  [[-0.5,0.3,0.85],[0.5,0.3,0.85],[-0.5,0.3,-0.55],[0.5,0.3,-0.55]].forEach(p=>{
+    const t=tire(0.3,0.16); put(planter,t,p[0],p[1],p[2]); pw.push(t); });
+  planter.userData.wheels=pw;
+  machines.plant = planter;
+
+  // 防除はドローン。湛水した本田に機械は入れないので上から散布する
+  const drone = new THREE.Group();
+  put(drone, box(0.52,0.14,0.52,0xEDEBE4), 0,0,0);                       // 機体
+  put(drone, box(0.36,0.26,0.34,0xD8443A), 0,-0.18,0);                   // 薬液タンク
+  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(q=>{
+    const arm = box(0.07,0.05,0.62,0x3A4149);
+    arm.rotation.y = Math.atan2(q[0], q[1]);
+    put(drone, arm, q[0]*0.22, 0.02, q[1]*0.22);
+    const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.30,0.02,10),
+                  new THREE.MeshLambertMaterial({color:0x9AA0A6, transparent:true, opacity:0.55}));
+    put(drone, rotor, q[0]*0.46, 0.10, q[1]*0.46);
+    (drone.userData.rotors = drone.userData.rotors || []).push(rotor);
+    put(drone, new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.30,6),
+        new THREE.MeshLambertMaterial({color:0x4A525A})), q[0]*0.46,-0.14,q[1]*0.46);  // 脚
+  });
+  [-0.34,0.34].forEach(x=> put(drone, box(0.05,0.10,0.05,0x6A737A), x,-0.30,0));       // 噴口
+  drone.userData.speed = 7.0;
+  drone.userData.rowStep = 2;      // 散布幅が広い
+  drone.userData.y = 1.9;          // 稲の上を飛ぶ
+  machines.spray = drone;
+
+  // 追肥は背負式の動力散布機。湛水した田んぼにトラクタは入れないので人が歩く
+  const worker = new THREE.Group();
+  put(worker, box(0.34,0.50,0.22,0x2F5D8C), 0,1.05,0);            // 胴
+  put(worker, box(0.30,0.38,0.18,0xD8443A), 0,1.10,-0.21);        // 背負いタンク
+  const blower = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.75,8),
+                 new THREE.MeshLambertMaterial({color:0x3A3A3A}));
+  blower.rotation.z = 1.15; blower.rotation.x = 0.25;
+  put(worker, blower, 0.34,1.02,0.16);                            // 散布ノズル
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),
+               new THREE.MeshLambertMaterial({color:0xE0C09A}));
+  put(worker, head, 0,1.42,0);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.03,12),
+               new THREE.MeshLambertMaterial({color:0xEDE6CF}));
+  put(worker, brim, 0,1.50,0);
+  put(worker, new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,0.12,12),
+      new THREE.MeshLambertMaterial({color:0xEDE6CF})), 0,1.55,0);  // 麦わら帽子
+  [-0.24,0.24].forEach(x=> put(worker, box(0.09,0.40,0.09,0x2F5D8C), x,1.03,0.02));
+  const legs = [];
+  [-0.10,0.10].forEach(x=>{
+    const hip = new THREE.Group();
+    hip.position.set(x, 0.80, 0);
+    const leg = box(0.11,0.80,0.13,0x40484F);
+    leg.position.y = -0.40;
+    hip.add(leg); worker.add(hip); legs.push(hip);
+  });
+  worker.userData.legs = legs;
+  worker.userData.speed = 4.0;      // 歩く速さ
+  worker.userData.rowStep = 2;      // 散布幅が広いので一列おきに歩く
+  machines.fert = worker;
+
+  // 畦の草刈り：刈払機を持った作業者
+  const mower = new THREE.Group();
+  put(mower, box(0.34,0.50,0.22,0xE0803A), 0,1.05,0);                 // 安全ベスト
+  const hd = new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),
+             new THREE.MeshLambertMaterial({color:0xE0C09A}));
+  put(mower, hd, 0,1.42,0);
+  put(mower, new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.20,0.03,12),
+      new THREE.MeshLambertMaterial({color:0xE8E2D0})), 0,1.50,0);    // 帽子
+  put(mower, new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,0.10,12),
+      new THREE.MeshLambertMaterial({color:0xE8E2D0})), 0,1.55,0);
+  put(mower, box(0.30,0.26,0.16,0x2F3B44), 0,1.18,-0.20);             // 背中のエンジン
+  [-0.24,0.24].forEach(x=> put(mower, box(0.09,0.40,0.09,0xE0803A), x,1.03,0.04));
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,1.5,8),
+                new THREE.MeshLambertMaterial({color:0xC9CDD2}));
+  shaft.rotation.x = 1.15;                                            // 前方の地面へ向ける竿
+  put(mower, shaft, 0.16,0.85,0.55);
+  const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.26,0.03,14),
+                new THREE.MeshLambertMaterial({color:0xB8BEC4}));
+  put(mower, blade, 0.16,0.12,1.18);                                  // 刈刃
+  mower.userData.blade = blade;
+  const mlegs = [];
+  [-0.10,0.10].forEach(x=>{
+    const hip=new THREE.Group(); hip.position.set(x,0.80,0);
+    const leg=box(0.11,0.80,0.13,0x40484F); leg.position.y=-0.40;
+    hip.add(leg); mower.add(hip); mlegs.push(hip);
+  });
+  mower.userData.legs = mlegs;
+  mower.userData.speed = 5.0;
+  mower.userData.y = 0.02;
+  machines.mow = mower;
+
+  // コンバイン（自脱型のイメージ）
+  const combine = new THREE.Group(); const cw=[];
+  [-0.66,0.66].forEach(x=>{
+    put(combine, box(0.42,0.48,2.5,0x23282C), x,0.24,-0.15);              // クローラ
+    const drive = tire(0.24,0.46,0x4A525A); put(combine,drive,x,0.26,-1.25); cw.push(drive);
+    for(let k=-1;k<=1;k++){ const rl=tire(0.13,0.44,0x39414A); put(combine,rl,x,0.15,k*0.72-0.15); cw.push(rl); }
+  });
+  put(combine, box(1.62,0.78,1.85,0xD8442E), 0,0.95,-0.45);               // 脱穀部の車体
+  put(combine, box(1.5,0.16,1.7,0xB9351F), 0,1.38,-0.45);                 // 天板
+  const feeder = box(0.9,0.5,1.35,0xD8442E);                              // 刈った稲を送るノーズ
+  feeder.rotation.x = 0.22; put(combine, feeder, -0.32,0.72,0.75);
+  put(combine, box(1.95,0.2,1.15,0xE4E0D2), 0,0.32,1.5);                  // 刈取部
+  for(let i=-2;i<=2;i++){                                                 // 分草板（尖った先端）
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.085,0.8,4),
+                 new THREE.MeshLambertMaterial({color:0xD8D3C4}));
+    nose.rotation.x = Math.PI/2;
+    put(combine, nose, i*0.44, 0.29, 2.12);
+  }
+  put(combine, box(1.9,0.1,0.12,0x8A9298), 0,0.22,1.95);                  // 刈刃
+  const reel = tire(0.32,1.8,0xE0A82E); put(combine, reel, 0,0.88,1.72);  // かき込みリール
+  for(let i=0;i<4;i++){                                                   // リールの爪
+    const bar = box(1.75,0.05,0.05,0xC08A18);
+    bar.position.set(0, Math.sin(i/4*Math.PI*2)*0.3, Math.cos(i/4*Math.PI*2)*0.3);
+    reel.add(bar);
+  }
+  combine.userData.reel = reel;
+  put(combine, box(0.72,0.74,0.72,0x2F3941), 0.52,1.72,0.2);              // キャビン
+  put(combine, box(0.66,0.5,0.06,0xBFD8E4), 0.52,1.78,0.55);              // フロントガラス
+  put(combine, box(0.9,0.07,0.88,0xE8E4D8), 0.52,2.12,0.2);               // 屋根
+  put(combine, box(1.05,0.62,1.0,0xC9CDCE), -0.32,1.72,-0.55);            // グレンタンク
+  const auger = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,1.9,8),
+                new THREE.MeshLambertMaterial({color:0xB6BAB4}));
+  auger.rotation.z = 0.85; put(combine, auger, -0.95,1.95,-0.5);          // 排出オーガ
+  put(combine, box(0.24,0.24,0.24,0xB6BAB4), -1.7,1.35,-0.5);             // オーガ先端
+  put(combine, box(1.3,0.34,0.34,0x4A525A), 0,0.72,-1.5);                 // 排わらカッター
+  put(combine, box(0.1,0.5,0.1,0x3A3A3A), 0.66,1.6,-0.95);                // 排気筒
+  combine.userData.wheels = cw;
+  machines.harvest = combine;
+
+  Object.values(machines).forEach(m=>{
+    m.visible=false;
+    m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    scene.add(m);
+  });
+}
+
+/* 圃場を端から端まで走らせる。通った区画に効果が出る */
+function runMachine(mode, onEnd){
+  const m = machines[mode];
+  if(!m){ onEnd(); return; }
+  const route = [];
+  if(mode === 'mow'){
+    // 畦の上をぐるりと一周する
+    const half = FIELD/2 + 0.35;
+    const cn = [[-half,-half],[half,-half],[half,half],[-half,half],[-half,-half]];
+    for(let e=0;e<4;e++){
+      const x0=cn[e][0], z0=cn[e][1], x1=cn[e+1][0], z1=cn[e+1][1];
+      for(let t=0;t<6;t++) route.push({x:x0+(x1-x0)*t/6, z:z0+(z1-z0)*t/6, cell:null});
+    }
+    route.push({x:cn[0][0], z:cn[0][1], cell:null});
+  }else{
+    const step = m.userData.rowStep || 1;
+    let turn = 0;
+    for(let gz=0; gz<GRID; gz+=step){
+      const row=[];
+      for(let gx=0; gx<GRID; gx++) row.push(gz*GRID+gx);
+      if(turn%2) row.reverse();
+      turn++;
+      row.forEach(i=>{ const p=pos2(i); route.push({x:p.x, z:p.z, cell:i}); });
+    }
+  }
+  const s0 = route[0];
+  m.visible = true;
+  const fy = m.userData.y || 0;
+  m.position.set(mode==='mow' ? s0.x : s0.x - CELL*1.6, fy, s0.z);
+  m.rotation.y = Math.PI/2;
+  trackPath = [];
+  runner = { m, mode, route, k:0, spin:0,
+             target:new THREE.Vector3(s0.x, fy, s0.z), leaving:false, onEnd };
+}
+function stepMachine(dt){
+  if(!runner) return;
+  const r = runner, m = r.m;
+  const d = r.target.clone().sub(m.position); d.y=0;
+  const dist = d.length();
+  if(dist < 0.08){
+    if(r.leaving){ m.visible=false; runner=null; r.onEnd(); return; }
+    if(r.k < r.route.length){
+      const w = r.route[r.k];
+      if(w.cell !== null) applyCell(w.cell, r.mode);   // いま到着した区画を処理する
+      r.k++;
+      if(r.k < r.route.length){
+        const n = r.route[r.k];
+        r.target.set(n.x, m.position.y, n.z);
+        return;
+      }
+    }
+    const last = r.route[r.route.length-1];
+    r.target.set(last.x + (r.mode==='mow' ? 0 : CELL*2.2), m.position.y,
+                 last.z + (r.mode==='mow' ? -CELL*2.5 : 0));
+    r.leaving = true;
+    return;
+  }
+  const step = Math.min(dist, (m.userData.speed || 6.2)*dt);
+  d.normalize();
+  m.position.addScaledVector(d, step);
+  const yaw = Math.atan2(d.x, d.z);
+  let diff = yaw - m.rotation.y;
+  while(diff> Math.PI) diff-=Math.PI*2;
+  while(diff<-Math.PI) diff+=Math.PI*2;
+  m.rotation.y += diff*Math.min(1, dt*6);
+  r.spin += step*2.4;
+  (m.userData.wheels||[]).forEach(w=> w.rotation.x = r.spin);
+  // 歩く人は脚を振る
+  (m.userData.legs||[]).forEach((hip,k)=> hip.rotation.x = Math.sin(r.spin*2.2 + k*Math.PI)*0.5);
+  addTrackPoint(r.mode, m.position.x, m.position.z);   // 車輪の跡
+  if(m.userData.blade) m.userData.blade.rotation.y = r.spin*9;
+  (m.userData.rotors||[]).forEach((ro,k)=> ro.rotation.y = r.spin*14*(k%2?1:-1));
+  if(r.mode === 'mow'){
+    for(let i=0;i<azeGrass.length;i++){
+      const g = azeGrass[i];
+      if(g.visible && Math.hypot(g.position.x-m.position.x, g.position.z-m.position.z) < 1.2) g.visible = false;
+    }
+  }
+  if(m.userData.reel) m.userData.reel.rotation.x = r.spin*1.4;
+}
+
+function applyCell(i, mode){
+  const c = cells[i];
+  if(mode==='till')   c.tilled=true;
+  if(mode==='puddle') c.puddled=true;
+  if(mode==='plant')  c.planted=true;
+  if(mode==='harvest'){ c.planted=false; c.harvested=true; }
+  if(mode==='dry')    c.dry=true;
+  paintCellTex(i, mode);                                  // 通った区画の田面を塗る
+  if(mode==='plant' || mode==='harvest') paintPlants();   // 通ったそばから苗を出す／刈る
+}
+
+/* ---- 時間をかけて進む作業 ---- */
+const job = { kind:null, t:0, phase:-1, onEnd:null };
+function startJob(kind, onEnd){ job.kind=kind; job.t=0; job.phase=-1; job.onEnd=onEnd; }
+function endJob(){ const f=job.onEnd; job.kind=null; job.onEnd=null; if(f) f(); }
+
+function updateJobs(dt){
+  if(!job.kind) return;
+  job.t += dt;
+
+  if(job.kind === 'dry'){
+    const PER = 1.8;                                   // 1日ぶん＝1.8秒、計7日
+    if(state.water >= 1){                              // 途中で水が入ったらやり直し
+      job.kind = null; job.onEnd = null;
+      state.working = false; state.dryDay = 0;
+      if(dryBackup) paddyCtx.putImageData(dryBackup, 0, 0);   // 干す前の田面に戻す
+      paddyTex.needsUpdate = true;
+      toast('水が入りました。中干しは最初からやり直しです');
+      updateGuide();
+      return;
+    }
+    const day = Math.min(7, Math.floor(job.t/PER)+1);
+    if(day !== state.dryDay){
+      state.dryDay = day;
+      cells.forEach(c=>{ c.dry = true; });
+      drawCracks(day);
+      updateGuide();
+    }
+    if(job.t >= PER*7) endJob();
+
+  }else if(job.kind === 'irrigate'){
+    const PER = 1.7, PHASES = 5;                       // 入水と落水を3回くり返す
+    const ph = Math.min(PHASES-1, Math.floor(job.t/PER));
+    if(ph !== job.phase){
+      job.phase = ph;
+      updateGuide();
+    }
+    const goal = (job.phase % 2 === 0) ? 3.4 : 0.2;
+    if(job.phase % 2 === 0) inflowTimer = 0.4;         // 入水しているあいだは流れを見せる
+    state.water += (goal - state.water) * Math.min(1, dt*2.4);
+    paintWater(); updateMeters();
+    if(job.t >= PER*PHASES){ state.water = Math.round(state.water); endJob(); }
+
+  }else if(job.kind === 'drain'){
+    state.water = Math.max(0, state.water - dt*1.6);
+    paintWater(); updateMeters();
+    if(state.water <= 0.05){ state.water = 0; paintWater(); updateMeters(); endJob(); }
+  }
+}
+
+/* =========================================================
+   6. 見た目の更新
+   ========================================================= */
+function paintPlants(){
+  const gr = state.growth/100;
+  const ripe = Math.max(0, (gr-0.75)/0.25);
+  leafMat.color.copy(new THREE.Color(0x4C8A36).lerp(new THREE.Color(0xC9AE4B), ripe));
+  const h = 0.35 + gr*1.45, w = 0.70 + gr*0.40;
+  for(let k=0;k<plants.length;k++){
+    const pl = plants[k], c = cells[pl.cell];
+    pl.g.visible = c.planted && !c.harvested;
+    pl.g.scale.set(w, h, w);
+    pl.ho.visible = ripe > 0.05;
+  }
+}
+function paintAll(){
+  paintPlants();
+  // 雑草が見えるのは、苗が植わっている田んぼだけ
+  const n = Math.round(state.weed/100*CELLS);
+  for(let i=0;i<CELLS;i++) weeds[i].visible = false;
+  for(let k=0;k<n;k++){
+    const i = weedOrder[k];
+    weeds[i].visible = cells[i].planted && !cells[i].harvested;
+  }
+}
+function paintWater(){
+  water.visible = state.water > 0.05;
+  water.position.y = state.water*0.014;
+}
+function setSeason(month){
+  // [空の色, 日ざしの色, 光の強さ, 地面の色]
+  const t = ({4:[0xA9CFDD,0xFFF3DC,1.00,0x77864C], 5:[0x9FCFE4,0xFFF6E2,1.10,0x6D8046],
+              6:[0xA6B7C0,0xE9E9E1,0.80,0x62793F], 7:[0x8FC6E2,0xFFEFC0,1.25,0x647F41],
+              8:[0x8FC6E2,0xFFEDBA,1.28,0x668542], 9:[0xA9C9DA,0xFFE9BE,1.00,0x7C7F4C],
+              10:[0xB4C6CE,0xF6DDB0,0.88,0x8C8153]})[month] || [0x9FC8DA,0xFFF3DC,1.0,0x77864C];
+  const sky = new THREE.Color(t[0]);
+  scene.fog.color.copy(sky);
+  buildSky(t[0], t[1], t[2]);                 // 空と、水面に映る環境を作り直す
+  sun.color.setHex(t[1]); sun.intensity = t[2]*2.2;
+  hemi.color.copy(sky);
+  ground.material.color.setHex(t[3]);
+  // 水は空の色を映す（泥の色と混ぜる）
+  waterMat.color.copy(sky).lerp(new THREE.Color(0x40584F), 0.55);
+  canalMat.color.copy(sky).lerp(new THREE.Color(0x2F4A57), 0.55);
+}
+
+/* =========================================================
+   7. 画面表示
+   ========================================================= */
+function curStep(){
+  const s = STAGES[state.idx];
+  return s.steps[Math.min(state.step, s.steps.length-1)];
+}
+function curAim(){
+  const s = STAGES[state.idx], st = curStep();
+  return (!state.done && st.aim !== undefined) ? st.aim : s.aim;
+}
+function weedWord(v){ return v<25 ? "少ない" : v<55 ? "ふつう" : v<80 ? "多い" : "かなり多い"; }
+function updateMeters(){
+  const aim = curAim();
+  el('m-water').textContent = state.water.toFixed(0) + 'cm';
+  el('b-water').style.width = Math.min(100, state.water/WATER_MAX*100) + '%';
+  const diff = Math.abs(state.water - aim);
+  el('b-water').style.background = job.kind ? 'var(--blue)'
+    : diff<=1 ? 'var(--blue)' : diff<=3 ? 'var(--gold)' : 'var(--red)';
+  el('m-aim').textContent = '目安 ' + aim + 'cm';
+
+  el('m-growth').textContent = Math.round(state.growth) + '%';
+  el('b-growth').style.width = state.growth + '%';
+
+  el('m-weed').textContent = weedWord(state.weed);
+  el('b-weed').style.width = state.weed + '%';
+  el('b-weed').style.background = state.weed<40 ? 'var(--green)' : state.weed<70 ? 'var(--gold)' : 'var(--red)';
+}
+function updateGuide(){
+  const s = STAGES[state.idx];
+  el('m-season').textContent = s.season;
+  el('m-stage').textContent  = (state.idx+1) + ' / ' + STAGES.length;
+  el('g-when').textContent   = s.when;
+  el('g-title').textContent  = s.title;
+  el('g-weather').textContent= s.weather;
+  el('g-desc').textContent   = s.desc;
+  const task = el('g-task');
+  const st = curStep();
+  if(state.done){
+    task.textContent = '✅ この季節の作業は終わりました。次の季節へ進めます。';
+  }else if(s.steps.length > 1){
+    task.textContent = s.task + '（いま：' + (state.step+1) + '/' + s.steps.length + '　' + st.action + '）';
+  }else{
+    task.textContent = s.task;
+  }
+  task.className = 'task' + (state.done ? ' done' : '');
+  if(state.working){
+    if(job.kind === 'dry')        task.textContent = '☀️ 中干し中… ' + state.dryDay + '日目 / 7日　この間は水を入れないでください';
+    else if(job.kind === 'irrigate') task.textContent = '💧 間断灌漑中… ' + ((job.phase%2===0) ? '水を入れています' : '水が落ちていくのを待っています') + '（' + (Math.floor(job.phase/2)+1) + '回目 / 3回）';
+    else if(job.kind === 'drain') task.textContent = '☀️ 落水中… 田んぼの水を落としています';
+  }
+  const main = el('btn-main');
+  main.textContent = state.done ? '✅ 作業ずみ' : (state.working ? '⏳ 作業中…' : st.icon + ' ' + st.action);
+  main.disabled = state.done || state.working;
+}
+
+/* =========================================================
+   8. 操作
+   ========================================================= */
+el('btn-in').onclick  = ()=>{ if(state.working && job.kind!=='dry') return; state.water=Math.min(WATER_MAX,state.water+1); inflowTimer=1.4; paintWater(); updateMeters(); };
+el('btn-out').onclick = ()=>{ if(state.working && job.kind!=='dry') return; state.water=Math.max(0,state.water-1); paintWater(); updateMeters(); };
+
+el('btn-weed').onclick = ()=>{
+  if(state.working) return;
+  if(state.weed < 12){ toast('いまは草も虫も目立ちません'); return; }
+  state.weed = Math.max(0, state.weed - 65);
+  paintAll(); updateMeters();
+  toast('草取りと防除をしました');
+};
+
+el('btn-main').onclick = ()=>{
+  if(state.working || state.done) return;
+  const st = curStep();
+  if(st.need){
+    const [lo,hi] = st.need.water;
+    if(state.water < lo || state.water > hi){ toast(st.need.msg); return; }
+  }
+  state.working = true;
+  updateGuide();
+  if(st.mode==='dry'){
+    state.dryDay = 0;
+    dryBackup = paddyCtx.getImageData(0,0,TEX,TEX);
+    startJob('dry', finishAction);
+  } else if(st.mode==='irrigate' || st.mode==='drain'){
+    startJob(st.mode, finishAction);
+  } else {
+    runMachine(st.mode, finishAction);
+  }
+};
+function finishAction(){
+  const s = STAGES[state.idx];
+  paintAll();
+  if(curStep().mode === 'mow') state.mowed = true;
+  state.working = false;
+  if(state.step < s.steps.length-1){
+    state.step++;                       // 次の作業へ（例：田起こし→代かき）
+    updateGuide(); updateMeters();
+    toast(s.steps[state.step-1].action + 'がおわりました。つぎは' + s.steps[state.step].action);
+  }else{
+    state.done = true;
+    updateGuide(); updateMeters();
+    toast('この季節の作業がおわりました');
+  }
+}
+
+el('btn-next').onclick = ()=>{
+  if(state.working){ toast('作業がおわるまで待ってください'); return; }
+  const s = STAGES[state.idx];
+
+  // その季節の評価
+  let pt = 100, memo = [];
+  const diff = Math.abs(state.water - s.aim);
+  if(diff > 3){ pt -= 25; memo.push('水深が目安（' + s.aim + 'cm）から離れていました'); }
+  else if(diff > 1){ pt -= 10; memo.push('水深がやや目安からずれていました'); }
+  if(state.weed > 70){ pt -= 25; memo.push('雑草や害虫を放置しました'); }
+  else if(state.weed > 40){ pt -= 10; memo.push('雑草がやや増えていました'); }
+  if(!state.done){ pt -= 30; memo.push(s.steps[state.step].action + 'を行いませんでした'); }
+  pt = Math.max(20, pt);
+  state.log.push({title:s.title, pt, memo: memo.length? memo.join('。') : 'この季節の管理は良好でした'});
+  state.quality = Math.round(state.log.reduce((a,b)=>a+b.pt,0)/state.log.length);
+
+  if(state.idx >= STAGES.length-1){ showResult(); return; }
+
+  state.idx++;
+  state.done = false;
+  state.step = 0;
+  const ns = STAGES[state.idx];
+  state.growth = ns.growthTo;
+  if(ns.steps[0].mode === 'harvest') state.weed = Math.max(0, state.weed - 20);
+  setSeason(parseInt(ns.season.match(/(\d+)月/)[1], 10));
+  paintAll(); paintWater(); updateMeters(); updateGuide();
+  showModal('【' + ns.season + '】 ' + ns.title,
+            ns.desc,
+            '水深の目安は ' + ns.aim + 'cm です。' + (ns.weedRate ? '雑草も伸びやすい時期です。' : ''));
+};
+
+/* =========================================================
+   9. お知らせ・結果
+   ========================================================= */
+function showModal(title, body, aim){
+  el('mo-title').textContent = title;
+  el('mo-body').textContent  = body;
+  el('mo-extra').innerHTML   = aim ? '<div class="aimbox">' + aim + '</div>' : '';
+  el('mo-ok').textContent = 'この季節をはじめる';
+  el('modal').classList.remove('hide');
+}
+el('mo-ok').onclick = ()=> el('modal').classList.add('hide');
+
+function showResult(){
+  state.finished = true;
+  const q = state.quality;
+  const kg = Math.round(300 + (q/100)*270);
+  let grade, lead;
+  if(q>=90){ grade='1等'; lead='水管理も作業の時期もよく合っていました。粒のそろった、いいお米になりました。'; }
+  else if(q>=75){ grade='1〜2等'; lead='おおむね順調な一年でした。取りこぼした季節を見直せば、来年はもっと安定します。'; }
+  else if(q>=55){ grade='2〜3等'; lead='収穫までたどり着きました。水深のずれや雑草の放置が、収穫量に響いています。'; }
+  else { grade='規格外も'; lead='苦しい一年でした。まずは季節ごとの「目安の水深」を守るところからはじめましょう。'; }
+  el('rs-yield').textContent = kg;
+  el('rs-grade').textContent = grade;
+  el('rs-score').textContent = q;
+  el('rs-lead').textContent = lead + (state.mowed
+    ? ' 畦の草を刈っておいたので、カメムシによる斑点米はわずかで済みました。'
+    : ' 畦の草を刈らなかったため、カメムシが穂を吸い、黒い点のついた米が混じりました。');
+  el('rs-log').innerHTML = state.log.map(x=>
+    '<tr><td>'+x.title+'</td><td>'+x.memo+'</td><td class="r">'+x.pt+'</td></tr>').join('');
+  el('rs-words').innerHTML = WORDS.map(w=>'<dt>'+w[0]+'</dt><dd>'+w[1]+'</dd>').join('');
+  el('result').classList.remove('hide');
+}
+
+/* =========================================================
+   10. 時間の流れ（水は減り、雑草は伸びる）
+   ========================================================= */
+let clock, tNow=0, acc=0;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function tick(dt){
+  if(state.finished) return;
+  const s = STAGES[state.idx];
+  // 水は蒸発と地下浸透で少しずつ減る
+  if(!job.kind && state.water > 0 && Math.random() < dt*0.10) { state.water--; paintWater(); }
+  // 雑草・害虫は季節に応じて増える
+  if(s.weedRate) state.weed = Math.min(100, state.weed + s.weedRate*dt);
+  updateMeters();
+}
+
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  tNow += dt;
+  stepMachine(dt);
+  updateJobs(dt);
+  acc += dt;
+  if(acc > 0.5){ tick(acc); acc = 0; }
+  if(!reduce){
+    const amp = 0.03 + state.growth/100*0.05;
+    for(let i=0;i<plants.length;i++){
+      const g=plants[i].g;
+      if(!g.visible) continue;
+      g.rotation.z = Math.sin(tNow*1.1 + i*0.28)*amp;      // 風が波のように渡る
+      g.rotation.x = Math.cos(tNow*0.8 + i*0.17)*amp*0.6;
+    }
+    canalNormal.offset.x -= dt*0.42;                 // 用水路の水は下流へ流れ続ける
+    canalNormal.offset.y += dt*0.05;
+    if(inflowTimer > 0){                             // 水口から田んぼへ落ちる流れ
+      inflowTimer -= dt;
+      inflow.visible = true;
+      const j = inflow.userData.jet, rg = inflow.userData.ring;
+      j.scale.y = 0.9 + Math.sin(tNow*22)*0.12;
+      const ph = (tNow*1.6) % 1;
+      rg.scale.setScalar(0.6 + ph*1.5);
+      rg.material.opacity = 0.5*(1-ph);
+      inflow.position.y = 0.04 + state.water*0.014;
+    }else{
+      inflow.visible = false;
+    }
+    if(water.visible){
+      waterNormal.offset.x += dt*0.012;            // さざ波が流れて日ざしがきらめく
+      waterNormal.offset.y += dt*0.019;
+      waterMat.opacity = 0.88 + Math.sin(tNow*0.7)*0.03;
+    }
+  }
+  renderer.render(scene, camera);
+}
+
+/* =========================================================
+   11. 起動
+   ========================================================= */
+function boot(){
+  window.__booted = true;
+  initScene();
+  buildMachines();
+  clock = new THREE.Clock();
+  applyCam();
+  setSeason(4);
+  paintAll(); paintWater(); updateMeters(); updateGuide();
+
+  el('mo-title').textContent = 'お米ができるまでの一年';
+  el('mo-body').textContent  = '4月の土づくりから10月の稲刈りまで、7つの季節を体験します。田んぼの水は放っておくと少しずつ減り、夏には雑草も伸びてきます。ゲージを見ながら手入れをしてください。';
+  el('mo-extra').innerHTML =
+    '<ul>' +
+    '<li><b>💧 給水／☀️ 排水</b>　季節ごとの「目安の水深」に合わせます。ゲージが青なら合っています。</li>' +
+    '<li><b>🚜 作業する</b>　トラクタや田植機が田んぼを走ります。押すだけで進みます。</li>' +
+    '<li><b>🌿 草取り・防除</b>　雑草ゲージが伸びてきたら押してください。</li>' +
+    '<li><b>⏩ 次の季節へ</b>　その季節の管理が採点され、次に進みます。</li>' +
+    '</ul>';
+  el('mo-ok').textContent = 'はじめる';
+  loop();
+}
+boot();
+</script>
+</body>
+</html>

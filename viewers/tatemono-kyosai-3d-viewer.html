@@ -1709,8 +1709,8 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
 
   /* ============================================================
      内装(間取り・仕上げ・造作)
-     1階: LDK / 和室 / 洗面・浴室 / トイレ / 玄関ホール・廊下
-     2階: 洋室2室 / 廊下 / 階段室
+       1階 LDK 13.2帖 / 和室 6帖 / 洗面 / 浴室(1616) / トイレ / 玄関ホール・廊下
+       2階 洋室2室 / 廊下 / 階段室
   ============================================================ */
   const MI = {
     yuka:    new THREE.MeshStandardMaterial({ color: 0xc6a274, roughness: 0.62 }),
@@ -1730,134 +1730,153 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     kanagu:  new THREE.MeshStandardMaterial({ color: 0xbcc2c6, roughness: 0.35, metalness: 0.6 }),
   };
   const IN = (m, member, part) => { g.add(tag(m, part || "内装", member, "int")); return m; };
-  // 室内の有効範囲
   const iX0 = -W / 2 + 0.09, iX1 = W / 2 - 0.09, iZ0 = -D / 2 + 0.09, iZ1 = D / 2 - 0.09;
   const f1 = foundH + 0.16;
   const c1 = foundH + (n === 1 ? 2.42 : 2.56);
   const ih1 = c1 - f1;
 
+  /* 間取りの基準線 */
+  const wA = 2.75;    // 居室 ⇔ 廊下(x)
+  const wB = -0.30;   // LDK ⇔ 和室・水回り(z)
+  const wC = -0.27;   // 和室 ⇔ 洗面(x)
+  const wD = 1.10;    // 洗面 ⇔ 浴室・トイレ(x)
+  const wE = -1.30;   // 浴室 ⇔ トイレ(z)
+  const domaX0 = 2.95, domaZ0 = 0.85, domaZ1 = 2.45;
+
   /* 床(部屋ごとに仕上げを分ける) */
   const slabF = (x0, x1, z0, z1, mat, member, y, th) =>
     IN(box(x1 - x0, th || 0.06, z1 - z0, mat, (x0 + x1) / 2, y === undefined ? f1 : y, (z0 + z1) / 2), member, "床");
-  // 間取りの基準線
-  const wA = 1.60;      // 廊下と居室を分ける壁(x)
-  const wB = -0.60;     // LDKと水回り・和室を分ける壁(z)
-  const wC = -0.90;     // 和室と洗面・浴室を分ける壁(x)
-  const wT = -2.00;     // トイレの間仕切り(z)
-  const domaX0 = 2.55, domaZ0 = 0.85, domaZ1 = 2.45;
-
-  slabF(iX0, wA, wB, iZ1, MI.yuka, "床(フローリング)");                    // LDK
-  slabF(wC, wA, iZ0, wB, MI.tile, "床(タイル)");                           // 洗面・浴室
-  slabF(wA, iX1, iZ0, domaZ0, MI.yuka, "床(フローリング)");                // 廊下・階段室
-  slabF(wA, domaX0, domaZ0, domaZ1, MI.yuka, "床(フローリング)");          // ホール
+  slabF(iX0, wA, wB, iZ1, MI.yuka, "床(フローリング)");                 // LDK
+  slabF(wC, wD, iZ0, wB, MI.tile, "床(タイル)");                        // 洗面
+  slabF(wD, wA, iZ0, wE, MI.tile, "床(タイル)");                        // 浴室
+  slabF(wD, wA, wE, wB, MI.tile, "床(タイル)");                         // トイレ
+  slabF(wA, iX1, iZ0, domaZ0, MI.yuka, "床(フローリング)");             // 廊下
+  slabF(wA, domaX0, domaZ0, domaZ1, MI.yuka, "床(フローリング)");       // ホール
   slabF(wA, iX1, domaZ1, iZ1, MI.yuka, "床(フローリング)");
   slabF(domaX0, iX1, domaZ0, domaZ1, MI.doma, "玄関土間", foundH + 0.02, 0.05);
   IN(box(iX1 - domaX0, 0.16, 0.12, MI.tategu, (domaX0 + iX1) / 2, f1 - 0.02, domaZ0 + 0.06), "上がり框");
-  // 和室(畳6枚・縁付き)
+  // 和室 6帖(畳6枚・縁付き)
   {
-    const tz1 = wB - 0.06, tx0 = iX0, mw = (tz1 - iZ0) / 3, ml = (wC - iX0) / 2;
+    const mw = (wC - iX0) / 2, ml = (wB - iZ0) / 3;
     for (let cx = 0; cx < 2; cx++) for (let rz = 0; rz < 3; rz++) {
-      const x0 = tx0 + cx * ml, z0 = iZ0 + rz * mw;
-      IN(box(ml - 0.05, 0.07, mw - 0.05, MI.tatami, x0 + ml / 2, f1 + 0.005, z0 + mw / 2), "床(畳)", "床");
-      IN(box(ml - 0.05, 0.075, 0.035, MI.heri, x0 + ml / 2, f1 + 0.005, z0 + 0.02), "床(畳)", "床");
-      IN(box(ml - 0.05, 0.075, 0.035, MI.heri, x0 + ml / 2, f1 + 0.005, z0 + mw - 0.02), "床(畳)", "床");
+      const x0 = iX0 + cx * mw, z0 = iZ0 + rz * ml;
+      IN(box(mw - 0.05, 0.07, ml - 0.05, MI.tatami, x0 + mw / 2, f1 + 0.005, z0 + ml / 2), "床(畳)", "床");
+      [z0 + 0.03, z0 + ml - 0.03].forEach((ez) =>
+        IN(box(mw - 0.05, 0.075, 0.035, MI.heri, x0 + mw / 2, f1 + 0.005, ez), "床(畳)", "床"));
     }
   }
 
   /* 天井 */
   IN(box(iX1 - iX0, 0.04, iZ1 - iZ0, MI.tenjo, (iX0 + iX1) / 2, c1, (iZ0 + iZ1) / 2), "天井");
 
-  /* 間仕切り壁(開口を空けて分割) */
-  const wallX = (x, z0, z1, member) => { if (z1 - z0 > 0.06) IN(box(0.07, ih1, z1 - z0, MI.kabe, x, f1 + ih1 / 2, (z0 + z1) / 2), member || "内壁(クロス)"); };
-  const wallZ = (z, x0, x1, member) => { if (x1 - x0 > 0.06) IN(box(x1 - x0, ih1, 0.07, MI.kabe, (x0 + x1) / 2, f1 + ih1 / 2, z), member || "内壁(クロス)"); };
-  const lintelX = (x, z0, z1) => IN(box(0.07, ih1 - 2.0, z1 - z0, MI.kabe, x, f1 + 2.0 + (ih1 - 2.0) / 2, (z0 + z1) / 2), "内壁(クロス)");
-  const lintelZ = (z, x0, x1) => IN(box(x1 - x0, ih1 - 2.0, 0.07, MI.kabe, (x0 + x1) / 2, f1 + 2.0 + (ih1 - 2.0) / 2, z), "内壁(クロス)");
-  // 壁A(x=1.6): LDK/和室・水回り ⇔ 廊下。開口: z 0.55〜1.45(LDK引戸)、z -1.45〜-0.75(洗面ドア)
-  wallX(wA, iZ0, -1.45); wallX(wA, -0.75, 0.55); wallX(wA, 1.45, iZ1);
-  lintelX(wA, -1.45, -0.75); lintelX(wA, 0.55, 1.45);
-  // 壁B(z=-0.6): LDK ⇔ 和室・水回り。開口: x -2.55〜-1.65(和室 襖)
-  wallZ(wB, iX0, -2.55); wallZ(wB, -1.65, wA);
-  lintelZ(wB, -2.55, -1.65);
-  // 壁C(x=-0.9): 和室 ⇔ 洗面。開口なし(壁のみ)
+  /* 間仕切り壁(建具の開口を空け、上部に垂れ壁を設ける) */
+  const wallX = (x, z0, z1) => { if (z1 - z0 > 0.06) IN(box(0.07, ih1, z1 - z0, MI.kabe, x, f1 + ih1 / 2, (z0 + z1) / 2), "内壁(クロス)"); };
+  const wallZ = (z, x0, x1) => { if (x1 - x0 > 0.06) IN(box(x1 - x0, ih1, 0.07, MI.kabe, (x0 + x1) / 2, f1 + ih1 / 2, z), "内壁(クロス)"); };
+  const lintX = (x, z0, z1) => IN(box(0.07, ih1 - 2.02, z1 - z0, MI.kabe, x, f1 + 2.02 + (ih1 - 2.02) / 2, (z0 + z1) / 2), "内壁(クロス)");
+  const lintZ = (z, x0, x1) => IN(box(x1 - x0, ih1 - 2.02, 0.07, MI.kabe, (x0 + x1) / 2, f1 + 2.02 + (ih1 - 2.02) / 2, z), "内壁(クロス)");
+  // 壁A(x=2.75): 居室 ⇔ 廊下。開口: LDK引戸(z 0.95〜1.85)、トイレ戸(z -1.15〜-0.45)
+  wallX(wA, iZ0, -1.15); wallX(wA, -0.45, 0.95); wallX(wA, 1.85, iZ1);
+  lintX(wA, -1.15, -0.45); lintX(wA, 0.95, 1.85);
+  // 壁B(z=-0.30): LDK ⇔ 和室・洗面。開口: 和室 襖(x -2.75〜-1.35)、洗面戸(x 0.15〜0.85)
+  wallZ(wB, iX0, -2.75); wallZ(wB, -1.35, 0.15); wallZ(wB, 0.85, wA);
+  lintZ(wB, -2.75, -1.35); lintZ(wB, 0.15, 0.85);
+  // 壁C(x=-0.27): 和室 ⇔ 洗面(開口なし)
   wallX(wC, iZ0, wB);
-  // 浴室と洗面の間仕切り(x=0.45)。開口: z -2.3〜-1.5
-  wallX(0.45, iZ0, -2.30); wallX(0.45, -1.50, wB);
-  lintelX(0.45, -2.30, -1.50);
-  // トイレ(x 1.6〜2.7, z -3.0〜-2.0)
-  wallZ(wT, wA + 0.04, 2.70); wallX(2.70, iZ0, wT);
-  IN(box(0.72, 1.98, 0.05, MI.tategu, 2.15, f1 + 0.99, wT), "内部建具(開き戸)");
+  // 壁D(x=1.10): 洗面 ⇔ 浴室・トイレ。開口: 浴室戸(z -2.45〜-1.70)
+  wallX(wD, iZ0, -2.45); wallX(wD, -1.70, wB);
+  lintX(wD, -2.45, -1.70);
+  // 壁E(z=-1.30): 浴室 ⇔ トイレ
+  wallZ(wE, wD, wA);
 
-  /* 幅木・回り縁 */
+  /* 幅木 */
   const habakiX = (x, z0, z1) => IN(box(0.02, 0.09, z1 - z0, MI.habaki, x, f1 + 0.075, (z0 + z1) / 2), "幅木");
   const habakiZ = (z, x0, x1) => IN(box(x1 - x0, 0.09, 0.02, MI.habaki, (x0 + x1) / 2, f1 + 0.075, z), "幅木");
   habakiZ(iZ1 - 0.02, iX0, wA); habakiZ(wB + 0.05, iX0, wA);
   habakiX(iX0 + 0.02, wB, iZ1); habakiX(wA - 0.05, wB, iZ1);
-  habakiZ(iZ0 + 0.02, iX0, wC); habakiX(iX0 + 0.02, iZ0, wB);
-  habakiX(wA + 0.05, domaZ1, iZ1); habakiZ(iZ1 - 0.02, wA, iX1);
+  habakiZ(iZ0 + 0.02, iX0, wC); habakiX(iX0 + 0.02, iZ0, wB); habakiX(wC - 0.05, iZ0, wB);
+  habakiX(wA + 0.05, domaZ1, iZ1); habakiZ(iZ1 - 0.02, wA, iX1); habakiX(iX1 - 0.02, iZ0, domaZ0);
 
   /* 建具 */
-  IN(box(0.05, 1.98, 0.88, MI.tategu, wA, f1 + 0.99, 1.00), "内部建具(引戸)");        // LDK入口
-  IN(box(0.05, 1.98, 0.68, MI.tategu, wA, f1 + 0.99, -1.10), "内部建具(開き戸)");     // 洗面入口
-  IN(box(0.88, 1.80, 0.05, MI.fusuma, -2.10, f1 + 0.90, wB), "襖");                   // 和室入口
-  IN(box(0.05, 1.90, 0.78, MI.tategu, 0.45, f1 + 0.95, -1.90), "内部建具(引戸)");     // 浴室入口
+  IN(box(0.05, 2.00, 0.88, MI.tategu, wA, f1 + 1.00, 1.40), "内部建具(引戸)");        // LDK入口
+  IN(box(0.05, 2.00, 0.68, MI.tategu, wA, f1 + 1.00, -0.80), "内部建具(開き戸)");     // トイレ
+  IN(box(1.38, 1.82, 0.05, MI.fusuma, -2.05, f1 + 0.91, wB), "襖");                    // 和室(2枚引違い)
+  IN(box(0.03, 1.82, 0.05, MI.tategu, -2.05, f1 + 0.91, wB), "襖");
+  IN(box(0.68, 2.00, 0.05, MI.tategu, 0.50, f1 + 1.00, wB), "内部建具(開き戸)");       // 洗面
+  IN(box(0.05, 1.92, 0.73, MI.tategu, wD, f1 + 0.96, -2.08), "内部建具(引戸)");        // 浴室
 
-  /* 押入(和室) */
-  IN(box(1.65, 1.95, 0.72, MI.cabinet, iX0 + 0.85, f1 + 0.98, iZ0 + 0.38), "押入");
-  IN(box(1.60, 0.05, 0.02, MI.tategu, iX0 + 0.85, f1 + 0.92, iZ0 + 0.75), "押入");
+  /* 押入(和室・1間) */
+  IN(box(1.75, 2.00, 0.82, MI.cabinet, iX0 + 0.92, f1 + 1.00, iZ0 + 0.43), "押入");
+  IN(box(1.70, 0.05, 0.03, MI.tategu, iX0 + 0.92, f1 + 0.92, iZ0 + 0.85), "押入");
 
   /* 造作・設備 */
-  // システムキッチン(LDK北側)
-  IN(box(2.55, 0.86, 0.62, MI.cabinet, -2.30, f1 + 0.43, wB + 0.45), "システムキッチン");
-  IN(box(2.60, 0.05, 0.66, MI.counter, -2.30, f1 + 0.88, wB + 0.45), "システムキッチン");
-  IN(box(0.52, 0.03, 0.42, MI.kanagu, -2.90, f1 + 0.90, wB + 0.45), "システムキッチン");
-  IN(box(0.04, 0.28, 0.04, MI.kanagu, -2.90, f1 + 1.04, wB + 0.62), "システムキッチン");
-  IN(box(2.40, 0.62, 0.35, MI.cabinet, -2.30, f1 + 1.90, wB + 0.30), "システムキッチン");
-  // ユニットバス
-  IN(box(1.05, 0.58, 1.42, MI.tub, 1.00, f1 + 0.29, iZ0 + 0.85), "浴槽(ユニットバス)");
-  IN(box(0.95, 0.04, 1.32, MI.tub, 1.00, f1 + 0.56, iZ0 + 0.85), "浴槽(ユニットバス)");
-  IN(box(0.04, 0.34, 0.04, MI.kanagu, 1.00, f1 + 1.20, iZ0 + 0.10), "浴槽(ユニットバス)");
-  // 洗面化粧台
-  IN(box(0.72, 0.82, 0.50, MI.cabinet, -0.35, f1 + 0.41, iZ0 + 0.30), "洗面化粧台");
-  IN(box(0.76, 0.05, 0.54, MI.counter, -0.35, f1 + 0.84, iZ0 + 0.30), "洗面化粧台");
-  IN(box(0.62, 0.72, 0.10, MI.kanagu, -0.35, f1 + 1.35, iZ0 + 0.12), "洗面化粧台");
-  // 便器
-  IN(box(0.38, 0.42, 0.62, MI.toki, 2.15, f1 + 0.21, iZ0 + 0.45), "便器");
-  IN(box(0.36, 0.50, 0.20, MI.toki, 2.15, f1 + 0.35, iZ0 + 0.15), "便器");
-  IN(box(0.42, 0.10, 0.36, MI.toki, 2.15, f1 + 0.44, iZ0 + 0.50), "便器");
+  // システムキッチン(開口のない西面に I 型で配置。前面に1.8mの通路を確保)
+  {
+    const kx = iX0 + 0.32, kz0 = 0.55, kz1 = 2.65, kzc = (kz0 + kz1) / 2, kl = kz1 - kz0;
+    IN(box(0.62, 0.86, kl, MI.cabinet, kx, f1 + 0.43, kzc), "システムキッチン");
+    IN(box(0.66, 0.05, kl + 0.04, MI.counter, kx, f1 + 0.885, kzc), "システムキッチン");
+    IN(box(0.42, 0.03, 0.52, MI.kanagu, kx + 0.02, f1 + 0.90, kzc - 0.55), "システムキッチン");   // シンク
+    IN(box(0.04, 0.30, 0.04, MI.kanagu, kx - 0.20, f1 + 1.05, kzc - 0.55), "システムキッチン");   // 水栓
+    IN(box(0.46, 0.02, 0.52, MI.kanagu, kx + 0.02, f1 + 0.91, kzc + 0.55), "システムキッチン");   // コンロ
+    IN(box(0.38, 0.60, kl - 0.4, MI.cabinet, kx - 0.10, f1 + 1.92, kzc), "システムキッチン");     // 吊戸棚
+    IN(box(0.50, 0.28, 0.62, MI.kanagu, kx - 0.04, f1 + 1.55, kzc + 0.55), "システムキッチン");   // レンジフード
+  }
+  // ユニットバス(1616)
+  {
+    const bxc = (wD + wA) / 2, bzc = (iZ0 + wE) / 2;
+    IN(box(1.55, 0.05, 1.51, MI.tile, bxc, f1 + 0.02, bzc), "浴槽(ユニットバス)");
+    IN(box(1.50, 0.56, 0.78, MI.tub, bxc, f1 + 0.30, bzc - 0.34), "浴槽(ユニットバス)");
+    IN(box(1.40, 0.04, 0.68, MI.tub, bxc, f1 + 0.56, bzc - 0.34), "浴槽(ユニットバス)");
+    IN(box(0.04, 0.36, 0.04, MI.kanagu, bxc - 0.55, f1 + 1.15, bzc + 0.55), "浴槽(ユニットバス)");
+    IN(box(0.55, 0.04, 0.14, MI.kanagu, bxc, f1 + 0.75, bzc + 0.68), "浴槽(ユニットバス)");
+  }
+  // 洗面化粧台(洗面室の北奥)
+  {
+    const sxc = (wC + wD) / 2;
+    IN(box(0.90, 0.82, 0.50, MI.cabinet, sxc, f1 + 0.41, iZ0 + 0.30), "洗面化粧台");
+    IN(box(0.94, 0.05, 0.54, MI.counter, sxc, f1 + 0.84, iZ0 + 0.30), "洗面化粧台");
+    IN(box(0.80, 0.75, 0.12, MI.kanagu, sxc, f1 + 1.34, iZ0 + 0.12), "洗面化粧台");
+    IN(box(0.60, 0.92, 0.55, MI.cabinet, sxc, f1 + 0.46, wB - 0.35), "洗濯機置場");
+  }
+  // 便器(トイレ)
+  {
+    const txc = (wD + wA) / 2, tzc = (wE + wB) / 2;
+    IN(box(0.38, 0.42, 0.62, MI.toki, txc, f1 + 0.21, tzc), "便器");
+    IN(box(0.36, 0.52, 0.20, MI.toki, txc, f1 + 0.36, tzc - 0.32), "便器");
+    IN(box(0.44, 0.10, 0.38, MI.toki, txc, f1 + 0.45, tzc + 0.05), "便器");
+    IN(box(0.52, 0.03, 0.28, MI.counter, txc - 0.45, f1 + 0.80, tzc - 0.30), "便器");
+  }
 
   /* ---- 内装(2階)+階段 ---- */
   if (n === 2) {
     const f2 = foundH + storyH + 0.12;
     const c2 = foundH + storyH + 2.56;
     const ih2 = c2 - f2;
-    const stX0 = 2.75, stZ0 = iZ0, stZ1 = -0.30;      // 階段室(吹抜け)
-    // 床(階段の吹抜けを避けて張る)
-    slabF(iX0, stX0, iZ0, iZ1, MI.yuka, "床(2階フローリング)", f2, 0.08);
-    slabF(stX0, iX1, stZ1, iZ1, MI.yuka, "床(2階フローリング)", f2, 0.08);
+    const w2A = 0.20, w2B = wA;                       // 洋室A ⇔ 洋室B ⇔ 廊下
+    const stZ1 = -0.30;                               // 階段の吹抜け(廊下側)
+    slabF(iX0, w2B, iZ0, iZ1, MI.yuka, "床(2階フローリング)", f2, 0.08);
+    slabF(w2B, iX1, stZ1, iZ1, MI.yuka, "床(2階フローリング)", f2, 0.08);
     IN(box(iX1 - iX0, 0.04, iZ1 - iZ0, MI.tenjo, (iX0 + iX1) / 2, c2, (iZ0 + iZ1) / 2), "天井");
-    // 間仕切り: 洋室A ⇔ 廊下(x=0.0)、廊下 ⇔ 洋室B(x=2.0)
     const w2 = (x, z0, z1) => { if (z1 - z0 > 0.06) IN(box(0.07, ih2, z1 - z0, MI.kabe, x, f2 + ih2 / 2, (z0 + z1) / 2), "内壁(クロス)"); };
-    w2(0.0, iZ0, 0.35); w2(0.0, 1.25, iZ1);
-    IN(box(0.07, ih2 - 2.0, 0.90, MI.kabe, 0.0, f2 + 2.0 + (ih2 - 2.0) / 2, 0.80), "内壁(クロス)");
-    w2(2.00, iZ0, -1.35); w2(2.00, -0.45, iZ1);
-    IN(box(0.07, ih2 - 2.0, 0.90, MI.kabe, 2.00, f2 + 2.0 + (ih2 - 2.0) / 2, -0.90), "内壁(クロス)");
-    IN(box(0.05, 1.98, 0.82, MI.tategu, 0.0, f2 + 0.99, 0.80), "内部建具(開き戸)");
-    IN(box(0.05, 1.98, 0.82, MI.tategu, 2.00, f2 + 0.99, -0.90), "内部建具(開き戸)");
-    // クローゼット
-    IN(box(1.70, 2.00, 0.62, MI.cabinet, iX0 + 0.90, f2 + 1.00, iZ1 - 0.33), "押入");
-    // 幅木
-    habakiZ(iZ1 - 0.02, iX0, 0.0); habakiX(iX0 + 0.02, iZ0, iZ1);
+    const l2 = (x, z0, z1) => IN(box(0.07, ih2 - 2.02, z1 - z0, MI.kabe, x, f2 + 2.02 + (ih2 - 2.02) / 2, (z0 + z1) / 2), "内壁(クロス)");
+    w2(w2A, iZ0, 0.55); w2(w2A, 1.45, iZ1); l2(w2A, 0.55, 1.45);
+    w2(w2B, iZ0, -1.25); w2(w2B, -0.35, iZ1); l2(w2B, -1.25, -0.35);
+    IN(box(0.05, 2.00, 0.84, MI.tategu, w2A, f2 + 1.00, 1.00), "内部建具(開き戸)");
+    IN(box(0.05, 2.00, 0.84, MI.tategu, w2B, f2 + 1.00, -0.80), "内部建具(開き戸)");
+    IN(box(1.75, 2.05, 0.62, MI.cabinet, iX0 + 0.92, f2 + 1.03, iZ1 - 0.33), "押入");
+    IN(box(1.35, 2.05, 0.62, MI.cabinet, w2A + 0.75, f2 + 1.03, iZ0 + 0.33), "押入");
     IN(box(0.02, 0.09, iZ1 - iZ0, MI.habaki, iX0 + 0.02, f2 + 0.075, (iZ0 + iZ1) / 2), "幅木");
-    IN(box(2.0, 0.09, 0.02, MI.habaki, -1.0, f2 + 0.075, iZ1 - 0.02), "幅木");
-    // 階段(踏板・蹴込・手すり)
-    const nStep = 14, rise2 = (f2 - f1) / nStep, run2 = 2.45 / nStep;
+    IN(box(w2A - iX0, 0.09, 0.02, MI.habaki, (iX0 + w2A) / 2, f2 + 0.075, iZ1 - 0.02), "幅木");
+    IN(box(w2A - iX0, 0.09, 0.02, MI.habaki, (iX0 + w2A) / 2, f2 + 0.075, iZ0 + 0.02), "幅木");
+    // 階段(踏板・蹴込・手すり・階段室の壁)
+    const nStep = 14, rise2 = (f2 - f1) / nStep, run2 = 2.5 / nStep;
+    const sxc = (wA + iX1) / 2;
     for (let i = 0; i < nStep; i++) {
-      const zc = stZ0 + 0.15 + run2 * i;
-      IN(box(0.92, 0.05, run2 + 0.03, MI.tategu, 3.35, f1 + rise2 * (i + 1) - 0.02, zc), "階段");
-      IN(box(0.92, rise2 - 0.05, 0.03, MI.cabinet, 3.35, f1 + rise2 * (i + 1) - rise2 / 2, zc - run2 / 2), "階段");
+      const zc = iZ0 + 0.12 + run2 * i;
+      IN(box(1.02, 0.05, run2 + 0.03, MI.tategu, sxc, f1 + rise2 * (i + 1) - 0.02, zc), "階段");
+      IN(box(1.02, rise2 - 0.05, 0.03, MI.cabinet, sxc, f1 + rise2 * (i + 1) - rise2 / 2, zc - run2 / 2), "階段");
     }
-    IN(box(0.05, 0.85, 2.55, MI.kabe, 2.86, f1 + 1.35, stZ0 + 1.4), "階段");
-    IN(box(0.06, 0.06, 2.60, MI.tategu, 2.86, f1 + 1.85, stZ0 + 1.4), "階段");
+    IN(box(0.06, 0.06, 2.55, MI.tategu, wA + 0.10, f1 + 1.85, iZ0 + 1.35), "階段");
+    IN(box(0.06, 0.85, 0.06, MI.tategu, wA + 0.10, f1 + 1.42, iZ0 + 0.15), "階段");
   }
 
   /* ---- マーカー・寸法 ---- */
@@ -2134,7 +2153,7 @@ const MEMBER_TARGETS = {
   kiso:    ["布基礎", "布基礎(中通り)"],
   naiso:   ["内壁(クロス)", "天井", "幅木"],
   yuka:    ["床(フローリング)", "床(畳)", "床(タイル)", "床(2階フローリング)", "玄関土間", "上がり框"],
-  zosaku:  ["内部建具(開き戸)", "内部建具(引戸)", "襖", "押入", "システムキッチン", "浴槽(ユニットバス)", "洗面化粧台", "便器"],
+  zosaku:  ["内部建具(開き戸)", "内部建具(引戸)", "襖", "押入", "システムキッチン", "浴槽(ユニットバス)", "洗面化粧台", "洗濯機置場", "便器"],
   setsubi: ["エコキュート(貯湯タンク)","エコキュート(ヒートポンプ)","エコキュート(基礎)","エコキュート(配管)","室外機","立水栓","電気メーター"],
   doushi:  ["胴差し", "床梁(2階床組)"],
   kaidan:  ["階段"],
@@ -2209,6 +2228,7 @@ const DETAIL_NOTES = {
   "システムキッチン": "建物に含めて評価されるのが一般的な住宅設備。浸水では床上何cmまで水が来たかで下部収納・機器の交換要否が変わります。",
   "浴槽(ユニットバス)": "ユニットバスは部分補修が難しく、被害が大きいと一式交換になります。",
   "洗面化粧台": "浸水で下部キャビネットが含水すると交換対象になります。",
+  "洗濯機置場": "防水パンと給排水。浸水では排水口からの逆流による汚損も確認します。",
   "便器": "浸水では給排水設備への影響も含めて確認します。",
   "階段": "内部造作。浸水や消火活動による水濡れの影響を受けやすい動線部位です。",
 };

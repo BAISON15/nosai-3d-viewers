@@ -47,8 +47,21 @@
     padding: 2px 10px; margin-bottom: 10px;
   }
   .card h2 { margin: 0 0 8px; font-size: 16px; }
-  .card p { margin: 0; font-size: 13px; color: #475569; line-height: 1.7; }
+  .card p { margin: 0; font-size: 13.5px; color: #334155; line-height: 1.75; }
   .card .go { margin-top: 12px; font-size: 12px; color: #2563eb; font-weight: 600; }
+  .keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+  .keys span {
+    font-size: 11.5px; color: #475569; background: #f8fafc;
+    border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 9px; white-space: nowrap;
+  }
+  .keys span.hit { color: #b45309; background: #fffbeb; border-color: #fde68a; font-weight: 600; }
+  .card .tag.learn { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+  .sec {
+    margin: 4px 2px 12px; font-size: 12px; font-weight: 700; color: #64748b;
+    letter-spacing: .06em;
+  }
+  .sec + .card { margin-top: 0; }
+  .sec.later { margin-top: 30px; }
   .features {
     margin-top: 24px; font-size: 11.5px; color: #475569; line-height: 1.8;
     background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px 16px;
@@ -65,25 +78,47 @@
 <body>
 <header>
   <h1>損害保険 評価研修用 3Dビューア</h1>
-  <p>園芸施設共済・建物共済・農機具共済の評価研修を想定したインタラクティブな3Dモデル集 / Three.js製・単一HTML</p>
+  <p>園芸施設共済・建物共済・農機具共済の評価研修を想定したインタラクティブな3Dモデル集と、米づくりの一年をたどる水稲栽培シミュレーション / Three.js製・単一HTMLファイル</p>
 </header>
 <main>
+  <div class="sec">評価研修用ビューア</div>
+  <a class="card" href="viewers/tatemono-kyosai-3d-viewer.html">
+    <span class="tag">建物共済</span>
+    <h2>一般住宅 3Dビューア</h2>
+    <p>木造住宅を軸組から内装まで3Dで確認。中を歩き回れて、4種類の災害で損害評価を練習できます。</p>
+    <div class="keys">
+      <span>平屋／2階建て</span>
+      <span>屋根4形状</span>
+      <span>軸組・外装・内装</span>
+      <span>歩行モード</span>
+      <span>和風住宅・キューブ型</span>
+      <span class="hit">台風・雹・大雪・水災の被害</span>
+    </div>
+    <div class="go">ビューアを開く →</div>
+  </a>
   <a class="card" href="viewers/engei-kyosai-3d-viewer.html">
     <span class="tag">園芸施設共済</span>
-    <h2>園芸施設 3Dビューア</h2>
-    <p>パイプハウス(Ⅱ類)・鉄骨屋根型(Ⅳ類)・雨よけ施設(Ⅵ類)・多目的ネットハウス(Ⅶ類)・ガラス室の5型式。鉄骨屋根型とガラス室は単棟/2連棟/3連棟に対応(谷樋・接続側面を再現)。施設構造部分の色分け、被覆材切替、寸法線表示、部材ハイライトに加え、<b>台風・大雪の被害シミュレーション</b>で損害評価の練習ができます。</p>
+    <h2>園芸ハウス 3Dビューア</h2>
+    <p>ハウス5型式を3Dで確認し、台風・大雪の被害から損害評価を練習できます。</p>
+    <div class="keys">
+      <span>ハウス5型式</span>
+      <span>単棟〜3連棟</span>
+      <span>被覆材の切替</span>
+      <span>寸法線</span>
+      <span class="hit">台風・大雪の被害</span>
+    </div>
     <div class="go">ビューアを開く →</div>
   </a>
   <a class="card" href="viewers/noki-kyosai-3d-viewer.html">
     <span class="tag">農機具共済</span>
     <h2>農機具 3Dビューア</h2>
-    <p>乗用型トラクタ・乗用型田植機・自脱型/普通型コンバイン・薬剤散布用乗用管理機の5機種。トラクタはロータリー・プラウ・あぜ塗機・ブームスプレーヤなど附属装置15種の着脱に対応(3点リンク/ドローバー接合・PTOシャフトを再現)。オーガ・ブームの格納/展開切替、部材ハイライト付き。</p>
-    <div class="go">ビューアを開く →</div>
-  </a>
-  <a class="card" href="viewers/tatemono-kyosai-3d-viewer.html">
-    <span class="tag">建物共済</span>
-    <h2>一般住宅 3Dビューア</h2>
-    <p>木造在来工法の一般住宅を平屋/2階建て、切妻/寄棟/片流れ/陸屋根の4屋根形状で切替。軸組・外装(屋根材/外壁材テクスチャ、破風・雨樋・庇・雨戸・パラペット等)・内装まで再現。部位色分け・骨組み表示・内部透過表示・寸法線表示に加え、<b>台風・雹・大雪・水災の被害シミュレーション</b>で損害評価の練習ができます。<b>歩行モード</b>では実寸スケールで建物の内外を歩き回れます。エコキュート・室外機などの附帯設備、隣家や前面道路といった周辺環境も再現。<b>和風住宅(入母屋)</b>や<b>キューブ型(写真再現)</b>への切替も可能で、農家住宅の瓦屋根・縁側・真壁や、サイディング2色張りの建物を敷地・外構ごと確認できます。</p>
+    <p>トラクタ・田植機・コンバインなど5機種を、附属装置を付け替えながら確認できます。</p>
+    <div class="keys">
+      <span>5機種</span>
+      <span>附属装置15種の着脱</span>
+      <span>オーガ・ブーム開閉</span>
+      <span>部材ハイライト</span>
+    </div>
     <div class="go">ビューアを開く →</div>
   </a>
 
@@ -91,8 +126,22 @@
     <strong>3ビューア共通の機能:</strong> 部材を選ぶとオレンジ色にハイライトされ、選択した部材以外は淡色化されるため、柱・梁・筋かいなど形の似た部材の違いを視覚的に確認できます。部材の分け方は「まとめて」と「個別(部材ごと・使用数付き)」を切替でき、部材ごとの色分け表示にも対応。各部材には評価上の着眼点が表示されます。
   </div>
 
+  <div class="sec later">学習コンテンツ</div>
+  <a class="card" href="rice-sim.html">
+    <span class="tag learn">水稲栽培</span>
+    <h2>3D水稲栽培シミュレーション</h2>
+    <p>田起こしから稲刈りまで、米づくりの一年を7工程で体験。水の管理しだいで収量と等級が変わります。</p>
+    <div class="keys">
+      <span>春4月〜秋10月の7工程</span>
+      <span>水深の管理</span>
+      <span>収量・等級・点数</span>
+      <span>用語解説つき</span>
+    </div>
+    <div class="go">シミュレーションを開く →</div>
+  </a>
+
   <div class="disclaimer">
-    <strong>免責事項:</strong> 本モデルは研修・学習用の簡略化されたイメージであり、農林水産省「園芸施設共済評価要領」や各農業共済組合の正式な損害評価基準・様式を完全に再現したものではありません。被害シミュレーションで生成される被害は研修用に自動生成した架空の想定被害であり、実際の被害の分布・程度や損害割合の算定例を示すものではありません。実際の引受評価・損害評価は必ず公式な評価要領・約款・基準に基づいて行ってください。詳細は <a href="README.md">README</a> を参照してください。
+    <strong>免責事項:</strong> 本モデルは研修・学習用の簡略化されたイメージであり、農林水産省「園芸施設共済評価要領」や各農業共済組合の正式な損害評価基準・様式を完全に再現したものではありません。被害シミュレーションで生成される被害は研修用に自動生成した架空の想定被害であり、実際の被害の分布・程度や損害割合の算定例を示すものではありません。実際の引受評価・損害評価は必ず公式な評価要領・約款・基準に基づいて行ってください。また、水稲栽培シミュレーションは米づくりの流れを学ぶための簡略化した教材であり、実際の栽培暦・生育経過や収量・等級を再現するものではありません。詳細は <a href="README.md">README</a> を参照してください。
   </div>
 </main>
 <footer>
