@@ -111,6 +111,18 @@ const M = {
   attBlu: mat(0x2471a3),
   attGrn: mat(0x1e8449),
   attYel: mat(0xd4ac0d),
+  // トラクタ高精細モデル用
+  tPaint:   mat(0xc94000, { roughness: 0.42, metalness: 0 }),
+  tPaintDS: mat(0xc94000, { roughness: 0.42, metalness: 0, side: THREE.DoubleSide }),
+  gloss:    mat(0x15171a, { roughness: 0.28, metalness: 0.25 }),
+  frame:    mat(0x1d2024, { roughness: 0.45, metalness: 0.3 }),
+  rubber:   mat(0x1b1e21, { roughness: 0.93, metalness: 0, side: THREE.DoubleSide }),
+  rim:      mat(0xeeece6, { roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide }),
+  chrome:   mat(0xc9cfd4, { roughness: 0.18, metalness: 0.9 }),
+  lens:     mat(0xe4edf2, { roughness: 0.06, metalness: 0.6, emissive: 0x3a444c }),
+  amber:    mat(0xff8a1c, { roughness: 0.25, metalness: 0, emissive: 0xb34700, emissiveIntensity: 0.4 }),
+  tail:     mat(0xc2262e, { roughness: 0.25, metalness: 0, emissive: 0x5a0a0a }),
+  cabGlass: mat(0x2a4858, { roughness: 0.04, metalness: 0.35, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
 };
 const hlMat = mat(0xffb020, { emissive: 0xff7a00, emissiveIntensity: 0.5, side: THREE.DoubleSide });
 
@@ -150,6 +162,161 @@ function shell(r, len, thetaStart, arc, m, x, y, z, member) {
   const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 14, 1, true, thetaStart, arc), m);
   o.rotation.x = Math.PI / 2; o.position.set(x, y, z);
   return tag(o, member);
+}
+
+/* ============================================================
+   高精細モデル用ヘルパー(角丸ボックス・押し出し断面・ラグ付き車輪など)
+============================================================ */
+function mergeGeos(list) {
+  const parts = list.map((gg) => (gg.index ? gg.toNonIndexed() : gg));
+  let n = 0;
+  parts.forEach((p) => { n += p.attributes.position.count; });
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+  let o = 0;
+  parts.forEach((p) => {
+    pos.set(p.attributes.position.array, o * 3);
+    nor.set(p.attributes.normal.array, o * 3);
+    o += p.attributes.position.count;
+  });
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  out.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+  return out;
+}
+/* 押し出し形状はフラット法線になるため、角度しきい値内の法線を平均して滑らかにする */
+function smoothNormals(geo, deg = 50) {
+  const p = geo.attributes.position, nr = geo.attributes.normal, cmin = Math.cos(deg * Math.PI / 180);
+  const groups = new Map();
+  for (let i = 0; i < p.count; i++) {
+    const k = Math.round(p.getX(i) * 1e4) + "," + Math.round(p.getY(i) * 1e4) + "," + Math.round(p.getZ(i) * 1e4);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(i);
+  }
+  const out = new Float32Array(nr.array.length);
+  groups.forEach((idx) => {
+    idx.forEach((i) => {
+      const ax = nr.getX(i), ay = nr.getY(i), az = nr.getZ(i);
+      let sx = 0, sy = 0, sz = 0;
+      idx.forEach((j) => {
+        const bx = nr.getX(j), by = nr.getY(j), bz = nr.getZ(j);
+        if (ax * bx + ay * by + az * bz >= cmin) { sx += bx; sy += by; sz += bz; }
+      });
+      const l = Math.hypot(sx, sy, sz) || 1;
+      out[i * 3] = sx / l; out[i * 3 + 1] = sy / l; out[i * 3 + 2] = sz / l;
+    });
+  });
+  nr.array.set(out); nr.needsUpdate = true;
+  return geo;
+}
+function roundRectShape(w, h, rc) {
+  rc = Math.max(0.001, Math.min(rc, w / 2 - 0.001, h / 2 - 0.001));
+  const s = new THREE.Shape(), x0 = -w / 2, y0 = -h / 2;
+  s.moveTo(x0 + rc, y0);
+  s.lineTo(x0 + w - rc, y0); s.absarc(x0 + w - rc, y0 + rc, rc, -Math.PI / 2, 0);
+  s.lineTo(x0 + w, y0 + h - rc); s.absarc(x0 + w - rc, y0 + h - rc, rc, 0, Math.PI / 2);
+  s.lineTo(x0 + rc, y0 + h); s.absarc(x0 + rc, y0 + h - rc, rc, Math.PI / 2, Math.PI);
+  s.lineTo(x0, y0 + rc); s.absarc(x0 + rc, y0 + rc, rc, Math.PI, Math.PI * 1.5);
+  return s;
+}
+/* 角丸ボックス: w×h(XY)×d(Z)、b=エッジの丸み、rc=XY方向の角の丸み */
+function rboxGeo(w, h, d, b, rc) {
+  b = Math.max(0.002, Math.min(b, w / 2 - 0.002, h / 2 - 0.002, d / 2 - 0.002));
+  const g = new THREE.ExtrudeGeometry(roundRectShape(w - 2 * b, h - 2 * b, (rc ?? b) - b),
+    { depth: d - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 5 });
+  g.translate(0, 0, -(d - 2 * b) / 2);
+  return smoothNormals(g);
+}
+function rbox(w, h, d, b, m, x, y, z, member) {
+  const o = new THREE.Mesh(rboxGeo(w, h, d, b), m);
+  o.position.set(x, y, z);
+  return tag(o, member);
+}
+/* 側面断面(XY)をZ方向に押し出し(Z中心) */
+function profileGeo(pts, depth, b) {
+  const s = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelSegments: 4, curveSegments: 8 });
+  g.translate(0, 0, -depth / 2);
+  return b > 0 ? smoothNormals(g) : g;
+}
+/* X位置に応じてZ幅を絞る(ボンネット先端のすぼまり)。法線も変形に合わせて補正 */
+function taperZ(geo, fn) {
+  const p = geo.attributes.position, nr = geo.attributes.normal, e = 1e-3;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i), s = fn(x), ds = (fn(x + e) - fn(x - e)) / (2 * e);
+    p.setZ(i, z * s);
+    const nx = nr.getX(i) - (z * ds / s) * nr.getZ(i), ny = nr.getY(i), nz = nr.getZ(i) / s;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nr.setXYZ(i, nx / l, ny / l, nz / l);
+  }
+  return geo;
+}
+function cylX(r, len, m, x, y, z, member) {
+  const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20), m);
+  o.rotation.z = Math.PI / 2; o.position.set(x, y, z);
+  return tag(o, member);
+}
+/* 2点間の角柱(ピラー・フレーム) */
+function bar(p1, p2, w, d, m, member) {
+  const dir = new THREE.Vector3().subVectors(p2, p1);
+  const o = new THREE.Mesh(new THREE.BoxGeometry(w, dir.length(), d), m);
+  o.position.copy(p1).addScaledVector(dir, 0.5);
+  o.quaternion.setFromUnitVectors(v(0, 1, 0), dir.clone().normalize());
+  return tag(o, member);
+}
+/* 4点の面(ガラス) */
+function quad(a, b, c, d, m, member) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute([...a, ...b, ...c, ...a, ...c, ...d], 3));
+  geo.computeVertexNormals();
+  return tag(new THREE.Mesh(geo, m), member);
+}
+/* ラグ付きタイヤ+白色ディッシュホイール(車軸=Z、外側の面は z の符号側) */
+function lugWheel(g, o) {
+  const { r, w, rimR, member } = o;
+  const hw = w / 2, side = o.z < 0 ? -1 : 1;
+  const put = (geo, m) => {
+    const ms = new THREE.Mesh(geo, m);
+    ms.position.set(o.x, o.y, o.z);
+    if (side < 0) ms.scale.z = -1;              // 鏡像にしてもラグの向き(進行方向)は左右で揃う
+    g.add(tag(ms, member));
+  };
+  // タイヤ本体: 断面を回転体で作成
+  const prof = [[rimR, -hw * 0.82], [r * 0.84, -hw], [r * 0.95, -hw * 0.97], [r - 0.012, -hw * 0.82], [r, -hw * 0.55],
+                [r, hw * 0.55], [r - 0.012, hw * 0.82], [r * 0.95, hw * 0.97], [r * 0.84, hw], [rimR, hw * 0.82]]
+    .map(([a, b]) => new THREE.Vector2(a, b));
+  const tire = new THREE.LatheGeometry(prof, 56); tire.rotateX(Math.PI / 2);
+  const geos = [tire];
+  // ハの字ラグ(左右で半ピッチずらす)
+  const n = o.lugs, step = (Math.PI * 2) / n, L = hw * 1.02, lh = r * 0.075, lt = r * 0.08;
+  for (let i = 0; i < n; i++) {
+    [1, -1].forEach((sg) => {
+      const b = new THREE.BoxGeometry(lt, lh, L);
+      b.rotateY(sg * 0.6);
+      b.translate(0, r + lh * 0.25, sg * hw * 0.47);
+      b.rotateZ(i * step + (sg > 0 ? 0 : step / 2));
+      geos.push(b);
+    });
+  }
+  put(mergeGeos(geos), M.rubber);
+  // ホイール: リム胴+ディッシュ+リム縁
+  const barrel = new THREE.CylinderGeometry(rimR, rimR, w * 0.84, 48, 1, true); barrel.rotateX(Math.PI / 2);
+  const disc = new THREE.LatheGeometry([[rimR * 0.99, -hw * 0.05], [rimR * 0.82, hw * 0.08], [rimR * 0.5, hw * 0.3], [r * 0.17, hw * 0.34], [0.001, hw * 0.34]]
+    .map(([a, b]) => new THREE.Vector2(a, b)), 48); disc.rotateX(Math.PI / 2);
+  const lipA = new THREE.TorusGeometry(rimR + 0.01, 0.016, 6, 48); lipA.translate(0, 0, hw * 0.84);
+  const lipB = new THREE.TorusGeometry(rimR + 0.01, 0.016, 6, 48); lipB.translate(0, 0, -hw * 0.84);
+  put(mergeGeos([barrel, disc, lipA, lipB]), M.rim);
+  // ハブ・ナット・センターキャップ
+  const hubR = r * 0.14;
+  const hub = new THREE.CylinderGeometry(hubR, hubR, hw * 0.3, 24); hub.rotateX(Math.PI / 2); hub.translate(0, 0, hw * 0.48);
+  const cap = new THREE.CylinderGeometry(hubR * 0.5, hubR * 0.6, hw * 0.2, 16); cap.rotateX(Math.PI / 2); cap.translate(0, 0, hw * 0.68);
+  const hubGeos = [hub, cap];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2, rr = r * 0.2;
+    const nut = new THREE.CylinderGeometry(0.018, 0.018, 0.05, 6); nut.rotateX(Math.PI / 2);
+    nut.translate(rr * Math.cos(a), rr * Math.sin(a), hw * 0.38);
+    hubGeos.push(nut);
+  }
+  put(mergeGeos(hubGeos), M.hub);
 }
 
 /* ============================================================
@@ -406,28 +573,143 @@ function buildTractor(att) {
   const g = new THREE.Group();
   const BODY = "車体・シャーシ", ENG = "エンジン・ボンネット", CAB = "キャビン(ガラス・外装)", WHL = "走行部(タイヤ・ホイール)", HIT = "3点リンク・PTO";
 
-  wheel(g, 0.78, 0.42, -1.0, 0.78, 0.85, WHL);
-  wheel(g, 0.78, 0.42, -1.0, 0.78, -0.85, WHL);
-  wheel(g, 0.48, 0.3, 1.15, 0.48, 0.72, WHL);
-  wheel(g, 0.48, 0.3, 1.15, 0.48, -0.72, WHL);
+  const add = (o) => { g.add(o); return o; };
+  const mesh = (geo, m, member) => add(tag(new THREE.Mesh(geo, m), member));
 
-  g.add(box(3.0, 0.3, 0.55, M.steelD, 0, 0.78, 0, BODY));
-  g.add(box(1.35, 0.55, 0.75, M.tBody, 0.95, 1.2, 0, ENG));
-  g.add(box(0.08, 0.45, 0.6, M.black, 1.62, 1.1, 0, ENG));
-  const muf = cylY(0.045, 0.045, 0.85, M.black, 0.5, 1.9, 0.3, ENG); g.add(muf);
-  g.add(box(1.0, 0.09, 0.4, M.tBody, -1.0, 1.66, 0.85, BODY));
-  g.add(box(1.0, 0.09, 0.4, M.tBody, -1.0, 1.66, -0.85, BODY));
-  [[-0.2, 0.55], [-0.2, -0.55], [-1.35, 0.55], [-1.35, -0.55]].forEach(([x, z]) => {
-    g.add(box(0.07, 1.35, 0.07, M.steelD, x, 1.75, z, CAB));
+  /* ---- 走行部: ラグ付きタイヤ+白色ホイール(前輪小径・後輪大径の4WD) ---- */
+  [1, -1].forEach((s) => {
+    lugWheel(g, { r: 0.78, w: 0.42, rimR: 0.5, lugs: 22, x: -1.0, y: 0.78, z: s * 0.85, member: WHL });
+    lugWheel(g, { r: 0.48, w: 0.3, rimR: 0.3, lugs: 16, x: 1.15, y: 0.48, z: s * 0.72, member: WHL });
   });
-  g.add(box(1.3, 1.15, 1.05, M.glass, -0.78, 1.72, 0, CAB));
-  g.add(box(1.45, 0.09, 1.2, M.tBody, -0.78, 2.42, 0, CAB));
-  g.add(box(0.5, 0.1, 0.5, M.seat, -0.95, 1.25, 0, CAB));
-  const bk1 = box(0.05, 0.38, 0.45, M.seat, -1.17, 1.46, 0, CAB); bk1.rotation.z = 0.12; g.add(bk1);
-  g.add(beam(v(-0.3, 1.12, 0), v(-0.5, 1.4, 0), 0.032, M.steelD, CAB));           // ステアリングコラム
-  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 8, 20), M.black);
+
+  /* ---- 車体・シャーシ ---- */
+  add(box(0.8, 0.16, 0.5, M.steelD, 1.55, 0.62, 0, BODY));                         // フロントフレーム
+  add(cylZ(0.065, 1.0, M.steelD, 1.15, 0.48, 0, BODY));                            // 前車軸
+  add(rbox(0.3, 0.28, 0.32, 0.04, M.steelD, 1.15, 0.5, 0, BODY));                   // 前デフケース
+  [1, -1].forEach((s) => add(rbox(0.14, 0.22, 0.12, 0.02, M.steelD, 1.15, 0.48, s * 0.52, BODY))); // ナックル
+  add(box(0.9, 0.1, 0.4, M.steelD, 0.62, 0.57, 0, BODY));                          // オイルパン
+  add(rbox(1.15, 0.52, 0.6, 0.06, M.steelD, -1.0, 0.8, 0, BODY));                   // ミッションケース
+  [1, -1].forEach((s) => add(cylZ(0.11, 0.5, M.steelD, -1.0, 0.78, s * 0.45, BODY))); // 後車軸ハウジング
+  add(rbox(0.36, 0.28, 0.64, 0.04, M.steelD, -1.45, 1.0, 0, BODY));                 // 油圧リフトケース
+  add(box(1.36, 0.06, 1.12, M.steelD, -0.82, 1.09, 0, BODY));                      // キャビン床
+  // 前部ウエイトブラケット
+  add(rbox(0.24, 0.24, 0.92, 0.03, M.steel, 2.03, 0.58, 0, BODY));
+  add(rbox(0.04, 0.15, 0.52, 0.01, M.steelD, 2.165, 0.58, 0, BODY));
+  [-0.18, 0.18].forEach((z) => [0.54, 0.62].forEach((y) => add(cylX(0.018, 0.04, M.hub, 2.19, y, z, BODY))));
+  [1, -1].forEach((s) => {
+    // 乗降ステップ
+    add(bar(v(0.15, 1.08, s * 0.56), v(0.15, 0.52, s * 0.74), 0.04, 0.03, M.steelD, BODY));
+    add(bar(v(0.43, 1.08, s * 0.56), v(0.43, 0.52, s * 0.74), 0.04, 0.03, M.steelD, BODY));
+    add(box(0.32, 0.03, 0.2, M.steel, 0.29, 0.86, s * 0.66, BODY));
+    add(box(0.32, 0.03, 0.2, M.steel, 0.29, 0.58, s * 0.72, BODY));
+    add(rbox(0.34, 0.3, 0.2, 0.04, M.black, -0.22, 0.86, s * 0.42, BODY));          // 燃料タンク
+    // 後輪フェンダー(曲面+外周リップ)
+    const R = 0.9, W = 0.56, a0 = 0.22, aL = Math.PI - 0.28;
+    const skin = new THREE.CylinderGeometry(R, R, W, 48, 1, true, a0 + Math.PI / 2, aL); skin.rotateX(Math.PI / 2);
+    const lip = new THREE.RingGeometry(R - 0.01, R + 0.09, 48, 1, a0, aL); lip.translate(0, 0, W / 2);
+    const e1 = new THREE.TorusGeometry(R + 0.09, 0.022, 6, 48, aL); e1.rotateZ(a0); e1.translate(0, 0, W / 2);
+    const e2 = new THREE.TorusGeometry(R, 0.018, 6, 48, aL); e2.rotateZ(a0); e2.translate(0, 0, -W / 2);
+    const inner = new THREE.RingGeometry(0.62, R, 48, 1, a0, aL); inner.translate(0, 0, -W / 2);
+    [[mergeGeos([skin, lip, e1, e2]), M.tPaintDS], [inner, M.steelDS]].forEach(([geo, m]) => {
+      const fm = mesh(geo, m, BODY);
+      fm.position.set(-1.0, 0.78, s * 0.87);
+      if (s < 0) fm.scale.z = -1;
+    });
+    const tl = add(rbox(0.12, 0.06, 0.1, 0.02, M.tail, -1.0 + 0.97 * Math.cos(2.5), 0.78 + 0.97 * Math.sin(2.5), s * 1.02, BODY));
+    tl.rotation.z = 2.5 - Math.PI / 2;                                              // テールランプ
+  });
+
+  /* ---- エンジン・ボンネット: 側面断面を押し出し、先端をすぼめた曲面フード ---- */
+  add(box(1.3, 0.42, 0.52, M.black, 0.62, 0.83, 0, ENG));                          // エンジンブロック
+  const hoodTaper = (x) => { const t = Math.min(1, Math.max(0, (x - 0.5) / 1.35)); return 1 - 0.2 * t * t; };
+  const topY = (x) => (x < 1.04 ? 1.56 - 0.05 * (x + 0.16) / 1.2 : 1.51 - 0.12 * ((x - 1.04) / 0.56) ** 2);
+  const hoodPts = [[-0.16, 1.02], [1.26, 1.02], [1.38, 1.12], [1.78, 1.12], [1.82, 1.2], [1.8, 1.29], [1.7, 1.37]];
+  for (let i = 0; i <= 22; i++) { const x = 1.6 - 0.08 * i; hoodPts.push([x, topY(x)]); }
+  mesh(taperZ(profileGeo(hoodPts, 0.78, 0.035), hoodTaper), M.tPaint, ENG);
+  // フロントグリル(黒)
+  mesh(taperZ(profileGeo([[1.16, 0.64], [1.84, 0.64], [1.9, 0.78], [1.9, 0.98], [1.86, 1.15], [1.16, 1.15]], 0.66, 0.02), hoodTaper), M.gloss, ENG);
+  for (let y = 0.72; y <= 0.97; y += 0.05) add(box(0.012, 0.014, 0.18, M.steelD, 1.925, y, 0, ENG)); // グリルスラット
+  add(cylX(0.05, 0.02, M.chrome, 1.925, 1.05, 0, ENG));                              // エンブレム台座
+  [1, -1].forEach((s) => {
+    // 下段ライト
+    add(cylX(0.058, 0.02, M.chrome, 1.918, 0.86, s * 0.19, ENG));
+    add(cylX(0.046, 0.03, M.lens, 1.925, 0.86, s * 0.19, ENG));
+    // 上段ヘッドライト(ボンネット先端に埋め込み)
+    const hh = add(rbox(0.12, 0.09, 0.22, 0.02, M.gloss, 1.8, 1.235, s * 0.21, ENG)); hh.rotation.z = -0.35;
+    [0.15, 0.26].forEach((zz) => add(cylX(0.032, 0.03, M.lens, 1.858, 1.235, s * zz, ENG)));
+    // 側面の黒いエアインテーク
+    const sp = profileGeo([[0.55, 1.04], [1.2, 1.04], [1.38, 1.15], [1.42, 1.3], [1.28, 1.42], [0.78, 1.44], [0.58, 1.32]], 0.012, 0);
+    sp.translate(0, 0, s * 0.447);
+    mesh(taperZ(sp, hoodTaper), M.gloss, ENG);
+    // 天面のスリット
+    const sl = add(rbox(0.6, 0.02, 0.09, 0.008, M.gloss, 0.8, topY(0.8) + 0.04, s * 0.15, ENG));
+    sl.rotation.set(0, s * 0.14, -0.04);
+  });
+  for (let i = 0; i < 5; i++) { const x = 0.04 + i * 0.05; add(box(0.022, 0.014, 0.34, M.gloss, x, topY(x) + 0.04, 0, ENG)); } // 後部ルーバー
+  // 縦型マフラー(右Aピラー前)
+  const exX = 0.06, exZ = 0.54;
+  add(beam(v(exX, 1.12, exZ), v(exX, 1.02, 0.36), 0.045, M.black, ENG));
+  add(cylY(0.05, 0.05, 1.18, M.black, exX, 1.71, exZ, ENG));
+  mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(v(exX, 2.29, exZ), v(exX, 2.28 + 0.0, exZ), v(exX - 0.12, 2.28, exZ)), 8, 0.05, 12, false), M.black, ENG);
+  add(rbox(0.03, 0.55, 0.14, 0.01, M.steelD, exX + 0.06, 1.78, exZ, ENG));          // 遮熱カバー
+  [1.7, 2.1].forEach((y) => add(bar(v(exX, y, exZ), v(-0.17 - 0.13 * (y - 1.12) / 1.24, y, 0.56), 0.02, 0.03, M.frame, ENG)));
+
+  /* ---- キャビン: 4本ピラー+全面ガラス+角丸ルーフ ---- */
+  const Y0 = 1.12, Y1 = 2.36;
+  const FP = (y, s) => [-0.17 - 0.13 * (y - Y0) / (Y1 - Y0), y, s * (0.55 + 0.03 * (y - Y0) / (Y1 - Y0))];
+  const RP = (y, s) => [-1.46 + 0.02 * (y - Y0) / (Y1 - Y0), y, s * (0.55 + 0.03 * (y - Y0) / (Y1 - Y0))];
+  [1, -1].forEach((s) => {
+    add(bar(v(...FP(Y0, s)), v(...FP(Y1, s)), 0.07, 0.07, M.frame, CAB));
+    add(bar(v(...RP(Y0, s)), v(...RP(Y1, s)), 0.08, 0.08, M.frame, CAB));
+    add(bar(v(...FP(Y1, s)), v(...RP(Y1, s)), 0.06, 0.06, M.frame, CAB));
+    add(bar(v(...FP(Y0, s)), v(...RP(Y0, s)), 0.06, 0.06, M.frame, CAB));
+    add(quad(FP(Y0, s), RP(Y0, s), RP(Y1, s), FP(Y1, s), M.cabGlass, CAB));          // ドアガラス
+    add(bar(v(-1.02, 1.15, s * 0.565), v(-1.0, 2.33, s * 0.58), 0.025, 0.02, M.frame, CAB)); // ドア枠
+    add(box(0.12, 0.025, 0.03, M.frame, -0.93, 1.75, s * 0.6, CAB));                // ドアハンドル
+    add(rbox(0.05, 0.13, 0.05, 0.02, M.amber, FP(1.72, s)[0], 1.72, s * 0.61, CAB)); // ウインカー
+    // サイドミラー
+    const mt = v(...FP(2.2, s));
+    add(bar(mt, v(-0.1, 2.3, s * 0.96), 0.025, 0.025, M.frame, CAB));
+    const mr = add(rbox(0.04, 0.34, 0.2, 0.015, M.gloss, -0.1, 2.1, s * 0.98, CAB)); mr.rotation.y = -s * 0.25;
+    add(bar(v(-0.1, 2.3, s * 0.96), v(-0.1, 2.26, s * 0.98), 0.02, 0.02, M.frame, CAB));
+    // 作業灯(前後)
+    add(rbox(0.08, 0.1, 0.14, 0.02, M.gloss, 0.02, 2.36, s * 0.32, CAB));
+    add(cylX(0.042, 0.02, M.lens, 0.065, 2.36, s * 0.32, CAB));
+    add(rbox(0.08, 0.1, 0.14, 0.02, M.gloss, -1.62, 2.36, s * 0.4, CAB));
+    add(cylX(0.042, 0.02, M.lens, -1.665, 2.36, s * 0.4, CAB));
+    // ルーフ前方のガードバー
+    add(bar(v(0.0, 2.52, s * 0.62), v(0.16, 2.66, s * 0.58), 0.03, 0.03, M.frame, CAB));
+  });
+  add(bar(v(0.16, 2.66, -0.6), v(0.16, 2.66, 0.6), 0.03, 0.03, M.frame, CAB));
+  add(bar(v(...FP(Y1, -1)), v(...FP(Y1, 1)), 0.06, 0.06, M.frame, CAB));
+  add(bar(v(...RP(Y1, -1)), v(...RP(Y1, 1)), 0.06, 0.06, M.frame, CAB));
+  add(bar(v(...RP(Y0, -1)), v(...RP(Y0, 1)), 0.06, 0.06, M.frame, CAB));
+  add(quad(FP(Y0, -1), FP(Y0, 1), FP(Y1, 1), FP(Y1, -1), M.cabGlass, CAB));          // フロントガラス
+  add(quad(RP(Y0, -1), RP(Y0, 1), RP(Y1, 1), RP(Y1, -1), M.cabGlass, CAB));          // リヤガラス
+  add(box(0.05, 0.5, 1.1, M.frame, -0.19, 1.37, 0, CAB));                          // カウルパネル
+  const roof = (w, d, t, b, rc, m, x, y) => {
+    const gg = rboxGeo(w, d, t, b, rc); gg.rotateX(Math.PI / 2);
+    const o = mesh(gg, m, CAB); o.position.set(x, y, 0); return o;
+  };
+  roof(1.62, 1.28, 0.08, 0.02, 0.16, M.frame, -0.8, 2.39);                          // ルーフ下部トリム
+  roof(1.74, 1.42, 0.12, 0.04, 0.22, M.tPaint, -0.8, 2.49);                         // ルーフ
+  roof(1.2, 0.96, 0.06, 0.025, 0.18, M.tPaint, -0.86, 2.565);                        // ルーフ天面の段
+  // GNSS受信機
+  add(rbox(0.2, 0.05, 0.24, 0.015, M.gloss, -0.1, 2.575, 0, CAB));
+  add(rbox(0.24, 0.08, 0.28, 0.03, M.tPaint, -0.1, 2.64, 0, CAB));
+  add(rbox(0.18, 0.02, 0.2, 0.008, M.gloss, -0.1, 2.69, 0, CAB));
+  add(bar(v(-0.17, 2.68, 0.09), v(-0.17, 2.95, 0.09), 0.012, 0.012, M.frame, CAB));
+  // 室内: 座席・コンソール・ダッシュボード・ハンドル
+  add(box(0.28, 0.2, 0.28, M.steelD, -1.0, 1.22, 0, CAB));
+  add(rbox(0.5, 0.12, 0.5, 0.05, M.seat, -1.0, 1.38, 0, CAB));
+  const back = add(rbox(0.1, 0.55, 0.48, 0.04, M.seat, -1.25, 1.68, 0, CAB)); back.rotation.z = 0.14;
+  add(rbox(0.5, 0.18, 0.14, 0.03, M.black, -0.92, 1.4, 0.34, CAB));
+  add(rbox(0.3, 0.05, 0.09, 0.02, M.seat, -1.0, 1.52, 0.34, CAB));
+  add(rbox(0.24, 0.3, 0.62, 0.04, M.black, -0.36, 1.48, 0, CAB));
+  add(beam(v(-0.36, 1.5, 0), v(-0.55, 1.72, 0), 0.03, M.steelD, CAB));              // ステアリングコラム
+  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 10, 28), M.black);
   sw.quaternion.setFromUnitVectors(v(0, 0, 1), v(-0.42, 0.91, 0).normalize());
-  sw.position.set(-0.52, 1.44, 0);
+  sw.position.set(-0.57, 1.75, 0);
   g.add(tag(sw, CAB));
   // 3点リンク・PTO・ドローバー(先端座標はHITCH定数と一致)
   [[HITCH.lowZ], [-HITCH.lowZ]].forEach(([z]) => {
@@ -440,14 +722,15 @@ function buildTractor(att) {
   ptoStub.rotation.z = Math.PI / 2; ptoStub.position.set(-1.72, 0.72, 0);
   g.add(tag(ptoStub, HIT));
   g.add(box(0.5, 0.06, 0.14, M.steelD, -1.78, 0.42, 0, HIT));                      // ドローバー
+  g.add(rbox(0.16, 0.03, 0.26, 0.01, M.steel, -1.7, 0.82, 0, HIT));                // PTOシールド
 
   if (att !== "none") buildAttachment(g, att);
 
   const attCaveat = "附属装置(作業機)の加入区分は組合により異なります。本体と作業機(ロータリー・ハロー等)を別々に加入させる組合と、ロータリー等を本体の附属装置としてセットで加入できる組合があるため、装着状態と加入内容の確認が重要です。";
   const members = [
     { key:"engine", name:"エンジン・ボンネット", targets:[ENG], pos:[1.0, 1.75, 0.5], note:"火災事故の起点になりやすい部位。焼損の範囲(配線・補機類まで及んでいるか)を確認します。農機具共済は格納中・稼働中を問わず火災等・自然災害(地震を除く)・衝突・接触・墜落・転覆などの事故を対象とするのが一般的です。" },
-    { key:"cabin", name:"キャビン(ガラス・外装)", targets:[CAB], pos:[-0.78, 2.6, 0.6], note:"転覆・衝突時に損傷しやすい部位。ガラス割れ・フレーム変形・外装の凹みを確認します。転覆は稼働中事故の代表例です。" },
-    { key:"wheel", name:"走行部(タイヤ・ホイール)", targets:[WHL], pos:[-1.0, 0.8, 1.15], note:"衝突・接触や落輪でのホイール変形・タイヤ損傷を確認します。ただし摩滅・自然消耗による損害は共済の対象外とされるのが一般的です。" },
+    { key:"cabin", name:"キャビン(ガラス・外装)", targets:[CAB], pos:[-0.8, 2.85, 0.6], note:"転覆・衝突時に損傷しやすい部位。ガラス割れ・フレーム変形・外装の凹みを確認します。転覆は稼働中事故の代表例です。" },
+    { key:"wheel", name:"走行部(タイヤ・ホイール)", targets:[WHL], pos:[-1.0, 0.8, 1.2], note:"衝突・接触や落輪でのホイール変形・タイヤ損傷を確認します。ただし摩滅・自然消耗による損害は共済の対象外とされるのが一般的です。" },
     { key:"hitch", name:"3点リンク・PTO(装着部)", targets:[HIT], pos:[-1.9, 1.15, 0.35], note:"作業機を装着する部位。事故時は本体側の装着部(リンク・PTO軸・ドローバー)と作業機側マストの双方の損傷を確認します。" },
     { key:"body", name:"車体・シャーシ", targets:[BODY], pos:[0.2, 0.85, -0.7], note:"フレームの曲がり・亀裂は走行・作業に直結する損害です。修理費(復旧に必要な額)を新調達価額の範囲で見積もる新価ベースの支払いが一般的です(1年以内に復旧しない場合は時価ベース等、条件は組合によります)。" },
   ];
@@ -775,9 +1058,37 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(holder.clientWidth, holder.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 holder.appendChild(renderer.domElement);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+/* 塗装・ガラスの映り込み用の簡易環境マップ(空のグラデーション+ソフトボックス) */
+{
+  const envScene = new THREE.Scene();
+  const sky = new THREE.SphereGeometry(40, 32, 16);
+  const sp = sky.attributes.position, cols = [];
+  const cTop = new THREE.Color(0xf4f8fb), cHor = new THREE.Color(0xc4d1da), cGnd = new THREE.Color(0x58604c);
+  for (let i = 0; i < sp.count; i++) {
+    const t = sp.getY(i) / 40;
+    const c = t >= 0 ? cHor.clone().lerp(cTop, t) : cHor.clone().lerp(cGnd, Math.min(1, -t * 3));
+    cols.push(c.r, c.g, c.b);
+  }
+  sky.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+  envScene.add(new THREE.Mesh(sky, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const softbox = new THREE.Mesh(new THREE.PlaneGeometry(30, 14), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+  softbox.position.set(8, 30, 6); softbox.lookAt(0, 0, 0);
+  envScene.add(softbox);
+  const envTex = new THREE.PMREMGenerator(renderer).fromScene(envScene, 0.03).texture;
+  [M.tPaint, M.tPaintDS, M.gloss, M.frame, M.rim, M.chrome, M.lens, M.cabGlass].forEach((m) => { m.envMap = envTex; m.envMapIntensity = 0.6; });
+  M.cabGlass.envMapIntensity = 1.4;
+  M.chrome.envMapIntensity = 1.0;
+}
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8d9aa5, 1.25));  // 天空光+地面反射。日陰側が黒く潰れないよう底上げ
 const dirL = new THREE.DirectionalLight(0xfff4e0, 1.05);
 dirL.position.set(8, 12, 6);
+dirL.castShadow = true;
+dirL.shadow.mapSize.set(2048, 2048);
+Object.assign(dirL.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 40 });
+dirL.shadow.bias = -0.0004;
+dirL.shadow.normalBias = 0.03;
 scene.add(dirL);
 const fillL = new THREE.DirectionalLight(0xcfe0ff, 0.60);
 fillL.position.set(-12, 7, -10);
@@ -787,6 +1098,7 @@ fillL2.position.set(8, 5, -9);
 scene.add(fillL2);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: 0x8a9a6b, roughness: 1 }));
 ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
 scene.add(ground);
 const grid = new THREE.GridHelper(80, 80, 0x6b7a52, 0x7a8a60);
 grid.position.y = 0.001;
@@ -861,6 +1173,7 @@ function rebuild(resetCam) {
   currentDef = MACHINES[state.machine].build();
   modelGroup = currentDef.group;
   scene.add(modelGroup);
+  modelGroup.traverse((m) => { if (m.isMesh) { m.castShadow = !m.material.transparent; m.receiveShadow = true; } });
   buildMemberColors();
   if (state.detailParts) currentDef.members = buildDetailedMembers();
   const geo = new THREE.SphereGeometry(0.09, 16, 16);
