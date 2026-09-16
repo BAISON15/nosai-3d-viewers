@@ -1045,28 +1045,90 @@ function buildAttachment(g, key) {
   }
 
   if (key === "subsoiler") {
-    g.add(box(0.55, 0.16, 1.5, M.attYel, -2.4, 0.74, 0, AM));                      // 重量フレーム
-    [[0.45], [-0.45]].forEach(([z]) => {
-      const sk = box(0.12, 0.8, 0.06, M.steelD, -2.5, 0.4, z, AM); sk.rotation.z = 0.12; g.add(sk);
-      const tp = box(0.3, 0.07, 0.09, M.steelD, -2.38, 0.06, z, AM); tp.rotation.z = 0.1; g.add(tp);  // ポイント
+    // 白い角パイプのツールバー+マスト、両端に湾曲した深耕シャンク(前縁に黒い摩耗板)
+    g.add(rbox(0.22, 0.22, 1.8, 0.03, M.paintW, -2.36, 0.94, 0, AM));              // ツールバー
+    [1, -1].forEach((s) => {
+      g.add(rbox(0.26, 0.5, 0.05, 0.015, M.paintW, -2.3, 1.18, s * 0.1, AM));      // マスト側板
+      g.add(beam(v(-2.36, 1.38, s * 0.1), v(-2.36, 1.02, s * 0.62), 0.03, M.paintW, AM)); // 補強ステー
+      g.add(rbox(0.14, 0.5, 0.05, 0.015, M.paintW, -2.24, 0.72, s * 0.4, AM));     // 下部リンク取付板
     });
-    g.add(box(0.1, 0.1, 1.1, M.attYel, -2.4, 0.6, 0, AM));
+    g.add(cylZ(0.04, 0.3, M.steelD, -2.2, 1.34, 0, AM));                           // トップリンクピン
+    g.add(beam(v(HITCH.topX - 0.03, HITCH.topY, 0), v(-2.2, 1.34, 0), 0.03, M.steelD, AM));
+    g.add(rbox(0.04, 0.1, 0.36, 0.01, M.tail, -2.24, 0.94, 0, AM));                 // 銘板
+    // シャンク(両端)
+    [0.7, -0.7].forEach((z) => {
+      g.add(rbox(0.3, 0.38, 0.16, 0.03, M.paintW, -2.44, 0.94, z, AM));            // 取付ブラケット
+      [0.84, 1.04].forEach((y) => g.add(cylZ(0.022, 0.2, M.steelD, -2.44, y, z, AM))); // ボルト
+      // 湾曲したシャンク本体(白)
+      const sh = new THREE.Shape();
+      sh.moveTo(-2.58, 1.02);
+      sh.quadraticCurveTo(-2.64, 0.26, -2.3, 0.06);
+      sh.lineTo(-2.2, 0.1);
+      sh.quadraticCurveTo(-2.44, 0.32, -2.44, 1.02);
+      sh.closePath();
+      const shg = new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: false, curveSegments: 20 });
+      shg.translate(0, 0, z - 0.025);
+      g.add(tag(new THREE.Mesh(shg, M.paintW), AM));
+      // 前縁の黒い摩耗板
+      const wp = new THREE.Shape();
+      wp.moveTo(-2.44, 0.8);
+      wp.quadraticCurveTo(-2.44, 0.32, -2.2, 0.1);
+      wp.lineTo(-2.27, 0.08);
+      wp.quadraticCurveTo(-2.51, 0.3, -2.51, 0.8);
+      wp.closePath();
+      const wpg = new THREE.ExtrudeGeometry(wp, { depth: 0.064, bevelEnabled: false, curveSegments: 20 });
+      wpg.translate(0, 0, z - 0.032);
+      g.add(tag(new THREE.Mesh(wpg, M.gloss), AM));
+      // 先端のポイントと左右のウイング
+      const pt = rbox(0.24, 0.05, 0.075, 0.015, M.gloss, -2.16, 0.08, z, AM); pt.rotation.z = -0.18; g.add(pt);
+      const wg = rbox(0.16, 0.02, 0.3, 0.008, M.gloss, -2.3, 0.1, z, AM); wg.rotation.z = -0.15; g.add(wg);
+    });
   }
 
   if (key === "sprayer") {
-    ptoShaft(g, AM, v(-2.35, 0.6, 0));
-    g.add(box(0.2, 0.18, 0.22, M.steelD, -2.4, 0.55, 0, AM));                      // ポンプ
-    g.add(box(0.58, 0.62, 1.15, M.white, -2.55, 1.02, 0, AM));                     // 薬液タンク
-    [[0.28], [-0.28]].forEach(([z]) => g.add(beam(v(-2.55, 0.56, z), v(-2.55, 0.74, z), 0.03, M.steelD, AM))); // タンク支持
-    g.add(cylY(0.09, 0.09, 0.08, M.white, -2.55, 1.37, 0.3, AM));                  // 注入口
-    g.add(box(0.12, 0.12, 1.3, M.attYel, -2.92, 1.05, 0, AM));                     // センターブーム
-    [[1], [-1]].forEach(([sf]) => {
-      g.add(box(0.09, 0.09, 2.0, M.attYel, -2.92, 1.05, sf * 1.62, AM));           // ウイングブーム
-      for (let z = 0.4; z <= 2.5; z += 0.35) {
-        g.add(cylY(0.012, 0.03, 0.08, M.steelD, -2.92, 0.97, sf * z, AM));         // ノズル
+    // 3点リンク装着式: 黒い架台に丸みのある赤いタンク、PTO駆動ポンプ、操作バルブ、
+    // 後部の昇降フレームにトラス構造のブーム(作業時=左右に展開)
+    ptoShaft(g, AM, v(-2.3, 0.54, 0));
+    g.add(rbox(0.22, 0.22, 0.26, 0.03, M.steelD, -2.36, 0.52, 0, AM));             // ポンプ
+    // 架台
+    g.add(rbox(0.9, 0.08, 0.92, 0.02, M.gloss, -2.64, 0.46, 0, AM));
+    [[-2.26, 1], [-2.26, -1], [-3.02, 1], [-3.02, -1]].forEach(([x, s]) =>
+      g.add(bar(v(x, 0.46, s * 0.4), v(x, 0.64, s * 0.4), 0.06, 0.06, M.gloss, AM)));
+    // 薬液タンク(赤・丸みのある形)
+    g.add(rbox(0.74, 0.72, 1.02, 0.2, M.imRed, -2.64, 0.94, 0, AM));
+    g.add(cylY(0.15, 0.15, 0.06, M.gloss, -2.64, 1.33, 0.22, AM));                 // 注入口のふた
+    g.add(rbox(0.015, 0.1, 0.14, 0.005, M.attYel, -2.265, 0.84, 0.32, AM));        // 注意ラベル
+    g.add(rbox(0.015, 0.1, 0.14, 0.005, M.attYel, -2.265, 0.84, -0.36, AM));
+    // 前面の操作バルブ・圧力計
+    g.add(rbox(0.05, 0.36, 0.32, 0.01, M.gloss, -2.24, 0.96, -0.06, AM));          // バルブ取付板
+    for (let i = 0; i < 3; i++) g.add(cylX(0.03, 0.1, M.chrome, -2.18, 1.04, -0.16 + i * 0.1, AM)); // 開閉バルブ
+    g.add(cylX(0.055, 0.03, M.paintW, -2.19, 0.86, 0.02, AM));                      // 圧力計
+    g.add(beam(v(-2.18, 1.04, -0.16), v(-2.2, 0.62, -0.3), 0.014, M.black, AM));   // ホース
+    // 後部の昇降フレーム
+    [1, -1].forEach((s) => g.add(bar(v(-3.06, 0.46, s * 0.36), v(-3.06, 1.2, s * 0.36), 0.07, 0.07, M.gloss, AM)));
+    g.add(rbox(0.08, 0.08, 0.84, 0.02, M.gloss, -3.06, 1.2, 0, AM));
+    // ブーム(センター+左右ウイング・トラス構造)
+    const BX = -3.14, BY = 1.0, nozzles = [];
+    const pushNoz = (z) => {
+      const st = new THREE.CylinderGeometry(0.012, 0.012, 0.09, 8); st.translate(BX, BY - 0.13, z);
+      const cp = new THREE.CylinderGeometry(0.028, 0.012, 0.05, 8); cp.translate(BX, BY - 0.19, z);
+      nozzles.push(st, cp);
+    };
+    g.add(rbox(0.1, 0.1, 1.3, 0.02, M.imRed, BX, BY + 0.04, 0, AM));               // センターブーム
+    for (let z = -0.5; z <= 0.51; z += 0.25) pushNoz(z);
+    [1, -1].forEach((s) => {
+      g.add(rbox(0.1, 0.22, 0.12, 0.02, M.imRed, BX, BY, s * 0.7, AM));            // ヒンジ
+      g.add(cylZ(0.03, 2.6, M.inox, BX, BY + 0.08, s * 2.0, AM));                  // 上弦材
+      g.add(cylZ(0.022, 2.6, M.inox, BX, BY - 0.08, s * 2.0, AM));                 // 下弦材
+      for (let i = 0; i < 9; i++) {
+        const z0 = 0.72 + i * 0.29, z1 = z0 + 0.29;
+        g.add(beam(v(BX, BY + (i % 2 ? 0.08 : -0.08), s * z0), v(BX, BY + (i % 2 ? -0.08 : 0.08), s * z1), 0.012, M.inox, AM)); // 斜材
       }
+      g.add(cylZ(0.01, 2.6, M.black, BX + 0.05, BY - 0.05, s * 2.0, AM));          // 送液ホース
+      g.add(beam(v(BX, 1.2, s * 0.36), v(BX, BY + 0.1, s * 2.4), 0.009, M.gloss, AM)); // 吊りワイヤ
+      for (let z = 0.8; z <= 3.25; z += 0.3) pushNoz(s * z);
     });
-    g.add(beam(v(-2.4, 0.9, 0), v(-2.92, 1.05, 0), 0.03, M.steelD, AM));
+    g.add(tag(new THREE.Mesh(mergeGeos(nozzles), M.gloss), AM));                    // ノズル
   }
 }
 
