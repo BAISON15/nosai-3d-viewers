@@ -129,6 +129,7 @@ const M = {
   imRed:    mat(0xbe2a1c, { roughness: 0.38, metalness: 0.05 }),                 // 作業機の赤
   paintWDS: mat(0xeceae6, { roughness: 0.35, metalness: 0.05, side: THREE.DoubleSide }),
   beigeDS:  mat(0xd6c49c, { roughness: 0.5, metalness: 0.02, side: THREE.DoubleSide }),   // 樹脂ホッパー
+  plastic:  mat(0xcdc4b6, { roughness: 0.18, metalness: 0, transparent: true, opacity: 0.58 }), // 半透明の樹脂ホッパー
 };
 const hlMat = mat(0xffb020, { emissive: 0xff7a00, emissiveIntensity: 0.5, side: THREE.DoubleSide });
 
@@ -617,35 +618,161 @@ function buildAttachment(g, key) {
     }
   }
 
-  if (key === "fertseed" || key === "seeder") {
-    g.add(box(0.12, 0.1, 2.2, M.steelD, -2.3, 0.6, 0, AM));                       // ツールバー
-    if (key === "fertseed") {
-      g.add(box(0.36, 0.42, 2.1, M.attGrn, -2.35, 1.02, 0, AM));                  // 肥料ホッパー
-      g.add(box(0.3, 0.36, 2.1, M.white, -2.74, 0.96, 0, AM));                    // 種子ホッパー
-    } else {
-      g.add(box(0.42, 0.44, 2.2, M.white, -2.52, 1.0, 0, AM));                    // 種子ホッパー
-    }
-    for (let z = -0.85; z <= 0.86; z += 0.34) {
-      g.add(beam(v(-2.45, 0.6, z), v(-2.62, 0.1, z), 0.022, M.steelD, AM));       // 作溝シャンク
-      g.add(beam(v(-2.5, 0.78, z), v(-2.62, 0.14, z), 0.016, M.black, AM));       // 繰出しチューブ
-      g.add(cylZ(0.1, 0.06, M.tire, -2.92, 0.1, z, AM));                          // 鎮圧輪
-      g.add(beam(v(-2.7, 0.55, z), v(-2.92, 0.14, z), 0.018, M.steelD, AM));
-    }
+  if (key === "fertseed") {
+    // 条ごとのユニット(ホッパー→繰出し部→蛇腹シュート→作溝器→鎮圧輪)
+    g.add(rbox(0.14, 0.14, 2.1, 0.03, M.imRed, -2.34, 0.76, 0, AM));               // ツールバー
+    g.add(rbox(0.12, 0.12, 1.9, 0.03, M.imRed, -2.66, 0.86, 0, AM));               // 後部ツールバー
+    [1, -1].forEach((s) => {
+      g.add(beam(v(-2.34, 0.76, s * 0.95), v(-2.66, 0.86, s * 0.95), 0.03, M.imRed, AM));
+      g.add(beam(v(-2.3, 0.72, s * 1.02), v(-3.02, 0.6, s * 1.08), 0.028, M.paintW, AM));  // 白いサイドレール
+      g.add(beam(v(-3.02, 0.6, s * 1.08), v(-3.12, 0.34, s * 1.02), 0.028, M.paintW, AM));
+      g.add(cylZ(0.035, 0.06, M.paintW, -3.12, 0.34, s * 1.02, AM));
+    });
+    // 中央: 駆動輪・深さ調整
+    g.add(cylZ(0.2, 0.06, M.tire, -2.95, 0.2, 0, AM));
+    g.add(cylZ(0.05, 0.08, M.steelD, -2.95, 0.2, 0, AM));
+    g.add(beam(v(-2.66, 0.86, 0), v(-2.95, 0.26, 0), 0.026, M.steelD, AM));
+    g.add(rbox(0.1, 0.42, 0.12, 0.02, M.imRed, -2.52, 1.05, 0, AM));               // 調整ハンドル台
+    g.add(cylY(0.05, 0.05, 0.22, M.steelD, -2.52, 1.34, 0, AM));                   // スプリング
+    g.add(beam(v(-2.52, 1.45, 0), v(-2.5, 1.64, 0.05), 0.02, M.gloss, AM));        // レバー
+    [-0.9, -0.54, -0.18, 0.18, 0.54, 0.9].forEach((z) => {
+      // 肥料ホッパー(前列)・種子ホッパー(後列): 下すぼまりの角型・半透明
+      [[-2.38, 0.42, 0.15, 1.16], [-2.74, 0.38, 0.14, 1.12]].forEach(([hx, hh, hr, hy]) => {
+        const up = new THREE.Mesh(new THREE.CylinderGeometry(hr, hr, hh * 0.55, 4), M.plastic);
+        up.rotation.y = Math.PI / 4; up.position.set(hx, hy + hh * 0.22, z);
+        g.add(tag(up, AM));
+        const lo = new THREE.Mesh(new THREE.CylinderGeometry(hr, hr * 0.42, hh * 0.5, 4), M.plastic);
+        lo.rotation.y = Math.PI / 4; lo.position.set(hx, hy - hh * 0.3, z);
+        g.add(tag(lo, AM));
+        g.add(rbox(hr * 1.9, 0.03, hr * 1.9, 0.01, M.gloss, hx, hy + hh * 0.5, z, AM));   // ふた
+        g.add(rbox(0.015, 0.06, 0.1, 0.005, M.attYel, hx + hr * 1.45, hy, z, AM));        // 注意ラベル
+      });
+      // 肥料系統: 繰出し部→蛇腹シュート→施肥用の作溝器(種子の溝とは別に入れる)
+      g.add(rbox(0.3, 0.13, 0.24, 0.03, M.imRed, -2.38, 0.9, z, AM));
+      g.add(rbox(0.22, 0.05, 0.06, 0.02, M.gloss, -2.38, 1.0, z, AM));             // 調整レバー
+      for (let i = 0; i < 4; i++) {
+        g.add(cylY(0.05, 0.05, 0.035, M.beigeDS, -2.4, 0.78 - i * 0.08, z, AM));
+        g.add(cylY(0.034, 0.034, 0.048, M.beigeDS, -2.4, 0.74 - i * 0.08, z, AM));
+      }
+      g.add(rbox(0.22, 0.24, 0.1, 0.03, M.imRed, -2.44, 0.4, z + 0.09, AM));       // 施肥作溝器
+      g.add(beam(v(-2.44, 0.38, z + 0.09), v(-2.5, 0.12, z + 0.09), 0.026, M.steelD, AM));
+      // 種子系統: 繰出し部→蛇腹シュート→作溝器(ディスク)→鎮圧輪
+      g.add(rbox(0.3, 0.14, 0.26, 0.03, M.imRed, -2.74, 0.9, z, AM));
+      g.add(rbox(0.22, 0.05, 0.06, 0.02, M.gloss, -2.74, 1.0, z, AM));             // 調整レバー
+      for (let i = 0; i < 4; i++) {
+        g.add(cylY(0.055, 0.055, 0.035, M.beigeDS, -2.76, 0.78 - i * 0.075, z, AM));
+        g.add(cylY(0.038, 0.038, 0.045, M.beigeDS, -2.76, 0.74 - i * 0.075, z, AM));
+      }
+      g.add(rbox(0.34, 0.3, 0.14, 0.03, M.imRed, -2.8, 0.45, z, AM));
+      g.add(beam(v(-2.8, 0.42, z), v(-2.88, 0.18, z), 0.03, M.imRed, AM));
+      g.add(cylZ(0.15, 0.02, M.steel, -2.88, 0.16, z + 0.08, AM));                 // ディスク
+      g.add(cylZ(0.18, 0.14, M.imRed, -3.06, 0.19, z, AM));                        // 鎮圧輪
+      g.add(cylZ(0.05, 0.16, M.steelD, -3.06, 0.19, z, AM));
+      g.add(beam(v(-2.8, 0.5, z), v(-3.06, 0.24, z), 0.026, M.imRed, AM));
+    });
+  }
+
+  if (key === "seeder") {
+    // 種子だけの1系統(施肥播種機から肥料系統を除いた構成)
+    g.add(rbox(0.14, 0.14, 2.1, 0.03, M.imRed, -2.4, 0.76, 0, AM));                // ツールバー
+    g.add(rbox(0.12, 0.12, 1.9, 0.03, M.imRed, -2.68, 0.86, 0, AM));               // 後部ツールバー
+    [1, -1].forEach((s) => {
+      g.add(beam(v(-2.4, 0.76, s * 0.95), v(-2.68, 0.86, s * 0.95), 0.03, M.imRed, AM));
+      g.add(beam(v(-2.34, 0.72, s * 1.02), v(-3.02, 0.6, s * 1.08), 0.028, M.paintW, AM));  // 白いサイドレール
+      g.add(beam(v(-3.02, 0.6, s * 1.08), v(-3.12, 0.34, s * 1.02), 0.028, M.paintW, AM));
+      g.add(cylZ(0.035, 0.06, M.paintW, -3.12, 0.34, s * 1.02, AM));
+    });
+    g.add(cylZ(0.2, 0.06, M.tire, -2.95, 0.2, 0, AM));                             // 駆動輪
+    g.add(cylZ(0.05, 0.08, M.steelD, -2.95, 0.2, 0, AM));
+    g.add(beam(v(-2.68, 0.86, 0), v(-2.95, 0.26, 0), 0.026, M.steelD, AM));
+    g.add(rbox(0.1, 0.42, 0.12, 0.02, M.imRed, -2.56, 1.05, 0, AM));               // 調整ハンドル台
+    g.add(cylY(0.05, 0.05, 0.22, M.steelD, -2.56, 1.34, 0, AM));                   // スプリング
+    [-0.9, -0.54, -0.18, 0.18, 0.54, 0.9].forEach((z) => {
+      // 種子ホッパー(1個のみ)
+      const up = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.26, 4), M.plastic);
+      up.rotation.y = Math.PI / 4; up.position.set(-2.62, 1.26, z);
+      g.add(tag(up, AM));
+      const lo = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.07, 0.24, 4), M.plastic);
+      lo.rotation.y = Math.PI / 4; lo.position.set(-2.62, 1.0, z);
+      g.add(tag(lo, AM));
+      g.add(rbox(0.32, 0.03, 0.32, 0.01, M.gloss, -2.62, 1.4, z, AM));             // ふた
+      g.add(rbox(0.015, 0.06, 0.1, 0.005, M.attYel, -2.38, 1.2, z, AM));           // 注意ラベル
+      // 繰出し部→蛇腹シュート→作溝器→鎮圧輪
+      g.add(rbox(0.3, 0.14, 0.26, 0.03, M.imRed, -2.62, 0.84, z, AM));
+      g.add(rbox(0.22, 0.05, 0.06, 0.02, M.gloss, -2.62, 0.94, z, AM));            // 調整レバー
+      for (let i = 0; i < 4; i++) {
+        g.add(cylY(0.055, 0.055, 0.035, M.beigeDS, -2.64, 0.72 - i * 0.075, z, AM));
+        g.add(cylY(0.038, 0.038, 0.045, M.beigeDS, -2.64, 0.68 - i * 0.075, z, AM));
+      }
+      g.add(rbox(0.34, 0.3, 0.14, 0.03, M.imRed, -2.72, 0.42, z, AM));
+      g.add(beam(v(-2.72, 0.4, z), v(-2.8, 0.16, z), 0.03, M.imRed, AM));
+      g.add(cylZ(0.15, 0.02, M.steel, -2.8, 0.15, z + 0.08, AM));                  // ディスク
+      g.add(cylZ(0.18, 0.14, M.imRed, -3.02, 0.19, z, AM));                        // 鎮圧輪
+      g.add(cylZ(0.05, 0.16, M.steelD, -3.02, 0.19, z, AM));
+      g.add(beam(v(-2.72, 0.48, z), v(-3.02, 0.24, z), 0.026, M.imRed, AM));
+    });
   }
 
   if (key === "rotaryseeder") {
-    ptoShaft(g, AM, v(-2.42, 0.88, 0));
-    g.add(box(0.24, 0.26, 0.22, M.steelD, -2.45, 0.9, 0, AM));
-    [[0.3], [-0.3]].forEach(([z]) => g.add(beam(v(-2.62, 0.58, z), v(-2.5, 0.78, z), 0.03, M.attRed, AM)));
-    g.add(shell(0.38, 1.72, Math.PI / 2, 2.6, M.attRedDS, -2.55, 0.46, 0, AM));
-    [[0.86], [-0.86]].forEach(([z]) => g.add(box(0.55, 0.46, 0.03, M.attRed, -2.55, 0.4, z, AM)));
-    g.add(cylZ(0.05, 1.66, M.steelD, -2.55, 0.24, 0, AM));
-    for (let z = -0.75; z <= 0.76; z += 0.15) {
-      const t1 = box(0.03, 0.22, 0.03, M.steel, -2.55, 0.13, z, AM); t1.rotation.z = (z * 11 % 2) ? 0.5 : -0.5; g.add(t1);
+    // ロータリー本体の上に播種部を載せ、後部に鎮圧ローラを備える
+    const W = 1.9, HZ = W / 2, CX = -2.6, CY = 0.32;
+    ptoShaft(g, AM, v(-2.36, 0.92, 0));
+    g.add(rbox(0.3, 0.36, 0.3, 0.04, M.steelD, -2.44, 0.94, 0, AM));               // センターギヤボックス
+    g.add(cylX(0.05, 0.16, M.black, -2.31, 0.92, 0, AM));
+    g.add(rbox(0.16, 0.16, W - 0.3, 0.03, M.imRed, -2.5, 0.95, 0, AM));            // メインフレーム
+    [0.3, -0.3].forEach((z) => g.add(beam(v(-2.65, 0.57, z), v(-2.52, 0.9, z), 0.034, M.imRed, AM)));
+    // 主カバー・サイドプレート・サイドドライブケース
+    g.add(tag(new THREE.Mesh(profileGeo([[-2.2, 0.34], [-2.22, 0.74], [-2.32, 0.92], [-2.5, 1.0], [-2.92, 1.0], [-3.04, 0.94], [-3.08, 0.54], [-3.06, 0.3], [-2.88, 0.26], [-2.4, 0.26]], W - 0.06, 0.03), M.imRed), AM));
+    [1, -1].forEach((s) => {
+      const sp = profileGeo([[-2.18, 0.08], [-3.06, 0.08], [-3.12, 0.6], [-2.2, 0.6]], 0.035, 0);
+      sp.translate(0, 0, s * (HZ - 0.01));
+      g.add(tag(new THREE.Mesh(sp, M.imRed), AM));
+    });
+    const dc = profileGeo([[-2.4, 0.96], [-2.8, 0.96], [-2.84, 0.4], [-2.62, 0.22], [-2.42, 0.34]], 0.14, 0.02);
+    dc.translate(0, 0, HZ + 0.08);
+    g.add(tag(new THREE.Mesh(dc, M.imRed), AM));
+    g.add(cylZ(0.09, 0.2, M.steelD, CX, CY, HZ + 0.04, AM));
+    g.add(cylZ(0.22, 0.02, M.steel, -2.75, 0.24, -(HZ + 0.07), AM));               // 端部のディスク
+    // 耕うん軸・なた爪
+    g.add(cylZ(0.07, W - 0.3, M.steelD, CX, CY, 0, AM));
+    const blades = [];
+    for (let i = 0; i < 11; i++) {
+      const z = -HZ + 0.22 + i * ((W - 0.44) / 10);
+      const fl = new THREE.CylinderGeometry(0.1, 0.1, 0.03, 16); fl.rotateX(Math.PI / 2); fl.translate(CX, CY, z);
+      blades.push(fl);
+      for (let k = 0; k < 4; k++) {
+        const a = i * 1.15 + k * (Math.PI / 2), sg = (k % 2) ? 1 : -1;
+        const b1 = new THREE.BoxGeometry(0.035, 0.19, 0.05);
+        b1.translate(0, 0.17, 0); b1.rotateZ(a); b1.translate(CX, CY, z);
+        const b2 = new THREE.BoxGeometry(0.035, 0.07, 0.11);
+        b2.translate(0, 0.26, sg * 0.045); b2.rotateZ(a); b2.translate(CX, CY, z);
+        blades.push(b1, b2);
+      }
     }
-    g.add(box(0.34, 0.36, 1.7, M.white, -2.85, 1.12, 0, AM));                     // 播種ホッパー
-    for (let z = -0.6; z <= 0.61; z += 0.4) g.add(beam(v(-2.85, 0.94, z), v(-3.0, 0.3, z), 0.016, M.black, AM));
-    const ap = box(0.04, 0.36, 1.72, M.attRed, -2.9, 0.24, 0, AM); ap.rotation.z = -0.55; g.add(ap);
+    g.add(tag(new THREE.Mesh(mergeGeos(blades), M.steel), AM));
+    // 播種部: 架台・金属ホッパー・樹脂ホッパー・繰出し部・蛇腹ホース
+    [[-2.44, 0.6], [-2.44, -0.6], [-2.86, 0.6], [-2.86, -0.6]].forEach(([x, z]) =>
+      g.add(bar(v(x, 1.0, z), v(x, 1.18, z), 0.07, 0.07, M.imRed, AM)));
+    g.add(rbox(0.56, 0.08, W - 0.1, 0.02, M.imRed, -2.64, 1.2, 0, AM));            // 架台
+    g.add(rbox(0.44, 0.34, 1.12, 0.03, M.hub, -2.62, 1.42, -0.28, AM));            // 金属ホッパー
+    g.add(rbox(0.48, 0.05, 1.18, 0.02, M.imRed, -2.62, 1.61, -0.28, AM));          // 上縁
+    const lid = rbox(0.4, 0.03, 1.1, 0.01, M.hub, -2.6, 1.65, -0.28, AM); lid.rotation.z = 0.12; g.add(lid);
+    const ph = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.16, 0.34, 4), M.plastic);
+    ph.rotation.y = Math.PI / 4; ph.position.set(-2.62, 1.42, 0.58);
+    g.add(tag(ph, AM));                                                             // 樹脂ホッパー
+    g.add(rbox(0.46, 0.04, 0.46, 0.01, M.imRed, -2.62, 1.6, 0.58, AM));
+    for (let z = -0.75; z <= 0.76; z += 0.3) {
+      g.add(rbox(0.16, 0.14, 0.16, 0.03, M.paintW, -2.62, 1.14, z, AM));            // 繰出し部
+      const path = new THREE.QuadraticBezierCurve3(v(-2.62, 1.08, z), v(-2.98, 0.86, z), v(-3.12, 0.34, z));
+      g.add(tag(new THREE.Mesh(new THREE.TubeGeometry(path, 14, 0.032, 10, false), M.beigeDS), AM)); // 蛇腹ホース
+    }
+    // 後部の鎮圧ローラ
+    g.add(cylZ(0.15, W - 0.14, M.hub, -3.36, 0.16, 0, AM));
+    [1, -1].forEach((s) => {
+      g.add(bar(v(-3.02, 0.72, s * (HZ - 0.1)), v(-3.36, 0.2, s * (HZ - 0.1)), 0.07, 0.05, M.imRed, AM));
+      g.add(cylZ(0.05, 0.1, M.steelD, -3.36, 0.16, s * (HZ - 0.05), AM));
+      g.add(beam(v(-2.94, 0.96, s * 0.5), v(-3.18, 0.5, s * (HZ - 0.12)), 0.022, M.steelD, AM)); // 調整ロッド
+    });
   }
 
   if (key === "lime") {
@@ -1512,7 +1639,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   softbox.position.set(8, 30, 6); softbox.lookAt(0, 0, 0);
   envScene.add(softbox);
   const envTex = new THREE.PMREMGenerator(renderer).fromScene(envScene, 0.03).texture;
-  [M.tPaint, M.tPaintDS, M.gloss, M.frame, M.rim, M.chrome, M.lens, M.cabGlass, M.cRed, M.cRedDS, M.paintW, M.paintWDS, M.imRed, M.beigeDS]
+  [M.tPaint, M.tPaintDS, M.gloss, M.frame, M.rim, M.chrome, M.lens, M.cabGlass, M.cRed, M.cRedDS, M.paintW, M.paintWDS, M.imRed, M.beigeDS, M.plastic]
     .forEach((m) => { m.envMap = envTex; m.envMapIntensity = 0.6; });
   M.cabGlass.envMapIntensity = 1.4;
   M.chrome.envMapIntensity = 1.0;
