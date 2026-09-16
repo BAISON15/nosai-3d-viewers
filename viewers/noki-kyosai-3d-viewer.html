@@ -130,6 +130,8 @@ const M = {
   paintWDS: mat(0xeceae6, { roughness: 0.35, metalness: 0.05, side: THREE.DoubleSide }),
   beigeDS:  mat(0xd6c49c, { roughness: 0.5, metalness: 0.02, side: THREE.DoubleSide }),   // 樹脂ホッパー
   plastic:  mat(0xcdc4b6, { roughness: 0.18, metalness: 0, transparent: true, opacity: 0.58 }), // 半透明の樹脂ホッパー
+  mint:     mat(0x3fb3a0, { roughness: 0.42, metalness: 0.05 }),                  // ライムソワーの塗装色
+  inox:     mat(0xb9c0c6, { roughness: 0.32, metalness: 0.55 }),                  // ステンレス
 };
 const hlMat = mat(0xffb020, { emissive: 0xff7a00, emissiveIntensity: 0.5, side: THREE.DoubleSide });
 
@@ -776,30 +778,86 @@ function buildAttachment(g, key) {
   }
 
   if (key === "lime") {
-    ptoShaft(g, AM, v(-2.35, 0.68, 0));
-    g.add(box(0.5, 0.4, 2.9, M.attYel, -2.5, 1.05, 0, AM));                        // 横長ホッパー上部
-    const t1 = box(0.42, 0.32, 2.9, M.attYel, -2.5, 0.78, 0, AM); t1.scale.set(0.75, 1, 1); g.add(t1); // 絞り部
-    g.add(box(0.53, 0.05, 2.94, M.steelD, -2.5, 1.27, 0, AM));                     // 上縁
-    for (let z = -1.25; z <= 1.26; z += 0.25) g.add(box(0.08, 0.14, 0.08, M.steelD, -2.5, 0.56, z, AM)); // 吐出口
-    g.add(box(0.2, 0.2, 0.2, M.steelD, -2.4, 0.62, 0, AM));
+    // ステンレスの横長ホッパー+塗装フレーム。底部の繰出しロールで石灰・肥料を落とす
+    const LW = 2.9, LH = LW / 2;
+    ptoShaft(g, AM, v(-2.3, 0.78, 0));
+    g.add(rbox(0.28, 0.32, 0.28, 0.04, M.steelD, -2.4, 0.8, 0, AM));               // ギヤボックス
+    g.add(cylX(0.05, 0.16, M.black, -2.26, 0.78, 0, AM));
+    // ホッパー(下すぼまりの台形断面・ステンレス)
+    g.add(tag(new THREE.Mesh(profileGeo([[-2.24, 1.26], [-2.82, 1.26], [-2.62, 0.62], [-2.44, 0.62]], LW - 0.06, 0.02), M.inox), AM));
+    g.add(rbox(0.64, 0.05, LW, 0.02, M.mint, -2.53, 1.28, 0, AM));                 // 上縁
+    [1, -1].forEach((s) => {
+      const ep = profileGeo([[-2.22, 1.3], [-2.84, 1.3], [-2.64, 0.58], [-2.42, 0.58]], 0.045, 0.012);
+      ep.translate(0, 0, s * (LH - 0.01));
+      g.add(tag(new THREE.Mesh(ep, M.mint), AM));                                  // 側板(ホッパーと同じ下すぼまりの台形)
+      g.add(rbox(0.02, 0.09, 0.15, 0.005, M.tail, -2.225, 1.02, s * (LH - 0.25), AM)); // 反射板
+    });
+    // ふた(後ろ側でヒンジ)+ハンドル
+    g.add(rbox(0.58, 0.04, LW - 0.12, 0.02, M.mint, -2.54, 1.33, 0, AM));
+    for (let z = -1.1; z <= 1.11; z += 1.1) g.add(cylZ(0.03, 0.14, M.steelD, -2.82, 1.31, z, AM));
+    g.add(beam(v(-2.3, 1.36, -0.5), v(-2.3, 1.36, 0.5), 0.022, M.steelD, AM));     // ふたの取っ手
+    g.add(beam(v(-2.66, 1.34, 0.32), v(-2.72, 1.66, 0.32), 0.026, M.mint, AM));    // 開度調整レバー
+    g.add(beam(v(-2.72, 1.66, 0.32), v(-2.72, 1.66, -0.1), 0.026, M.mint, AM));
+    // 側面のライン(銘板帯)
+    const band = rbox(0.02, 0.13, LW - 0.5, 0.005, M.attBlu, -2.31, 1.02, 0, AM);
+    band.rotation.z = 0.3; g.add(band);
+    // 繰出しロール・吐出口・散布板
+    g.add(cylZ(0.08, LW - 0.2, M.steelD, -2.53, 0.6, 0, AM));
+    for (let z = -1.25; z <= 1.26; z += 0.25) g.add(rbox(0.22, 0.12, 0.14, 0.02, M.steelD, -2.53, 0.52, z, AM));
+    const sp = rbox(0.42, 0.03, LW - 0.1, 0.01, M.inox, -2.66, 0.42, 0, AM); sp.rotation.z = 0.5; g.add(sp);
+    g.add(rbox(0.3, 0.42, 0.12, 0.03, M.mint, -2.52, 0.78, LH + 0.06, AM));        // チェーンケース
+    // フレーム・スタンド
+    g.add(rbox(0.5, 0.12, LW - 0.3, 0.03, M.mint, -2.53, 0.46, 0, AM));
+    [1, -1].forEach((s) => {
+      g.add(beam(v(-2.2, 0.55, s * 0.32), v(-2.44, 0.5, s * 0.6), 0.035, M.mint, AM));
+      g.add(bar(v(-2.4, 0.44, s * 0.85), v(-2.4, 0.12, s * 0.85), 0.07, 0.07, M.mint, AM));
+      g.add(bar(v(-2.7, 0.44, s * 0.85), v(-2.7, 0.12, s * 0.85), 0.07, 0.07, M.mint, AM));
+      g.add(bar(v(-2.4, 0.13, s * 0.85), v(-2.7, 0.13, s * 0.85), 0.07, 0.06, M.mint, AM));
+    });
   }
 
   if (key === "manure") {
-    // けん引式: トラクタのドローバーに連結
+    // けん引式: ドローバー連結・タンデム車軸・床コンベヤ・後部の縦型ビーター
     g.add(box(0.14, 0.08, 0.3, M.steelD, -2.02, 0.42, 0, AM));                     // クレビス(連結部)
-    g.add(beam(v(-2.02, 0.42, 0), v(-3.1, 0.5, 0), 0.045, M.attRed, AM));          // ドローバー
-    g.add(box(1.7, 0.16, 1.25, M.attRed, -3.95, 0.72, 0, AM));                     // 荷台床
-    [[0.66], [-0.66]].forEach(([z]) => g.add(box(1.7, 0.55, 0.05, M.attRed, -3.95, 1.05, z, AM)));
-    g.add(box(0.05, 0.55, 1.3, M.attRed, -3.12, 1.05, 0, AM));                     // 前壁
-    wheel(g, 0.38, 0.22, -4.0, 0.38, 0.8, AM);
-    wheel(g, 0.38, 0.22, -4.0, 0.38, -0.8, AM);
-    [[0.32], [-0.32]].forEach(([z]) => {
-      g.add(cylY(0.09, 0.09, 1.0, M.steelD, -4.85, 1.0, z, AM));                   // 縦ビーター
-      for (let y = 0.62; y <= 1.4; y += 0.26) {
-        const p = box(0.3, 0.04, 0.05, M.steel, -4.85, y, z, AM); p.rotation.y = y * 7; g.add(p);
+    g.add(bar(v(-2.02, 0.42, 0), v(-3.0, 0.54, 0), 0.13, 0.15, M.imRed, AM));      // ドローバー
+    ptoShaft(g, AM, v(-2.98, 0.6, 0));
+    g.add(rbox(0.34, 0.32, 0.34, 0.04, M.steelD, -3.12, 0.62, 0, AM));             // ギヤボックス
+    g.add(bar(v(-2.6, 0.5, 0), v(-2.62, 0.14, 0), 0.09, 0.09, M.imRed, AM));       // ジャッキスタンド
+    g.add(rbox(0.22, 0.05, 0.22, 0.02, M.steelD, -2.62, 0.12, 0, AM));
+    // シャーシ・荷台
+    g.add(rbox(2.5, 0.16, 1.45, 0.03, M.imRed, -4.3, 0.7, 0, AM));                 // シャーシ
+    g.add(rbox(2.32, 0.1, 1.52, 0.03, M.gloss, -4.3, 0.82, 0, AM));                // 床
+    g.add(rbox(0.08, 0.68, 1.52, 0.02, M.imRed, -3.16, 1.18, 0, AM));              // 前壁
+    [1, -1].forEach((s) => {
+      g.add(rbox(2.32, 0.64, 0.06, 0.02, M.imRed, -4.3, 1.16, s * 0.76, AM));      // 側壁
+      g.add(rbox(2.36, 0.08, 0.11, 0.02, M.imRed, -4.3, 1.5, s * 0.76, AM));       // 上縁
+      for (let x = -3.3; x >= -5.31; x -= 0.38) {
+        g.add(rbox(0.07, 0.62, 0.09, 0.02, M.imRed, x, 1.16, s * 0.8, AM));        // 補強リブ
       }
+      g.add(rbox(0.9, 0.06, 0.34, 0.02, M.imRed, -4.4, 0.92, s * 0.95, AM));       // フェンダー
+      g.add(rbox(0.02, 0.1, 0.16, 0.005, M.tail, -5.42, 1.1, s * 0.78, AM));       // 反射板
     });
-    ptoShaft(g, AM, v(-3.08, 0.55, 0));
+    // 床コンベヤ(黄色いスラット+チェーンレール)
+    for (let x = -3.4; x >= -5.31; x -= 0.22) g.add(rbox(0.08, 0.06, 1.32, 0.02, M.attYel, x, 0.9, 0, AM));
+    [1, -1].forEach((s) => g.add(rbox(2.3, 0.06, 0.09, 0.01, M.gloss, -4.3, 0.93, s * 0.68, AM)));
+    g.add(cylZ(0.09, 1.4, M.steelD, -5.34, 0.86, 0, AM));                           // コンベヤ駆動軸
+    g.add(rbox(0.16, 0.36, 0.14, 0.03, M.gloss, -3.2, 0.72, 0.86, AM));            // コンベヤ変速部
+    // タンデム車軸(4輪)
+    [-4.05, -4.75].forEach((x) => [1, -1].forEach((s) =>
+      lugWheel(g, { r: 0.42, w: 0.22, rimR: 0.26, lugs: 0, x, y: 0.42, z: s * 0.88, member: AM })));
+    g.add(rbox(0.95, 0.14, 1.95, 0.03, M.steelD, -4.4, 0.52, 0, AM));              // 車軸台
+    [1, -1].forEach((s) => g.add(bar(v(-4.05, 0.5, s * 0.75), v(-4.75, 0.5, s * 0.75), 0.1, 0.1, M.steelD, AM)));
+    // 後部: 縦型ビーター(らせん状の刃)
+    [0.42, -0.42].forEach((z) => {
+      g.add(cylY(0.1, 0.1, 1.2, M.imRed, -5.64, 1.3, z, AM));
+      for (let y = 0.78; y <= 1.86; y += 0.16) {
+        const p = box(0.36, 0.05, 0.07, M.steel, -5.64, y, z, AM); p.rotation.y = y * 6; g.add(p);
+      }
+      g.add(cylY(0.05, 0.05, 0.22, M.steelD, -5.64, 0.68, z, AM));                 // 下部軸受け
+    });
+    [1, -1].forEach((s) => g.add(rbox(0.55, 1.25, 0.07, 0.02, M.imRed, -5.6, 1.3, s * 0.74, AM))); // ビーター側板
+    g.add(rbox(0.6, 0.1, 1.55, 0.02, M.imRed, -5.6, 1.94, 0, AM));                 // 上部の梁
+    g.add(rbox(0.5, 0.12, 1.5, 0.02, M.imRed, -5.6, 0.66, 0, AM));                 // 下部の梁
   }
 
   if (key === "trencher") {
@@ -1688,7 +1746,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   softbox.position.set(8, 30, 6); softbox.lookAt(0, 0, 0);
   envScene.add(softbox);
   const envTex = new THREE.PMREMGenerator(renderer).fromScene(envScene, 0.03).texture;
-  [M.tPaint, M.tPaintDS, M.gloss, M.frame, M.rim, M.chrome, M.lens, M.cabGlass, M.cRed, M.cRedDS, M.paintW, M.paintWDS, M.imRed, M.beigeDS, M.plastic]
+  [M.tPaint, M.tPaintDS, M.gloss, M.frame, M.rim, M.chrome, M.lens, M.cabGlass, M.cRed, M.cRedDS, M.paintW, M.paintWDS, M.imRed, M.beigeDS, M.plastic, M.mint, M.inox]
     .forEach((m) => { m.envMap = envTex; m.envMapIntensity = 0.6; });
   M.cabGlass.envMapIntensity = 1.4;
   M.chrome.envMapIntensity = 1.0;
