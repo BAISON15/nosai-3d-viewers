@@ -945,33 +945,103 @@ function buildAttachment(g, key) {
   }
 
   if (key === "chuko") {
-    ptoShaft(g, AM, v(-2.38, 0.7, 0));
-    g.add(box(0.22, 0.24, 0.2, M.steelD, -2.4, 0.7, 0, AM));
-    g.add(box(0.1, 0.1, 2.5, M.attRed, -2.4, 0.66, 0, AM));                        // ツールバー
-    [[0.3], [-0.3]].forEach(([z]) => g.add(beam(v(-2.6, 0.57, z), v(-2.42, 0.63, z), 0.028, M.attRed, AM)));
-    g.add(cylZ(0.028, 2.3, M.steelD, -2.4, 0.55, 0, AM));                          // 伝動軸
-    [-0.85, 0, 0.85].forEach((z) => {
-      g.add(box(0.4, 0.2, 0.5, M.attRed, -2.6, 0.5, z, AM));                       // 条間ユニットカバー
-      g.add(cylZ(0.04, 0.44, M.steelD, -2.62, 0.24, z, AM));
-      for (let a = 0; a < 4; a++) {
-        const t1 = box(0.03, 0.2, 0.03, M.steel, -2.62, 0.13, z + 0.12 * Math.cos(a * 1.57), AM);
-        t1.rotation.z = (a % 2) ? 0.5 : -0.5; g.add(t1);
+    // 条間ごとのロータユニットをツールバーに吊り、スプリング付きロッドで深さを調整する
+    ptoShaft(g, AM, v(-2.3, 0.9, 0));
+    g.add(rbox(0.3, 0.3, 0.3, 0.04, M.steelD, -2.4, 0.9, 0, AM));                  // 入力部
+    g.add(cylX(0.05, 0.16, M.black, -2.26, 0.88, 0, AM));
+    g.add(cylZ(0.17, 0.46, M.imRed, -2.52, 0.86, 0, AM));                          // センターギヤケース
+    g.add(rbox(0.18, 0.2, 2.5, 0.03, M.imRed, -2.4, 1.0, 0, AM));                  // ツールバー(角パイプ)
+    g.add(cylZ(0.09, 2.3, M.imRed, -2.52, 0.86, 0, AM));                           // 伝動パイプ
+    [1, -1].forEach((s) => {
+      g.add(rbox(0.04, 0.12, 0.22, 0.01, M.attYel, -2.3, 1.06, s * 1.0, AM));      // 反射板
+      // 端部のゲージ輪
+      g.add(bar(v(-2.42, 0.96, s * 1.16), v(-2.6, 0.42, s * 1.16), 0.07, 0.06, M.imRed, AM));
+      g.add(cylZ(0.14, 0.09, M.tire, -2.62, 0.3, s * 1.16, AM));
+      g.add(cylZ(0.05, 0.11, M.steelD, -2.62, 0.3, s * 1.16, AM));
+    });
+    [-0.8, 0, 0.8].forEach((z) => {
+      // チェーンケース(縦)とロータ
+      const cc = profileGeo([[-2.44, 0.92], [-2.68, 0.92], [-2.72, 0.5], [-2.6, 0.32], [-2.46, 0.44]], 0.12, 0.02);
+      cc.translate(0, 0, z - 0.26);
+      g.add(tag(new THREE.Mesh(cc, M.imRed), AM));
+      g.add(cylZ(0.06, 0.44, M.steelD, -2.64, 0.28, z, AM));                       // 耕うん軸
+      const claws = [];
+      for (let i = 0; i < 4; i++) {
+        const cz = z - 0.16 + i * 0.107;
+        const fl = new THREE.CylinderGeometry(0.08, 0.08, 0.025, 14); fl.rotateX(Math.PI / 2); fl.translate(-2.64, 0.28, cz);
+        claws.push(fl);
+        for (let k = 0; k < 4; k++) {
+          const a = i * 1.2 + k * (Math.PI / 2), sg = (k % 2) ? 1 : -1;
+          const c1 = new THREE.BoxGeometry(0.03, 0.15, 0.04);
+          c1.translate(0, 0.14, 0); c1.rotateZ(a); c1.translate(-2.64, 0.28, cz);
+          const c2 = new THREE.BoxGeometry(0.03, 0.06, 0.08);
+          c2.translate(0, 0.21, sg * 0.03); c2.rotateZ(a); c2.translate(-2.64, 0.28, cz);
+          claws.push(c1, c2);
+        }
       }
+      g.add(tag(new THREE.Mesh(mergeGeos(claws), M.steel), AM));
+      // カバー(黒い曲面+白い天板)
+      g.add(shell(0.31, 0.46, 0.1 + Math.PI / 2, Math.PI + 0.15, M.gloss, -2.64, 0.28, z, AM));
+      [1.15, 1.95].forEach((al) => {
+        const px = -2.64 + 0.315 * Math.cos(al), py = 0.28 + 0.315 * Math.sin(al);
+        const pl = rbox(0.2, 0.025, 0.4, 0.01, M.paintW, px, py, z, AM);
+        pl.rotation.z = al - Math.PI / 2; g.add(pl);
+      });
+      g.add(rbox(0.06, 0.24, 0.48, 0.02, M.imRed, -2.64, 0.6, z, AM));             // カバー中央の赤帯
+      // 吊りリンクと深さ調整のスプリングロッド
+      g.add(bar(v(-2.42, 0.94, z - 0.2), v(-2.5, 0.72, z - 0.2), 0.07, 0.06, M.imRed, AM));
+      g.add(bar(v(-2.42, 0.94, z + 0.2), v(-2.5, 0.72, z + 0.2), 0.07, 0.06, M.imRed, AM));
+      g.add(beam(v(-2.56, 0.7, z), v(-2.5, 1.36, z), 0.022, M.steelD, AM));        // 調整ロッド
+      g.add(cylY(0.045, 0.045, 0.24, M.steelD, -2.53, 1.04, z, AM));               // スプリング
+      g.add(rbox(0.12, 0.05, 0.14, 0.02, M.steelD, -2.5, 1.2, z, AM));             // 受け金具
+      for (let y = 1.4; y <= 1.62; y += 0.055) g.add(rbox(0.05, 0.02, 0.05, 0.005, M.steelD, -2.49, y, z, AM)); // ノッチ
     });
   }
 
   if (key === "stubble") {
-    g.add(box(1.0, 0.1, 2.5, M.attBlu, -2.65, 0.72, 0, AM));                       // フレーム
+    // 白い重フレーム+湾曲シャンク(前後2列の千鳥配置)+黒いスイープ刃+後部ケージローラ
+    const SW = 2.5, SH = SW / 2;
+    g.add(rbox(0.18, 0.18, SW, 0.03, M.paintW, -2.36, 0.82, 0, AM));               // 前部ツールバー
+    g.add(rbox(0.18, 0.18, SW, 0.03, M.paintW, -2.88, 0.82, 0, AM));               // 後部ツールバー
+    g.add(cylZ(0.11, SW - 0.1, M.paintW, -2.62, 1.02, 0, AM));                     // 主パイプ
+    [1, -1].forEach((s) => {
+      g.add(rbox(0.75, 0.14, 0.14, 0.03, M.paintW, -2.62, 0.82, s * (SH - 0.07), AM));  // サイドレール
+      g.add(beam(v(-2.36, 0.9, s * 0.35), v(-2.62, 1.0, s * 0.2), 0.035, M.paintW, AM));
+      g.add(beam(v(-2.88, 0.9, s * 0.35), v(-2.62, 1.0, s * 0.2), 0.035, M.paintW, AM));
+      // 折りたたみ用の油圧シリンダ
+      g.add(bar(v(-2.55, 1.12, s * 0.5), v(-2.62, 1.12, s * 1.0), 0.09, 0.09, M.steelD, AM));
+      g.add(beam(v(-2.62, 1.12, s * 1.0), v(-2.66, 1.12, s * 1.22), 0.035, M.chrome, AM));
+      // ゲージ輪
+      g.add(bar(v(-2.4, 0.86, s * (SH + 0.06)), v(-2.46, 0.36, s * (SH + 0.06)), 0.07, 0.06, M.paintW, AM));
+      g.add(cylZ(0.18, 0.1, M.tire, -2.48, 0.22, s * (SH + 0.06), AM));
+      g.add(cylZ(0.06, 0.12, M.steelD, -2.48, 0.22, s * (SH + 0.06), AM));
+    });
+    // シャンク(白い湾曲支柱+黒いスイープ刃)
     const shank = (x, z) => {
-      g.add(beam(v(x, 0.72, z), v(x - 0.08, 0.3, z), 0.03, M.steel, AM));
-      g.add(beam(v(x - 0.08, 0.3, z), v(x + 0.1, 0.07, z), 0.03, M.steel, AM));    // C型シャンク
-      g.add(box(0.14, 0.04, 0.09, M.steelD, x + 0.13, 0.06, z, AM));               // チゼル先端
+      g.add(rbox(0.16, 0.26, 0.09, 0.02, M.paintW, x, 0.78, z, AM));               // 取付金具
+      g.add(bar(v(x, 0.82, z), v(x - 0.12, 0.44, z), 0.11, 0.07, M.paintW, AM));   // 支柱(上)
+      g.add(bar(v(x - 0.12, 0.44, z), v(x + 0.04, 0.16, z), 0.1, 0.07, M.paintW, AM)); // 支柱(下・前へ湾曲)
+      const pt = rbox(0.26, 0.05, 0.08, 0.015, M.gloss, x + 0.14, 0.09, z, AM);
+      pt.rotation.z = -0.28; g.add(pt);                                             // チゼル先端
+      const wg = rbox(0.24, 0.035, 0.34, 0.01, M.gloss, x + 0.08, 0.13, z, AM);
+      wg.rotation.z = -0.2; g.add(wg);                                              // スイープ(翼状の刃)
     };
-    for (let z = -1.0; z <= 1.01; z += 0.5) shank(-2.4, z);
-    for (let z = -0.75; z <= 0.76; z += 0.5) shank(-2.9, z);
-    g.add(cylZ(0.13, 2.4, M.steelD, -3.25, 0.14, 0, AM));                          // 後部ローラ
-    g.add(beam(v(-2.95, 0.7, 1.1), v(-3.25, 0.2, 1.1), 0.025, M.attBlu, AM));
-    g.add(beam(v(-2.95, 0.7, -1.1), v(-3.25, 0.2, -1.1), 0.025, M.attBlu, AM));
+    for (let z = -1.0; z <= 1.01; z += 0.5) shank(-2.36, z);
+    for (let z = -0.75; z <= 0.76; z += 0.5) shank(-2.88, z);
+    // 後部ケージローラ(棒を円周に並べた形)
+    const RX = -3.32, RY = 0.22, RR = 0.2;
+    g.add(cylZ(0.05, SW - 0.2, M.steelD, RX, RY, 0, AM));                           // 軸
+    for (let a = 0; a < 8; a++) {
+      const th = a * (Math.PI / 4);
+      g.add(cylZ(0.025, SW - 0.24, M.steelD, RX + RR * Math.cos(th), RY + RR * Math.sin(th), 0, AM));
+    }
+    [1, -1].forEach((s) => {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(RR, 0.022, 8, 28), M.steelD);
+      ring.position.set(RX, RY, s * (SH - 0.12));
+      g.add(tag(ring, AM));
+      g.add(bar(v(-2.94, 0.88, s * 0.9), v(RX, RY + 0.02, s * 0.9), 0.09, 0.07, M.paintW, AM)); // ローラアーム
+      g.add(beam(v(-2.72, 1.06, s * 0.9), v(-3.16, 0.6, s * 0.9), 0.025, M.steelD, AM));        // 調整ロッド
+    });
   }
 
   if (key === "subsoiler") {
