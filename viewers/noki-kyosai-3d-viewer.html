@@ -123,6 +123,9 @@ const M = {
   amber:    mat(0xff8a1c, { roughness: 0.25, metalness: 0, emissive: 0xb34700, emissiveIntensity: 0.4 }),
   tail:     mat(0xc2262e, { roughness: 0.25, metalness: 0, emissive: 0x5a0a0a }),
   cabGlass: mat(0x2a4858, { roughness: 0.04, metalness: 0.35, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
+  cRed:     mat(0x8e0f1e, { roughness: 0.44, metalness: 0.03 }),
+  cRedDS:   mat(0x8e0f1e, { roughness: 0.44, metalness: 0.03, side: THREE.DoubleSide }),
+  paintW:   mat(0xeceae6, { roughness: 0.35, metalness: 0.05 }),
 };
 const hlMat = mat(0xffb020, { emissive: 0xff7a00, emissiveIntensity: 0.5, side: THREE.DoubleSide });
 
@@ -273,6 +276,7 @@ function quad(a, b, c, d, m, member) {
 /* ラグ付きタイヤ+白色ディッシュホイール(車軸=Z、外側の面は z の符号側) */
 function lugWheel(g, o) {
   const { r, w, rimR, member } = o;
+  const rimM = o.rimMat || M.rim, hubM = o.hubMat || M.hub;
   const hw = w / 2, side = o.z < 0 ? -1 : 1;
   const put = (geo, m) => {
     const ms = new THREE.Mesh(geo, m);
@@ -304,7 +308,7 @@ function lugWheel(g, o) {
     .map(([a, b]) => new THREE.Vector2(a, b)), 48); disc.rotateX(Math.PI / 2);
   const lipA = new THREE.TorusGeometry(rimR + 0.01, 0.016, 6, 48); lipA.translate(0, 0, hw * 0.84);
   const lipB = new THREE.TorusGeometry(rimR + 0.01, 0.016, 6, 48); lipB.translate(0, 0, -hw * 0.84);
-  put(mergeGeos([barrel, disc, lipA, lipB]), M.rim);
+  put(mergeGeos([barrel, disc, lipA, lipB]), rimM);
   // ハブ・ナット・センターキャップ
   const hubR = r * 0.14;
   const hub = new THREE.CylinderGeometry(hubR, hubR, hw * 0.3, 24); hub.rotateX(Math.PI / 2); hub.translate(0, 0, hw * 0.48);
@@ -316,7 +320,42 @@ function lugWheel(g, o) {
     nut.translate(rr * Math.cos(a), rr * Math.sin(a), hw * 0.38);
     hubGeos.push(nut);
   }
-  put(mergeGeos(hubGeos), M.hub);
+  put(mergeGeos(hubGeos), hubM);
+}
+/* ゴムクローラ(履帯・ラグ・駆動輪・遊動輪・転輪・トラックフレーム) */
+function crawlerTrack(g, o) {
+  const { x0, x1, r, w, y, z, member } = o;
+  const capShape = (rr) => {
+    const sh = new THREE.Shape();
+    sh.absarc(x1, y, rr, -Math.PI / 2, Math.PI / 2, false);
+    sh.absarc(x0, y, rr, Math.PI / 2, Math.PI * 1.5, false);
+    sh.closePath();
+    return sh;
+  };
+  const belt = capShape(r);
+  belt.holes.push(new THREE.Path(capShape(r - 0.07).getPoints(72)));
+  const bg = new THREE.ExtrudeGeometry(belt, { depth: w, bevelEnabled: false, curveSegments: 20 });
+  bg.translate(0, 0, z - w / 2);
+  g.add(tag(new THREE.Mesh(bg, M.rubber), member));
+  const lugs = [];
+  const pushLug = (lx, ly, ang) => {
+    const b = new THREE.BoxGeometry(0.05, 0.05, w + 0.06);
+    b.rotateZ(ang); b.translate(lx, ly, z); lugs.push(b);
+  };
+  for (let lx = x0; lx <= x1 + 1e-6; lx += 0.15) { pushLug(lx, y - r - 0.02, 0); pushLug(lx, y + r + 0.02, 0); }
+  for (let a = -Math.PI / 2; a <= Math.PI / 2 + 1e-6; a += 0.31) {
+    pushLug(x1 + (r + 0.02) * Math.cos(a), y + (r + 0.02) * Math.sin(a), a);
+    pushLug(x0 - (r + 0.02) * Math.cos(a), y + (r + 0.02) * Math.sin(a), -a);
+  }
+  g.add(tag(new THREE.Mesh(mergeGeos(lugs), M.rubber), member));
+  g.add(cylZ(r * 0.73, w * 0.4, M.steelD, x1, y, z, member));                       // 駆動輪
+  for (let a = 0; a < 10; a++) {
+    const th = box(0.07, 0.1, w * 0.4, M.steelD, x1 + r * 0.83 * Math.cos(a * 0.628), y + r * 0.83 * Math.sin(a * 0.628), z, member);
+    th.rotation.z = a * 0.628; g.add(th);
+  }
+  g.add(cylZ(r * 0.67, w * 0.4, M.steelD, x0, y, z, member));                       // 遊動輪
+  for (let lx = x0 + 0.35; lx <= x1 - 0.25; lx += 0.32) g.add(cylZ(0.095, w * 0.45, M.gloss, lx, y - r + 0.1, z, member)); // 転輪
+  g.add(rbox((x1 - x0) * 0.95, 0.14, 0.18, 0.04, M.steelD, (x0 + x1) / 2, y + 0.08, z, member));
 }
 
 /* ============================================================
@@ -748,51 +787,135 @@ function buildTaue(opt) {
   const g = new THREE.Group();
   const BODY = "車体・エンジン部", DRV = "走行部(車輪)", OPE = "操縦部(ハンドル・座席)", UE = "植付部(植付爪・フロート)", NAE = "苗のせ台・予備苗台", FERT = "施肥機(附属装置)", SPRAY = "薬剤散布装置(附属装置)";
 
-  wheel(g, 0.36, 0.1, 0.95, 0.36, 0.6, DRV);
-  wheel(g, 0.36, 0.1, 0.95, 0.36, -0.6, DRV);
-  wheel(g, 0.5, 0.12, -0.4, 0.5, 0.68, DRV);
-  wheel(g, 0.5, 0.12, -0.4, 0.5, -0.68, DRV);
+  const add = (o) => { g.add(o); return o; };
+  const mesh = (geo, m, member) => add(tag(new THREE.Mesh(geo, m), member));
 
-  g.add(box(2.3, 0.16, 0.95, M.pBody, 0.25, 0.72, 0, BODY));
-  g.add(box(0.85, 0.42, 0.75, M.pBody, 1.0, 1.05, 0, BODY));
-  g.add(box(0.5, 0.1, 0.5, M.seat, -0.05, 1.0, 0, OPE));
-  const bk2 = box(0.05, 0.36, 0.45, M.seat, -0.29, 1.22, 0, OPE); bk2.rotation.z = 0.12; g.add(bk2);
-  const col = box(0.07, 0.6, 0.07, M.steelD, 0.55, 1.15, 0, OPE); col.rotation.z = 0.4; g.add(col);
-  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.025, 8, 20), M.black);
-  sw.quaternion.setFromUnitVectors(v(0, 0, 1), v(-0.42, 0.91, 0).normalize());
-  sw.position.set(0.42, 1.44, 0);
-  g.add(tag(sw, OPE));
-  [[0.95], [-0.95]].forEach(([z]) => {
-    g.add(box(0.06, 0.9, 0.06, M.steel, 1.05, 1.15, z, NAE));
-    [0.95, 1.25, 1.55].forEach((y) => g.add(box(0.7, 0.04, 0.3, M.nae, 1.05, y, z, NAE)));
+  /* ---- 走行部(前輪小径・後輪大径のラグ付きタイヤ・黒ホイール) ---- */
+  [1, -1].forEach((s) => {
+    lugWheel(g, { r: 0.34, w: 0.16, rimR: 0.19, lugs: 16, x: 1.02, y: 0.34, z: s * 0.64, member: DRV, rimMat: M.gloss, hubMat: M.steelD });
+    lugWheel(g, { r: 0.46, w: 0.2, rimR: 0.25, lugs: 18, x: -0.55, y: 0.46, z: s * 0.64, member: DRV, rimMat: M.gloss, hubMat: M.steelD });
   });
-  const dai = box(1.0, 0.06, 1.8, M.white, -1.2, 1.15, 0, NAE); dai.rotation.z = 0.95; g.add(dai);
-  for (let z = -0.67; z <= 0.68; z += 0.45) {
-    const tray = box(0.9, 0.05, 0.4, M.nae, -1.22, 1.17, z, NAE); tray.rotation.z = 0.95; g.add(tray);
+
+  /* ---- 車体・白色フロアデッキ ---- */
+  add(rbox(2.5, 0.16, 0.6, 0.05, M.steelD, 0.25, 0.8, 0, BODY));                   // メインフレーム
+  add(rbox(2.45, 0.06, 1.78, 0.03, M.white, 0.3, 0.93, 0, BODY));                   // フロアデッキ
+  add(rbox(2.3, 0.04, 1.6, 0.02, M.steel, 0.3, 0.965, 0, BODY));                    // 縞板(滑り止め)
+  [1, -1].forEach((s) => add(rbox(2.42, 0.1, 0.07, 0.025, M.white, 0.3, 0.99, s * 0.88, BODY))); // デッキ縁
+  add(rbox(0.55, 0.32, 0.72, 0.06, M.gloss, -1.0, 0.82, 0, BODY));                  // ミッション部
+  add(rbox(0.5, 0.26, 0.5, 0.05, M.gloss, 1.0, 0.72, 0, BODY));                     // 前部伝動ケース
+
+  /* ---- エンジンフード(先端がすぼまる曲面) ---- */
+  const hoodTaper = (x) => { const t = Math.min(1, Math.max(0, (x - 0.7) / 0.8)); return 1 - 0.28 * t * t; };
+  mesh(taperZ(profileGeo([[0.42, 0.97], [1.42, 0.97], [1.52, 1.06], [1.5, 1.22], [1.34, 1.34], [0.9, 1.4], [0.45, 1.34]], 0.6, 0.035), hoodTaper), M.tPaint, BODY);
+  mesh(taperZ(profileGeo([[1.24, 0.99], [1.46, 0.99], [1.56, 1.08], [1.52, 1.22], [1.28, 1.28]], 0.5, 0.02), hoodTaper), M.gloss, BODY); // フロントグリル
+  add(cylX(0.045, 0.02, M.chrome, 1.575, 1.16, 0, BODY));                            // エンブレム台座
+  [1, -1].forEach((s) => {
+    add(rbox(0.05, 0.07, 0.22, 0.02, M.lens, 1.55, 1.13, s * 0.15, BODY));           // LEDヘッドライト
+    const sv = profileGeo([[0.6, 1.0], [1.14, 1.0], [1.28, 1.1], [1.2, 1.26], [0.68, 1.3]], 0.012, 0);
+    sv.translate(0, 0, s * 0.317);
+    mesh(taperZ(sv, hoodTaper), M.gloss, BODY);                                       // 側面ベンチレーター
+  });
+
+  /* ---- 操縦部 ---- */
+  add(rbox(0.42, 0.28, 0.42, 0.05, M.steelD, -0.02, 1.08, 0, OPE));                  // シートベース
+  add(rbox(0.52, 0.13, 0.54, 0.06, M.seat, -0.02, 1.28, 0, OPE));                    // 座面
+  const bk2 = add(rbox(0.12, 0.56, 0.5, 0.05, M.seat, -0.3, 1.6, 0, OPE)); bk2.rotation.z = 0.16;
+  [1, -1].forEach((s) => add(rbox(0.34, 0.07, 0.1, 0.03, M.seat, -0.05, 1.43, s * 0.31, OPE))); // アームレスト
+  add(rbox(0.34, 0.3, 0.62, 0.05, M.gloss, 0.52, 1.2, 0, OPE));                      // 操作パネル
+  add(beam(v(0.5, 1.32, 0), v(0.36, 1.53, 0), 0.03, M.steelD, OPE));                 // ステアリングコラム
+  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 10, 28), M.black);
+  sw.quaternion.setFromUnitVectors(v(0, 0, 1), v(-0.42, 0.91, 0).normalize());
+  sw.position.set(0.34, 1.56, 0);
+  g.add(tag(sw, OPE));
+  [1, -1].forEach((s) => add(rbox(0.06, 0.26, 0.06, 0.02, M.gloss, 0.66, 1.3, s * 0.36, OPE))); // 操作レバー
+  add(beam(v(1.12, 0.96, -0.72), v(1.06, 1.76, -0.78), 0.022, M.gloss, OPE));        // ミラー支柱
+  const tmr = add(rbox(0.05, 0.3, 0.18, 0.02, M.gloss, 1.06, 1.88, -0.78, OPE)); tmr.rotation.y = 0.3;
+  [1, -1].forEach((s) => {                                                            // 白色ハンドレール
+    add(beam(v(1.3, 0.96, s * 0.8), v(1.3, 1.44, s * 0.82), 0.028, M.white, OPE));
+    add(beam(v(0.5, 0.96, s * 0.84), v(0.5, 1.44, s * 0.86), 0.028, M.white, OPE));
+    add(beam(v(1.3, 1.44, s * 0.82), v(0.5, 1.44, s * 0.86), 0.028, M.white, OPE));
+    add(beam(v(-0.62, 0.96, s * 0.82), v(-0.62, 1.32, s * 0.86), 0.028, M.white, OPE));
+  });
+
+  /* ---- 予備苗台(前方の2段トレイ) ---- */
+  [1, -1].forEach((s) => {
+    add(beam(v(1.24, 0.96, s * 0.74), v(1.2, 1.98, s * 0.82), 0.035, M.steelD, NAE));
+    [1.38, 1.78].forEach((y) => {
+      const tray = add(rbox(0.72, 0.04, 0.32, 0.02, M.hub, 1.58, y, s * 0.86, NAE));
+      tray.rotation.set(0, s * 0.12, 0.12);
+      const na = add(rbox(0.58, 0.05, 0.24, 0.02, M.nae, 1.56, y + 0.05, s * 0.86, NAE));
+      na.rotation.set(0, s * 0.12, 0.12);
+      add(beam(v(1.22, y - 0.03, s * 0.78), v(1.5, y + 0.02, s * 0.88), 0.022, M.steelD, NAE));
+    });
+    add(beam(v(1.2, 1.98, s * 0.82), v(1.44, 2.02, s * 0.86), 0.018, M.steel, NAE));
+  });
+
+  /* ---- 苗のせ台(傾斜したレール付きの台) ---- */
+  const tilt = 0.6, TX = -1.55, TY = 1.3, cs = Math.cos(tilt), sn = Math.sin(tilt);
+  const table = mesh(rboxGeo(1.5, 0.06, 2.3, 0.03), M.hub, NAE);
+  table.position.set(TX, TY, 0); table.rotation.z = tilt;
+  for (let z = -1.05; z <= 1.06; z += 0.15) {
+    const rail = add(rbox(1.46, 0.035, 0.05, 0.015, M.steel, TX - sn * 0.05, TY + cs * 0.05, z, NAE));
+    rail.rotation.z = tilt;
   }
-  for (let z = -0.6; z <= 0.61; z += 0.4) g.add(box(0.16, 0.28, 0.13, M.steelD, -1.5, 0.4, z, UE));
-  [-0.55, 0, 0.55].forEach((z) => g.add(box(0.75, 0.07, 0.24, M.white, -1.45, 0.12, z, UE)));
-  g.add(box(0.9, 0.1, 1.7, M.steelD, -1.05, 0.55, 0, UE));
+  [-0.78, -0.26, 0.26, 0.78].forEach((z) => {                                        // 苗マット
+    const na = add(rbox(1.15, 0.06, 0.4, 0.02, M.nae, TX - sn * 0.11 + cs * 0.1, TY + cs * 0.11 + sn * 0.1, z, NAE));
+    na.rotation.z = tilt;
+  });
+  const topX = TX + cs * 0.75, topY = TY + sn * 0.75;
+  add(rbox(0.06, 0.06, 2.34, 0.02, M.tPaint, topX + 0.05, topY + 0.18, 0, NAE));     // 上部ガード(橙)
+  for (let z = -1.05; z <= 1.06; z += 0.3) add(rbox(0.05, 0.24, 0.05, 0.02, M.tPaint, topX + 0.04, topY + 0.08, z, NAE));
+  add(beam(v(TX - cs * 0.7, TY - sn * 0.7, 0), v(-1.1, 0.9, 0), 0.05, M.steelD, NAE)); // 支持フレーム
+
+  /* ---- 植付部(植付爪・フロート) ---- */
+  add(rbox(0.34, 0.26, 2.15, 0.05, M.steelD, -2.02, 0.62, 0, UE));                   // 植付伝動ケース
+  add(beam(v(-1.3, 0.85, 0), v(-1.95, 0.7, 0), 0.05, M.steelD, UE));                 // 昇降リンク
+  for (let z = -0.9; z <= 0.91; z += 0.36) {
+    add(rbox(0.3, 0.32, 0.16, 0.04, M.gloss, -2.18, 0.5, z, UE));                    // 植付アームケース
+    const c1 = add(rbox(0.26, 0.05, 0.05, 0.02, M.steel, -2.3, 0.34, z, UE)); c1.rotation.z = -0.5;  // 植付爪
+    const c2 = add(rbox(0.26, 0.05, 0.05, 0.02, M.steel, -2.24, 0.28, z, UE)); c2.rotation.z = 0.7;
+  }
+  [-0.72, 0, 0.72].forEach((z) => {                                                   // フロート
+    const fg = profileGeo([[-2.52, 0.06], [-1.74, 0.06], [-1.68, 0.18], [-2.46, 0.24]], 0.46, 0.02);
+    fg.translate(0, 0, z);
+    mesh(fg, M.white, UE);
+  });
+  [1, -1].forEach((s) => {                                                            // 線引きマーカー
+    add(beam(v(-1.45, 0.9, s * 0.9), v(-1.5, 1.35, s * 1.14), 0.03, M.tPaint, UE));
+    add(beam(v(-1.5, 1.35, s * 1.14), v(-2.08, 1.5, s * 1.24), 0.026, M.tPaint, UE));
+    add(cylZ(0.05, 0.05, M.tPaint, -2.15, 1.5, s * 1.26, UE));
+    for (let a = 0; a < 6; a++) {
+      const sp = add(box(0.04, 0.28, 0.03, M.tPaint, -2.15, 1.5, s * 1.26, UE)); sp.rotation.z = a * 0.52;
+    }
+  });
 
   if (opt.fert) {
-    for (let z = -0.6; z <= 0.61; z += 0.4) {
-      g.add(box(0.26, 0.34, 0.3, M.attGrn, -0.72, 1.35, z, FERT));
-      g.add(beam(v(-0.72, 1.18, z), v(-1.45, 0.35, z), 0.02, M.steel, FERT));
-    }
+    add(rbox(0.66, 0.44, 1.7, 0.06, M.white, -0.72, 1.22, 0, FERT));                  // 肥料ホッパー
+    add(rbox(0.6, 0.05, 1.62, 0.02, M.steelD, -0.72, 1.46, 0, FERT));                 // 上蓋
+    add(rbox(0.62, 0.2, 1.72, 0.04, M.tPaint, -0.72, 0.98, 0, FERT));                 // 繰出し部
+    add(cylZ(0.13, 0.28, M.steelD, -0.72, 0.9, 0.92, FERT));                          // ブロワ
+    for (let z = -0.9; z <= 0.91; z += 0.36) add(beam(v(-0.72, 0.9, z * 0.85), v(-2.0, 0.55, z), 0.026, M.white, FERT)); // 施肥ホース
   }
-  if (opt.spray) g.add(box(0.35, 0.28, 0.85, M.attBlu, -0.35, 1.5, 0, SPRAY));
+  if (opt.spray) {
+    add(rbox(0.46, 0.4, 0.92, 0.06, M.attBlu, -0.72, 1.74, 0, SPRAY));               // 薬剤タンク
+    add(cylY(0.08, 0.08, 0.08, M.attBlu, -0.72, 1.97, 0.26, SPRAY));
+    [1, -1].forEach((s) => {
+      if (!opt.fert) add(beam(v(-0.72, 1.56, s * 0.38), v(-0.66, 0.96, s * 0.48), 0.025, M.steelD, SPRAY));
+      add(beam(v(-0.72, 1.6, s * 0.42), v(-1.9, 0.72, s * 0.9), 0.02, M.black, SPRAY));
+    });
+  }
 
   const attCaveat = "附属装置(施肥機等)の加入区分は組合により異なります。本体とセットで附属装置として扱う場合と、別加入とする場合があるため、装着状態と加入内容の確認が重要です。";
   const members = [
-    { key:"ue", name:"植付部(植付爪・フロート)", targets:[UE], pos:[-1.5, 0.75, 0.85], note:"田植機の中核部位。畦や障害物との接触で爪・フロート・フレームが損傷しやすく、稼働中事故の代表的な確認箇所です。" },
-    { key:"nae", name:"苗のせ台・予備苗台", targets:[NAE], pos:[-1.35, 1.75, 0], note:"転倒・接触時に変形しやすい部位。重心が後ろ寄りのため、あぜ越えや積み降ろし時の転覆事故にも注意が必要です。" },
-    { key:"drive", name:"走行部(車輪)", targets:[DRV], pos:[-0.4, 0.55, 0.85], note:"落輪・接触によるホイール・車軸の損傷を確認します。摩滅・自然消耗は対象外とされるのが一般的です。" },
-    { key:"body", name:"車体・エンジン部", targets:[BODY], pos:[1.0, 1.4, 0.45], note:"水田で使用するため、冠水・水没時は電装系まで含めた損害範囲の確認が重要です。" },
-    { key:"ope", name:"操縦部", targets:[OPE], pos:[0.5, 1.65, 0.3], note:"転覆時にハンドル・座席まわりが損傷しやすい部位です。" },
+    { key:"ue", name:"植付部(植付爪・フロート)", targets:[UE], pos:[-2.15, 1.0, 0.95], note:"田植機の中核部位。畦や障害物との接触で爪・フロート・フレームが損傷しやすく、稼働中事故の代表的な確認箇所です。" },
+    { key:"nae", name:"苗のせ台・予備苗台", targets:[NAE], pos:[-1.55, 2.05, 0.6], note:"転倒・接触時に変形しやすい部位。重心が後ろ寄りのため、あぜ越えや積み降ろし時の転覆事故にも注意が必要です。" },
+    { key:"drive", name:"走行部(車輪)", targets:[DRV], pos:[-0.55, 0.62, 0.95], note:"落輪・接触によるホイール・車軸の損傷を確認します。摩滅・自然消耗は対象外とされるのが一般的です。" },
+    { key:"body", name:"車体・エンジン部", targets:[BODY], pos:[1.25, 1.6, 0.5], note:"水田で使用するため、冠水・水没時は電装系まで含めた損害範囲の確認が重要です。" },
+    { key:"ope", name:"操縦部", targets:[OPE], pos:[0.1, 1.98, 0.45], note:"転覆時にハンドル・座席まわりが損傷しやすい部位です。" },
   ];
-  if (opt.fert) members.push({ key:"fert", name:"施肥機(附属装置)", targets:[FERT], pos:[-0.72, 1.7, 0.7], note:"側条施肥機。" + attCaveat });
-  if (opt.spray) members.push({ key:"spray", name:"薬剤散布装置(附属装置)", targets:[SPRAY], pos:[-0.35, 1.8, 0.5], note:"薬剤散布装置。" + attCaveat });
-  return { group: g, members, camR: 6.5, targetY: 0.9 };
+  if (opt.fert) members.push({ key:"fert", name:"施肥機(附属装置)", targets:[FERT], pos:[-0.72, 1.62, 1.0], note:"側条施肥機。" + attCaveat });
+  if (opt.spray) members.push({ key:"spray", name:"薬剤散布装置(附属装置)", targets:[SPRAY], pos:[-0.72, 2.12, 0.55], note:"薬剤散布装置。" + attCaveat });
+  return { group: g, members, camR: 8, targetY: 1.1 };
 }
 
 /* ============================================================
@@ -802,56 +925,95 @@ function buildCombineJidatsu(opt) {
   const g = new THREE.Group();
   const CRW = "走行部(クローラ)", DAK = "脱穀部(こぎ胴)", TAN = "グレンタンク", AUG = "排出オーガ", KAR = "刈取部(ディバイダ・引起し・刈刃)", OPE = "運転部", CUT = "排わらカッター(附属装置)";
 
-  [[0.72], [-0.72]].forEach(([z]) => {
-    g.add(box(2.3, 0.5, 0.34, M.tire, -0.15, 0.32, z, CRW));
-    g.add(box(2.34, 0.1, 0.36, M.steelD, -0.15, 0.6, z, CRW));
+  const add = (o) => { g.add(o); return o; };
+  const mesh = (geo, m, member) => add(tag(new THREE.Mesh(geo, m), member));
+
+  /* ---- 走行部: ゴムクローラ(履帯・駆動輪・転輪) ---- */
+  [1, -1].forEach((s) => crawlerTrack(g, { x0: -1.25, x1: 1.0, r: 0.3, w: 0.36, y: 0.32, z: s * 0.68, member: CRW }));
+
+  /* ---- 機体・脱穀部 ---- */
+  add(rbox(2.7, 0.22, 1.85, 0.05, M.gloss, -0.2, 0.72, 0, DAK));                    // ベースフレーム
+  add(rbox(2.3, 1.0, 0.95, 0.07, M.tPaint, -0.35, 1.33, -0.45, DAK));               // 脱穀部本体
+  add(rbox(2.16, 0.1, 0.88, 0.04, M.gloss, -0.35, 1.87, -0.45, DAK));               // こぎ胴上部カバー
+  add(rbox(2.2, 0.36, 0.06, 0.02, M.gloss, -0.35, 0.98, -0.93, DAK));               // 側面パネル
+  add(rbox(0.7, 0.5, 0.9, 0.05, M.gloss, -1.6, 1.1, -0.45, DAK));                   // 排わら処理部
+  add(rbox(1.5, 0.88, 0.84, 0.07, M.tPaint, -0.6, 1.36, 0.48, TAN));                // グレンタンク
+  add(rbox(1.42, 0.1, 0.76, 0.04, M.gloss, -0.6, 1.85, 0.48, TAN));                 // タンク上蓋
+  add(rbox(0.5, 0.42, 0.8, 0.05, M.gloss, 0.32, 1.1, 0.48, TAN));                   // タンク前部(フィーダ)
+
+  /* ---- 運転部(ガラスキャビン・右前) ---- */
+  const KX0 = 0.2, KX1 = 1.08, KZ0 = 0.1, KZ1 = 0.9, KY0 = 0.95, KY1 = 2.12;
+  add(rbox(0.96, 0.12, 0.86, 0.03, M.gloss, (KX0 + KX1) / 2, KY0, (KZ0 + KZ1) / 2, OPE)); // 床
+  [[KX0, KZ0], [KX0, KZ1], [KX1, KZ0], [KX1, KZ1]].forEach(([x, z]) => add(bar(v(x, KY0, z), v(x, KY1, z), 0.06, 0.06, M.frame, OPE)));
+  [[KX0, KZ0, KX1, KZ0], [KX0, KZ1, KX1, KZ1], [KX0, KZ0, KX0, KZ1], [KX1, KZ0, KX1, KZ1]]
+    .forEach(([a, b, c, d]) => add(bar(v(a, KY1, b), v(c, KY1, d), 0.05, 0.05, M.frame, OPE)));
+  add(quad([KX1, KY0, KZ0], [KX1, KY0, KZ1], [KX1, KY1, KZ1], [KX1, KY1, KZ0], M.cabGlass, OPE)); // 前面
+  add(quad([KX0, KY0, KZ1], [KX1, KY0, KZ1], [KX1, KY1, KZ1], [KX0, KY1, KZ1], M.cabGlass, OPE)); // 側面(ドア)
+  add(quad([KX0, KY0, KZ0], [KX0, KY0, KZ1], [KX0, KY1, KZ1], [KX0, KY1, KZ0], M.cabGlass, OPE)); // 後面
+  add(quad([KX0, KY0, KZ0], [KX1, KY0, KZ0], [KX1, KY1, KZ0], [KX0, KY1, KZ0], M.cabGlass, OPE)); // 内側
+  add(bar(v(KX0, 1.32, KZ1 + 0.005), v(KX1, 1.32, KZ1 + 0.005), 0.03, 0.02, M.frame, OPE));       // ドア枠
+  add(box(0.12, 0.025, 0.03, M.frame, 0.45, 1.5, KZ1 + 0.03, OPE));                 // ドアハンドル
+  const kroof = rboxGeo(1.06, 0.98, 0.11, 0.03, 0.14); kroof.rotateX(Math.PI / 2);
+  const krf = mesh(kroof, M.gloss, OPE); krf.position.set((KX0 + KX1) / 2, 2.17, (KZ0 + KZ1) / 2); // ルーフ
+  [0.28, 0.5, 0.72].forEach((z) => {                                                 // 前面作業灯
+    add(rbox(0.1, 0.09, 0.13, 0.02, M.frame, KX1, 2.11, z, OPE));
+    add(cylX(0.036, 0.02, M.lens, KX1 + 0.06, 2.11, z, OPE));
   });
-  g.add(box(2.1, 1.05, 1.0, M.cBody, -0.45, 1.3, -0.28, DAK));
-  g.add(box(1.9, 0.1, 0.95, M.steelD, -0.45, 1.9, -0.28, DAK));
-  g.add(box(1.1, 0.95, 0.75, M.cBody, -0.85, 1.5, 0.55, TAN));
-  g.add(box(0.85, 0.12, 0.8, M.steelD, 0.7, 0.95, 0.5, OPE));
-  g.add(box(0.42, 0.1, 0.42, M.seat, 0.55, 1.25, 0.5, OPE));
-  const bk3 = box(0.05, 0.34, 0.4, M.seat, 0.33, 1.46, 0.5, OPE); bk3.rotation.z = 0.12; g.add(bk3);
-  g.add(beam(v(1.05, 1.05, 0.5), v(0.92, 1.35, 0.5), 0.028, M.steelD, OPE));      // コラム
-  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.022, 8, 20), M.black);
+  add(bar(v(KX1 - 0.02, 2.0, KZ1), v(KX1 + 0.14, 2.05, KZ1 + 0.3), 0.025, 0.025, M.frame, OPE));  // ミラー
+  const cmr = add(rbox(0.05, 0.3, 0.18, 0.02, M.gloss, KX1 + 0.14, 1.88, KZ1 + 0.32, OPE)); cmr.rotation.y = -0.25;
+  add(rbox(0.06, 0.12, 0.05, 0.02, M.amber, KX1 - 0.01, 1.78, KZ1 + 0.02, OPE));    // ウインカー
+  add(rbox(0.38, 0.11, 0.42, 0.05, M.seat, 0.5, 1.3, 0.5, OPE));                    // 座席
+  const bk3 = add(rbox(0.1, 0.46, 0.4, 0.04, M.seat, 0.3, 1.58, 0.5, OPE)); bk3.rotation.z = 0.14;
+  add(rbox(0.22, 0.3, 0.52, 0.04, M.black, 0.94, 1.32, 0.5, OPE));                  // ダッシュボード
+  add(beam(v(0.9, 1.4, 0.5), v(0.76, 1.6, 0.5), 0.026, M.steelD, OPE));             // コラム
+  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.02, 10, 24), M.black);
   sw.quaternion.setFromUnitVectors(v(0, 0, 1), v(-0.42, 0.91, 0).normalize());
-  sw.position.set(0.9, 1.38, 0.5);
+  sw.position.set(0.74, 1.63, 0.5);
   g.add(tag(sw, OPE));
-  [[1.02, 0.85], [1.02, 0.15], [0.3, 0.85], [0.3, 0.15]].forEach(([x, z]) => g.add(box(0.05, 1.05, 0.05, M.steelD, x, 1.6, z, OPE)));
-  g.add(box(0.95, 0.07, 0.9, M.cBody, 0.66, 2.15, 0.5, OPE));
-  g.add(box(0.7, 0.35, 1.55, M.cBody, 1.35, 0.6, -0.05, KAR));
-  g.add(box(0.12, 0.07, 1.5, M.steel, 1.72, 0.35, -0.05, KAR));
-  for (let z = -0.75; z <= 0.66; z += 0.35) {
-    const dv = new THREE.Mesh(new THREE.CylinderGeometry(0.0, 0.05, 0.6, 8), M.steelD);
-    dv.rotation.z = -Math.PI / 2 + 0.25; dv.position.set(2.0, 0.42, z);
-    g.add(tag(dv, KAR));
-    const hk = box(0.09, 0.85, 0.13, M.attRed, 1.55, 0.95, z + 0.17, KAR); hk.rotation.z = -0.35; g.add(hk);
+
+  /* ---- 刈取部(ディバイダ・引起し・刈刃) ---- */
+  add(beam(v(0.55, 1.15, -0.5), v(1.45, 0.62, -0.45), 0.07, M.tPaint, KAR));        // 刈取支持フレーム
+  add(rbox(0.75, 0.22, 1.65, 0.05, M.gloss, 1.75, 0.44, -0.2, KAR));                // 刈取フレーム
+  const fdr = add(rbox(1.0, 0.36, 0.55, 0.05, M.tPaint, 1.0, 0.85, -0.6, KAR)); fdr.rotation.z = -0.28; // フィードチェーン部
+  add(rbox(0.12, 0.07, 1.6, 0.02, M.steel, 1.98, 0.22, -0.2, KAR));                 // 刈刃バー
+  for (let i = 0; i < 6; i++) {
+    const z = -0.9 + i * 0.3;
+    const hk = add(rbox(0.14, 1.05, 0.2, 0.04, M.white, 1.66, 1.0, z, KAR)); hk.rotation.z = -0.26;  // 引起しケース
+    const ch = add(rbox(0.04, 0.9, 0.11, 0.015, M.gloss, 1.76, 1.0, z, KAR)); ch.rotation.z = -0.26; // 引起しチェーン
+    const dv = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.075, 0.85, 10), M.white);
+    dv.rotation.z = -Math.PI / 2 + 0.2; dv.position.set(2.25, 0.3, z - 0.15);
+    g.add(tag(dv, KAR));                                                              // ディバイダ
+    add(rbox(0.1, 0.16, 0.07, 0.02, M.tPaint, 1.62, 0.42, z - 0.15, KAR));
   }
-  g.add(cylY(0.1, 0.1, 0.55, M.attRed, -0.85, 2.15, 0.55, AUG));
+
+  /* ---- 排出オーガ ---- */
+  add(cylY(0.11, 0.11, 0.75, M.white, -1.15, 2.1, 0.55, AUG));                      // 縦オーガ
+  add(rbox(0.26, 0.24, 0.26, 0.04, M.white, -1.15, 2.42, 0.55, AUG));               // 旋回部
   if (opt.auger === "stored") {
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.3, 10), M.attRed);
-    arm.rotation.z = Math.PI / 2; arm.position.set(0.0, 2.28, 0.55);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.3, 14), M.white);
+    arm.rotation.z = Math.PI / 2; arm.position.set(0.0, 2.45, 0.55);
     g.add(tag(arm, AUG));
-    g.add(box(0.2, 0.18, 0.18, M.attRed, 1.15, 2.28, 0.55, AUG));
+    add(rbox(0.24, 0.22, 0.22, 0.03, M.white, 1.22, 2.45, 0.55, AUG));              // 排出口
+    add(bar(v(1.0, 2.23, 0.55), v(1.0, 2.34, 0.55), 0.05, 0.05, M.frame, AUG));     // 受け台
   } else {
-    g.add(beam(v(-0.85, 2.28, 0.55), v(0.4, 2.75, 2.35), 0.09, M.attRed, AUG));
-    g.add(box(0.2, 0.2, 0.2, M.attRed, 0.45, 2.72, 2.42, AUG));
+    add(beam(v(-1.15, 2.45, 0.55), v(0.35, 2.85, 2.4), 0.1, M.white, AUG));
+    add(rbox(0.24, 0.24, 0.24, 0.03, M.white, 0.42, 2.83, 2.47, AUG));
   }
   if (opt.cutter) {
-    g.add(box(0.55, 0.5, 0.95, M.steelD, -1.75, 0.85, -0.28, CUT));
-    const ch = box(0.35, 0.06, 0.9, M.steel, -2.05, 0.55, -0.28, CUT); ch.rotation.z = 0.5; g.add(ch);
+    add(rbox(0.55, 0.5, 0.9, 0.05, M.steelD, -1.95, 0.9, -0.45, CUT));
+    const ch = add(rbox(0.4, 0.06, 0.86, 0.02, M.steel, -2.22, 0.62, -0.45, CUT)); ch.rotation.z = 0.5;
   }
 
   const members = [
-    { key:"karitori", name:"刈取部(ディバイダ・引起し・刈刃)", targets:[KAR], pos:[1.9, 1.3, -0.6], note:"障害物や畦との接触で最も損傷しやすい部位。ディバイダの曲がり、引起しケースの変形、刈刃の欠損を確認します。稼働中の衝突・接触は農機具共済の代表的な支払事故です。" },
-    { key:"dakkoku", name:"脱穀部(こぎ胴)", targets:[DAK], pos:[-0.45, 2.05, -0.75], note:"石や金属の巻き込みで内部(こぎ歯・受網)が損傷することがあります。外観だけでなく内部の確認も必要です。火災は脱穀部・エンジン周りの藁くず堆積が原因になることがあります。" },
-    { key:"tank", name:"グレンタンク", targets:[TAN], pos:[-0.9, 2.1, 0.75], note:"転覆・衝突時の外板変形を確認します。" },
-    { key:"auger", name:"排出オーガ", targets:[AUG], pos: opt.auger === "stored" ? [0.6, 2.45, 0.7] : [0.5, 2.9, 2.3], note:"展開したまま走行して構造物に接触する事故が典型例です。左の「附属装置・状態」で格納/展開を切り替えられます。" },
+    { key:"karitori", name:"刈取部(ディバイダ・引起し・刈刃)", targets:[KAR], pos:[2.0, 1.55, -0.75], note:"障害物や畦との接触で最も損傷しやすい部位。ディバイダの曲がり、引起しケースの変形、刈刃の欠損を確認します。稼働中の衝突・接触は農機具共済の代表的な支払事故です。" },
+    { key:"dakkoku", name:"脱穀部(こぎ胴)", targets:[DAK], pos:[-0.45, 2.15, -0.95], note:"石や金属の巻き込みで内部(こぎ歯・受網)が損傷することがあります。外観だけでなく内部の確認も必要です。火災は脱穀部・エンジン周りの藁くず堆積が原因になることがあります。" },
+    { key:"tank", name:"グレンタンク", targets:[TAN], pos:[-0.6, 2.12, 0.8], note:"転覆・衝突時の外板変形を確認します。" },
+    { key:"auger", name:"排出オーガ", targets:[AUG], pos: opt.auger === "stored" ? [0.5, 2.68, 0.55] : [0.42, 3.05, 2.3], note:"展開したまま走行して構造物に接触する事故が典型例です。左の「附属装置・状態」で格納/展開を切り替えられます。" },
     { key:"crawler", name:"走行部(クローラ)", targets:[CRW], pos:[-0.15, 0.45, 1.0], note:"クローラの切損・脱輪・転輪の損傷を確認します。摩滅・自然消耗による損害は対象外とされるのが一般的です。" },
-    { key:"ope", name:"運転部", targets:[OPE], pos:[0.7, 2.3, 0.6], note:"転覆時にキャノピー・ハンドルまわりが損傷しやすい部位です。" },
+    { key:"ope", name:"運転部", targets:[OPE], pos:[0.64, 2.42, 0.62], note:"転覆時にキャビンのガラス割れ・フレーム変形やハンドルまわりの損傷が生じやすい部位です。" },
   ];
-  if (opt.cutter) members.push({ key:"cutter", name:"排わらカッター(附属装置)", targets:[CUT], pos:[-1.9, 1.3, -0.7], note:"排わら処理の附属装置。コンバインの結束機等を本体の附属装置としてセット加入できる組合があります(取り扱いは組合により異なります)。" });
-  return { group: g, members, camR: 8, targetY: 1.2 };
+  if (opt.cutter) members.push({ key:"cutter", name:"排わらカッター(附属装置)", targets:[CUT], pos:[-2.0, 1.45, -0.6], note:"排わら処理の附属装置。コンバインの結束機等を本体の附属装置としてセット加入できる組合があります(取り扱いは組合により異なります)。" });
+  return { group: g, members, camR: 9, targetY: 1.3 };
 }
 
 /* ============================================================
@@ -861,58 +1023,128 @@ function buildCombineFutsu(opt) {
   const g = new THREE.Group();
   const CRW = "走行部(クローラ)", SEN = "脱穀・選別部(機体)", TAN = "グレンタンク", AUG = "排出オーガ", HED = "刈取部(ヘッダー・リール)", FEED = "フィーダー", CAB = "キャビン";
 
-  [[0.82], [-0.82]].forEach(([z]) => {
-    g.add(box(2.6, 0.55, 0.4, M.tire, -0.35, 0.35, z, CRW));
-    g.add(box(2.64, 0.1, 0.42, M.steelD, -0.35, 0.66, z, CRW));
+  const add = (o) => { g.add(o); return o; };
+  const mesh = (geo, m, member) => add(tag(new THREE.Mesh(geo, m), member));
+
+  /* ---- 走行部: ゴムクローラ ---- */
+  [1, -1].forEach((s) => crawlerTrack(g, { x0: -1.6, x1: 0.95, r: 0.34, w: 0.44, y: 0.36, z: s * 0.78, member: CRW }));
+
+  /* ---- 機体(赤)・グレンタンク(白) ---- */
+  add(rbox(3.0, 0.24, 1.9, 0.05, M.gloss, -0.45, 0.84, 0, SEN));                     // ベースフレーム
+  add(rbox(2.5, 0.82, 1.8, 0.08, M.cRed, -0.55, 1.34, 0, SEN));                      // 脱穀・選別部(機体)
+  add(rbox(2.4, 0.1, 1.84, 0.03, M.gloss, -0.55, 0.96, 0, SEN));                     // 下部の黒帯
+  add(rbox(2.05, 0.64, 1.68, 0.08, M.paintW, -0.68, 2.06, 0, TAN));                  // グレンタンク(白)
+  add(rbox(2.1, 0.09, 1.72, 0.03, M.cRed, -0.68, 1.73, 0, TAN));                     // タンク下の赤帯
+  add(rbox(1.94, 0.08, 1.58, 0.03, M.gloss, -0.68, 2.4, 0, TAN));                    // タンク上面
+  add(rbox(0.5, 0.66, 1.5, 0.06, M.paintW, -1.9, 1.45, 0, SEN));                     // エンジンカバー
+  add(rbox(0.08, 0.5, 1.3, 0.03, M.gloss, -2.13, 1.45, 0, SEN));                     // ラジエータグリル
+  for (let z = -0.56; z <= 0.57; z += 0.14) add(box(0.03, 0.44, 0.03, M.steelD, -2.16, 1.45, z, SEN));
+  add(rbox(0.5, 0.4, 0.3, 0.04, M.gloss, -1.35, 1.9, 0.86, SEN));                    // 排気・マフラー部
+  [1.02, 0.7].forEach((y) => add(rbox(0.32, 0.03, 0.26, 0.01, M.steel, -1.45, y, 0.95, SEN))); // ステップ
+  add(beam(v(-1.3, 1.75, 0.94), v(-1.3, 0.68, 1.0), 0.025, M.steelD, SEN));          // 手すり
+
+  /* ---- 運転部(ガラスキャビン・右前) ---- */
+  const KX0 = 0.45, KX1 = 1.35, KZ0 = -0.02, KZ1 = 0.86, KY0 = 1.5, KY1 = 2.7;
+  add(rbox(0.94, 0.62, 0.88, 0.05, M.cRed, 0.9, 1.2, 0.42, CAB));                    // キャビン架台
+  add(rbox(0.98, 0.12, 0.92, 0.03, M.gloss, (KX0 + KX1) / 2, KY0, (KZ0 + KZ1) / 2, CAB)); // 床
+  [[KX0, KZ0], [KX0, KZ1], [KX1, KZ0], [KX1, KZ1]].forEach(([x, z]) => add(bar(v(x, KY0, z), v(x, KY1, z), 0.06, 0.06, M.frame, CAB)));
+  [[KX0, KZ0, KX1, KZ0], [KX0, KZ1, KX1, KZ1], [KX0, KZ0, KX0, KZ1], [KX1, KZ0, KX1, KZ1]]
+    .forEach(([a, b, c, d]) => add(bar(v(a, KY1, b), v(c, KY1, d), 0.05, 0.05, M.frame, CAB)));
+  add(quad([KX1, KY0, KZ0], [KX1, KY0, KZ1], [KX1, KY1, KZ1], [KX1, KY1, KZ0], M.cabGlass, CAB)); // 前面
+  add(quad([KX0, KY0, KZ1], [KX1, KY0, KZ1], [KX1, KY1, KZ1], [KX0, KY1, KZ1], M.cabGlass, CAB)); // 右側面
+  add(quad([KX0, KY0, KZ0], [KX0, KY0, KZ1], [KX0, KY1, KZ1], [KX0, KY1, KZ0], M.cabGlass, CAB)); // 後面
+  add(quad([KX0, KY0, KZ0], [KX1, KY0, KZ0], [KX1, KY1, KZ0], [KX0, KY1, KZ0], M.cabGlass, CAB)); // 左側面(ドア)
+  add(bar(v(KX0, 1.9, KZ0 - 0.005), v(KX1, 1.9, KZ0 - 0.005), 0.03, 0.02, M.frame, CAB));         // ドア枠
+  add(box(0.12, 0.025, 0.03, M.frame, 0.7, 2.05, KZ0 - 0.03, CAB));                  // ドアハンドル
+  const froof = rboxGeo(1.08, 1.04, 0.13, 0.04, 0.16); froof.rotateX(Math.PI / 2);
+  const frf = mesh(froof, M.cRed, CAB); frf.position.set((KX0 + KX1) / 2, 2.75, (KZ0 + KZ1) / 2);
+  add(rbox(0.16, 0.12, 0.98, 0.03, M.gloss, KX1 - 0.02, 2.66, (KZ0 + KZ1) / 2, CAB)); // 前面の黒トリム
+  [0.12, 0.42, 0.72].forEach((z) => {
+    add(rbox(0.1, 0.09, 0.14, 0.02, M.frame, KX1 - 0.01, 2.64, z, CAB));
+    add(cylX(0.037, 0.02, M.lens, KX1 + 0.055, 2.64, z, CAB));                       // 作業灯
   });
-  g.add(box(2.4, 1.2, 1.65, M.cBody, -0.55, 1.35, 0, SEN));
-  g.add(box(1.2, 0.7, 1.4, M.attYel, -1.0, 2.3, 0, TAN));                          // グレンタンク(上部)
-  g.add(box(0.8, 0.35, 1.5, M.steelD, -1.6, 1.1, 0, SEN));                          // エンジンデッキ
-  // キャビン(右前)
-  [[0.9, 0.95], [0.9, 0.35], [0.25, 0.95], [0.25, 0.35]].forEach(([x, z]) => g.add(box(0.06, 0.95, 0.06, M.steelD, x, 2.35, z, CAB)));
-  g.add(box(0.72, 0.85, 0.66, M.glass, 0.57, 2.35, 0.65, CAB));
-  g.add(box(0.85, 0.07, 0.8, M.cBody, 0.57, 2.85, 0.65, CAB));
-  g.add(box(0.4, 0.1, 0.4, M.seat, 0.5, 2.05, 0.65, CAB));
-  const bk4 = box(0.05, 0.34, 0.4, M.seat, 0.29, 2.26, 0.65, CAB); bk4.rotation.z = 0.12; g.add(bk4);
-  // フィーダー
-  const fd = box(1.0, 0.4, 0.75, M.cBody, 1.15, 0.95, 0, FEED); fd.rotation.z = -0.35; g.add(fd);
-  // ヘッダー(プラットフォーム+リール+刈刃+オーガ)
-  g.add(box(0.55, 0.45, 2.5, M.cBody, 1.8, 0.5, 0, HED));
-  g.add(box(0.14, 0.07, 2.45, M.steel, 2.1, 0.3, 0, HED));                          // 刈刃バー
-  g.add(cylZ(0.13, 2.35, M.steelD, 1.75, 0.55, 0, HED));                            // ヘッダーオーガ
-  g.add(cylZ(0.045, 2.35, M.steelD, 2.2, 0.9, 0, HED));                             // リール軸
-  for (let a = 0; a < 5; a++) {
-    const ang = (a / 5) * Math.PI * 2;
-    g.add(box(0.05, 0.03, 2.35, M.attYel, 2.2 + 0.3 * Math.cos(ang), 0.9 + 0.3 * Math.sin(ang), 0, HED));
+  add(cylY(0.07, 0.09, 0.1, M.amber, (KX0 + KX1) / 2, 2.86, 0.42, CAB));             // 回転灯
+  add(bar(v(0.72, 2.82, 0.1), v(0.72, 3.5, 0.1), 0.012, 0.012, M.frame, CAB));       // アンテナ
+  add(bar(v(KX1 - 0.02, 2.5, KZ0), v(KX1 + 0.12, 2.54, KZ0 - 0.32), 0.025, 0.025, M.frame, CAB));
+  const fmr = add(rbox(0.05, 0.32, 0.2, 0.02, M.gloss, KX1 + 0.12, 2.34, KZ0 - 0.34, CAB)); fmr.rotation.y = 0.25; // ミラー
+  add(rbox(0.06, 0.13, 0.05, 0.02, M.amber, KX1 - 0.01, 2.3, KZ0 + 0.02, CAB));      // ウインカー
+  add(rbox(0.4, 0.11, 0.44, 0.05, M.seat, 0.78, 1.86, 0.42, CAB));                   // 座席
+  const bk4 = add(rbox(0.1, 0.48, 0.42, 0.04, M.seat, 0.58, 2.15, 0.42, CAB)); bk4.rotation.z = 0.14;
+  add(rbox(0.22, 0.32, 0.54, 0.04, M.black, 1.2, 1.9, 0.42, CAB));                   // ダッシュボード
+  add(beam(v(1.16, 1.98, 0.42), v(1.02, 2.2, 0.42), 0.026, M.steelD, CAB));
+  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.02, 10, 24), M.black);
+  sw.quaternion.setFromUnitVectors(v(0, 0, 1), v(-0.42, 0.91, 0).normalize());
+  sw.position.set(1.0, 2.23, 0.42);
+  g.add(tag(sw, CAB));
+
+  /* ---- フィーダー(ヘッダー→機体) ---- */
+  const fd = add(rbox(1.05, 0.58, 0.92, 0.05, M.gloss, 1.05, 1.22, -0.32, FEED)); fd.rotation.z = -0.3;
+  add(rbox(0.3, 0.3, 0.98, 0.04, M.cRed, 0.62, 1.42, -0.32, FEED));                  // 接続部カバー
+  [1, -1].forEach((s) => add(beam(v(0.75, 1.0, -0.32 + s * 0.45), v(1.45, 0.78, -0.32 + s * 0.5), 0.045, M.cRed, FEED))); // 昇降シリンダ
+
+  /* ---- 刈取部(ヘッダー・リール) ---- */
+  mesh(profileGeo([[1.52, 0.56], [2.44, 0.6], [2.44, 0.72], [1.74, 0.84], [1.7, 1.45], [1.52, 1.45]], 2.72, 0.02), M.gloss, HED); // プラットフォーム
+  add(rbox(0.07, 0.6, 2.72, 0.02, M.cRed, 1.66, 1.16, 0, HED));                      // 背面パネル(赤)
+  add(rbox(0.16, 0.08, 2.74, 0.02, M.steel, 2.46, 0.58, 0, HED));                    // 刈刃バー
+  const guards = [];
+  for (let z = -1.32; z <= 1.33; z += 0.09) {
+    const gd = new THREE.BoxGeometry(0.17, 0.045, 0.05); gd.translate(2.56, 0.57, z); guards.push(gd);
   }
-  [[1.2], [-1.2]].forEach(([z]) => {
-    g.add(beam(v(1.85, 1.0, z), v(2.55, 0.9, z), 0.03, M.steelD, HED));             // リールアーム
-    const dv = new THREE.Mesh(new THREE.CylinderGeometry(0.0, 0.06, 0.55, 8), M.steelD);
-    dv.rotation.z = -Math.PI / 2 + 0.15; dv.position.set(2.35, 0.4, z);
-    g.add(tag(dv, HED));                                                             // 端部ディバイダ
+  mesh(mergeGeos(guards), M.attYel, HED);                                             // 刈刃ガード
+  add(cylZ(0.2, 2.6, M.steelD, 1.98, 0.97, 0, HED));                                  // ヘッダーオーガ
+  for (let a = 0; a < 10; a++) {                                                      // オーガのらせん羽根
+    const fl = add(box(0.03, 0.2, 0.5, M.steelD, 1.98 + 0.2 * Math.cos(a * 0.9), 0.97 + 0.2 * Math.sin(a * 0.9), -1.1 + a * 0.24, HED));
+    fl.rotation.set(0, 0.5, a * 0.9);
+  }
+  // リール(バット+タイン)
+  const RX = 2.14, RY = 1.42, RR = 0.36;
+  add(cylZ(0.05, 2.76, M.steelD, RX, RY, 0, HED));
+  const tines = [];
+  for (let a = 0; a < 6; a++) {
+    const ang = (a / 6) * Math.PI * 2;
+    add(cylZ(0.035, 2.7, M.gloss, RX + RR * Math.cos(ang), RY + RR * Math.sin(ang), 0, HED));
+    for (let z = -1.26; z <= 1.27; z += 0.13) {
+      const tn = new THREE.BoxGeometry(0.025, 0.24, 0.02);
+      tn.translate(0, -0.12, 0);
+      tn.rotateZ(ang - Math.PI / 2);
+      tn.translate(RX + (RR + 0.02) * Math.cos(ang), RY + (RR + 0.02) * Math.sin(ang), z);
+      tines.push(tn);
+    }
+  }
+  mesh(mergeGeos(tines), M.steel, HED);
+  [1, -1].forEach((s) => {
+    for (let a = 0; a < 5; a++) {                                                     // リール端部のスポーク
+      const sp = add(box(0.04, RR * 2, 0.03, M.gloss, RX, RY, s * 1.32, HED)); sp.rotation.z = a * 0.628;
+    }
+    add(beam(v(1.72, 1.36, s * 1.2), v(RX, RY, s * 1.3), 0.035, M.steelD, HED));      // リールアーム
+    add(rbox(0.92, 0.78, 0.07, 0.02, M.cRed, 1.98, 1.06, s * 1.37, HED));             // 端部の赤シールド
+    const dv = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.09, 0.62, 10), M.white);
+    dv.rotation.z = -Math.PI / 2 + 0.22; dv.position.set(2.72, 0.48, s * 1.37);
+    g.add(tag(dv, HED));                                                               // 端部ディバイダ(白)
   });
-  // 排出オーガ
-  g.add(cylY(0.1, 0.1, 0.6, M.attYel, -1.35, 2.75, 0.55, AUG));
+
+  /* ---- 排出オーガ ---- */
+  add(cylY(0.12, 0.12, 0.8, M.paintW, -1.45, 2.38, 0.68, AUG));                       // 縦オーガ
+  add(rbox(0.28, 0.26, 0.28, 0.04, M.paintW, -1.45, 2.78, 0.68, AUG));                // 旋回部
   if (opt.auger === "stored") {
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.6, 10), M.attYel);
-    arm.rotation.z = Math.PI / 2; arm.position.set(-0.15, 2.95, 0.55);
-    g.add(tag(arm, AUG));
-    g.add(box(0.22, 0.2, 0.2, M.attYel, 1.15, 2.95, 0.55, AUG));
+    add(beam(v(-1.45, 2.78, 0.68), v(0.3, 3.05, 0.5), 0.11, M.paintW, AUG));
+    add(rbox(0.26, 0.24, 0.24, 0.03, M.paintW, 0.38, 3.06, 0.49, AUG));
+    add(beam(v(-0.5, 2.44, 0.55), v(-0.5, 2.9, 0.58), 0.04, M.cRed, AUG));            // 受け台
   } else {
-    g.add(beam(v(-1.35, 2.95, 0.55), v(0.1, 3.3, 2.6), 0.1, M.attYel, AUG));
-    g.add(box(0.22, 0.22, 0.22, M.attYel, 0.15, 3.28, 2.68, AUG));
+    add(beam(v(-1.45, 2.78, 0.68), v(0.15, 3.15, 2.6), 0.11, M.paintW, AUG));
+    add(rbox(0.26, 0.24, 0.24, 0.03, M.paintW, 0.22, 3.16, 2.68, AUG));
   }
 
   const members = [
-    { key:"header", name:"刈取部(ヘッダー・リール)", targets:[HED], pos:[2.3, 1.5, -0.9], note:"普通型(汎用)コンバインはリール+刈刃+ヘッダーオーガで汎用作物を刈り取ります。障害物接触によるリール・刈刃の損傷、石の巻き込みが代表的な事故です。" },
-    { key:"feeder", name:"フィーダー", targets:[FEED], pos:[1.3, 1.6, 0.5], note:"ヘッダーから機体へ搬送する部位。異物の噛み込みでチェーン・搬送部が損傷することがあります。" },
-    { key:"sen", name:"脱穀・選別部(機体)", targets:[SEN], pos:[-0.55, 2.1, -0.9], note:"内部のこぎ胴・シーブは外観から見えないため、異物巻き込み事故では内部確認が必要です。" },
-    { key:"tank", name:"グレンタンク", targets:[TAN], pos:[-1.0, 2.75, -0.6], note:"上部にあるため、施設出入口や枝との接触で損傷することがあります。" },
-    { key:"auger", name:"排出オーガ", targets:[AUG], pos: opt.auger === "stored" ? [0.4, 3.1, 0.7] : [0.15, 3.45, 2.5], note:"展開したままの走行接触が典型事故です。格納/展開を切り替えて確認できます。" },
-    { key:"crawler", name:"走行部(クローラ)", targets:[CRW], pos:[-0.35, 0.5, 1.15], note:"クローラの切損・脱輪・転輪の損傷を確認します。摩滅・自然消耗は対象外とされるのが一般的です。" },
-    { key:"cabin", name:"キャビン", targets:[CAB], pos:[0.57, 3.0, 0.75], note:"ガラス・外装の損傷を確認します。" },
+    { key:"header", name:"刈取部(ヘッダー・リール)", targets:[HED], pos:[2.5, 1.95, -1.2], note:"普通型(汎用)コンバインはリール+刈刃+ヘッダーオーガで汎用作物を刈り取ります。障害物接触によるリール・刈刃の損傷、石の巻き込みが代表的な事故です。" },
+    { key:"feeder", name:"フィーダー", targets:[FEED], pos:[1.1, 1.78, -0.85], note:"ヘッダーから機体へ搬送する部位。異物の噛み込みでチェーン・搬送部が損傷することがあります。" },
+    { key:"sen", name:"脱穀・選別部(機体)", targets:[SEN], pos:[-0.8, 1.5, -1.05], note:"内部のこぎ胴・シーブは外観から見えないため、異物巻き込み事故では内部確認が必要です。" },
+    { key:"tank", name:"グレンタンク", targets:[TAN], pos:[-0.75, 2.62, -0.95], note:"上部にあるため、施設出入口や枝との接触で損傷することがあります。" },
+    { key:"auger", name:"排出オーガ", targets:[AUG], pos: opt.auger === "stored" ? [0.45, 3.25, 0.5] : [0.28, 3.45, 2.55], note:"展開したままの走行接触が典型事故です。格納/展開を切り替えて確認できます。" },
+    { key:"crawler", name:"走行部(クローラ)", targets:[CRW], pos:[-0.4, 0.58, 1.12], note:"クローラの切損・脱輪・転輪の損傷を確認します。摩滅・自然消耗は対象外とされるのが一般的です。" },
+    { key:"cabin", name:"キャビン", targets:[CAB], pos:[0.9, 3.0, 0.95], note:"ガラス・外装の損傷を確認します。" },
   ];
-  return { group: g, members, camR: 9.5, targetY: 1.5 };
+  return { group: g, members, camR: 11, targetY: 1.6 };
 }
 
 /* ============================================================
@@ -922,49 +1154,94 @@ function buildKanriki(opt) {
   const g = new THREE.Group();
   const DRV = "走行部(車輪)", BODY = "車体・エンジン部", OPE = "操縦部", TANK = "薬液タンク", BOOM = "ブーム・ノズル(散布装置)";
 
-  wheel(g, 0.55, 0.09, 0.95, 0.55, 0.62, DRV);
-  wheel(g, 0.55, 0.09, 0.95, 0.55, -0.62, DRV);
-  wheel(g, 0.55, 0.09, -0.85, 0.55, 0.62, DRV);
-  wheel(g, 0.55, 0.09, -0.85, 0.55, -0.62, DRV);
+  const add = (o) => { g.add(o); return o; };
+  const mesh = (geo, m, member) => add(tag(new THREE.Mesh(geo, m), member));
 
-  g.add(box(2.3, 0.18, 0.7, M.kBody, 0, 1.05, 0, BODY));                            // 高床シャーシ
-  g.add(box(0.75, 0.42, 0.62, M.kBody, 0.9, 1.42, 0, BODY));                        // エンジンフード
-  g.add(box(0.5, 0.1, 0.5, M.seat, 0.0, 1.42, 0, OPE));
-  const bk5 = box(0.05, 0.36, 0.45, M.seat, -0.26, 1.64, 0, OPE); bk5.rotation.z = 0.12; g.add(bk5);
-  const col = box(0.07, 0.55, 0.07, M.steelD, 0.45, 1.55, 0, OPE); col.rotation.z = 0.4; g.add(col);
-  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.024, 8, 20), M.black);
+  /* ---- 走行部(細幅ラグタイヤ・白色ディッシュホイール) ---- */
+  [0.9, -0.95].forEach((x) => [1, -1].forEach((s) =>
+    lugWheel(g, { r: 0.5, w: 0.15, rimR: 0.34, lugs: 20, x, y: 0.5, z: s * 0.62, member: DRV })));
+
+  /* ---- 高床シャーシ ---- */
+  add(rbox(2.5, 0.16, 0.62, 0.05, M.steelD, 0, 1.02, 0, BODY));                      // メインフレーム
+  [0.9, -0.95].forEach((x) => [1, -1].forEach((s) => {
+    add(rbox(0.2, 0.56, 0.18, 0.04, M.gloss, x, 0.76, s * 0.54, BODY));              // 脚部(ファイナルケース)
+    add(cylZ(0.055, 0.2, M.steelD, x, 0.5, s * 0.56, BODY));
+  }));
+  add(rbox(1.9, 0.1, 0.24, 0.03, M.steelD, -0.05, 0.92, 0, BODY));                   // 前後連結フレーム
+  // 前部フード(赤)
+  const kTaper = (x) => { const t = Math.min(1, Math.max(0, (x - 0.65) / 0.75)); return 1 - 0.26 * t * t; };
+  mesh(taperZ(profileGeo([[0.45, 1.06], [1.28, 1.06], [1.4, 1.16], [1.38, 1.34], [1.2, 1.46], [0.8, 1.5], [0.48, 1.44]], 0.62, 0.035), kTaper), M.cRed, BODY);
+  mesh(taperZ(profileGeo([[1.1, 1.08], [1.32, 1.08], [1.42, 1.18], [1.38, 1.32], [1.14, 1.38]], 0.5, 0.02), kTaper), M.gloss, BODY); // グリル
+  [1, -1].forEach((s) => add(rbox(0.05, 0.08, 0.2, 0.02, M.lens, 1.42, 1.26, s * 0.14, BODY)));  // ヘッドライト
+  add(cylX(0.04, 0.02, M.chrome, 1.435, 1.26, 0, BODY));
+  // 後部エンジンカバー(赤)
+  add(rbox(0.9, 0.46, 0.72, 0.06, M.cRed, -1.05, 1.33, 0, BODY));
+  add(rbox(0.82, 0.06, 0.64, 0.02, M.gloss, -1.05, 1.58, 0, BODY));
+  add(cylY(0.035, 0.035, 0.5, M.black, -1.38, 1.78, 0.22, BODY));                    // マフラー
+  [1, -1].forEach((s) => add(rbox(0.52, 0.04, 0.24, 0.02, M.steel, 0.25, 1.0, s * 0.62, BODY))); // ステップ
+
+  /* ---- 操縦部 ---- */
+  add(rbox(0.4, 0.26, 0.42, 0.05, M.steelD, -0.05, 1.18, 0, OPE));                   // シートベース
+  add(rbox(0.5, 0.12, 0.5, 0.06, M.seat, -0.05, 1.38, 0, OPE));                      // 座面
+  const bk5 = add(rbox(0.11, 0.5, 0.46, 0.05, M.seat, -0.3, 1.66, 0, OPE)); bk5.rotation.z = 0.16;
+  add(rbox(0.3, 0.32, 0.5, 0.05, M.gloss, 0.46, 1.32, 0, OPE));                      // 操作パネル
+  add(beam(v(0.44, 1.44, 0), v(0.3, 1.64, 0), 0.028, M.steelD, OPE));                // コラム
+  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.021, 10, 26), M.black);
   sw.quaternion.setFromUnitVectors(v(0, 0, 1), v(-0.42, 0.91, 0).normalize());
-  sw.position.set(0.33, 1.83, 0);
+  sw.position.set(0.28, 1.67, 0);
   g.add(tag(sw, OPE));
-  [[0.35, 0.32], [0.35, -0.32]].forEach(([x, z]) => g.add(box(0.05, 0.95, 0.05, M.steelD, x, 2.15, z, OPE)));
-  [[-0.55, 0.32], [-0.55, -0.32]].forEach(([x, z]) => g.add(box(0.05, 0.95, 0.05, M.steelD, x, 2.15, z, OPE)));
-  g.add(box(1.15, 0.06, 0.8, M.kBody, -0.1, 2.62, 0, OPE));                          // キャノピー
-  g.add(box(0.9, 0.78, 0.95, M.white, -0.8, 1.6, 0, TANK));                          // 薬液タンク
-  g.add(cylY(0.1, 0.1, 0.09, M.white, -0.8, 2.05, 0.28, TANK));
-  g.add(box(0.22, 0.2, 0.24, M.steelD, -1.32, 1.2, 0, TANK));                        // ポンプ
-  // ブーム(格納/展開)
-  g.add(box(0.1, 0.55, 0.1, M.steelD, -1.35, 1.75, 0, BOOM));                        // リフトフレーム
-  g.add(box(0.12, 0.12, 1.2, M.attYel, -1.45, 1.95, 0, BOOM));                       // センターブーム
-  for (let z = -0.45; z <= 0.46; z += 0.3) g.add(cylY(0.012, 0.03, 0.08, M.steelD, -1.45, 1.86, z, BOOM));
-  if (opt.boom === "extended") {
-    [[1], [-1]].forEach(([sf]) => {
-      g.add(box(0.09, 0.09, 2.2, M.attYel, -1.45, 1.95, sf * 1.72, BOOM));
-      for (let z = 0.75; z <= 2.75; z += 0.3) g.add(cylY(0.012, 0.03, 0.08, M.steelD, -1.45, 1.86, sf * z, BOOM));
-    });
-  } else {
-    [[0.5], [-0.5]].forEach(([z]) => {
-      g.add(box(0.09, 2.2, 0.09, M.attYel, -1.55, 2.05 + 0.6, z, BOOM));             // 折りたたみ(縦収納)
-    });
-  }
+  [1, -1].forEach((s) => add(rbox(0.06, 0.26, 0.06, 0.02, M.gloss, 0.58, 1.42, s * 0.3, OPE))); // 操作レバー
+
+  /* ---- 薬液タンク ---- */
+  add(rbox(0.72, 0.46, 0.8, 0.07, M.paintW, -0.6, 1.3, 0, TANK));
+  add(rbox(0.66, 0.06, 0.74, 0.02, M.cRed, -0.6, 1.55, 0, TANK));                    // タンク上面の赤帯
+  add(cylY(0.09, 0.09, 0.08, M.paintW, -0.6, 1.61, 0.24, TANK));                     // 注入口
+  add(rbox(0.24, 0.22, 0.26, 0.04, M.steelD, -0.25, 1.15, 0.24, TANK));              // ポンプ
+  add(beam(v(-0.25, 1.15, 0.24), v(1.05, 1.02, 0.2), 0.018, M.black, TANK));         // 送液ホース(ブームへ)
+
+  /* ---- ブーム・ノズル(散布装置): 前方に1組(センター+左右ウイング) ---- */
+  const BX = 1.32, boomY = 0.9, nozGeos = [];
+  const pushNoz = (x, y, z) => {
+    const st = new THREE.CylinderGeometry(0.014, 0.014, 0.1, 8); st.translate(x, y - 0.07, z);
+    const cp = new THREE.CylinderGeometry(0.032, 0.014, 0.06, 8); cp.translate(x, y - 0.14, z);
+    nozGeos.push(st, cp);
+  };
+  add(rbox(0.12, 0.5, 0.12, 0.03, M.gloss, BX, 1.02, 0, BOOM));                       // 取付フレーム(縦)
+  add(beam(v(BX, 1.22, 0), v(0.92, 1.06, 0), 0.035, M.gloss, BOOM));                  // 車体への取付
+  add(rbox(0.1, 0.1, 1.2, 0.03, M.gloss, BX, boomY, 0, BOOM));                        // センター支持
+  add(cylZ(0.035, 1.3, M.steel, BX, boomY, 0, BOOM));                                 // センターブーム
+  for (let z = -0.5; z <= 0.51; z += 0.3) pushNoz(BX, boomY, z);
+  [1, -1].forEach((s) => {
+    add(rbox(0.07, 0.18, 0.07, 0.02, M.gloss, BX, boomY + 0.1, s * 0.68, BOOM));      // 折りたたみヒンジ
+    if (opt.boom === "extended") {
+      add(cylZ(0.03, 2.3, M.steel, BX, boomY, s * 1.85, BOOM));                       // ウイングブーム
+      add(cylZ(0.012, 2.3, M.black, BX, boomY + 0.05, s * 1.85, BOOM));               // 送液パイプ
+      for (let z = 0.8; z <= 2.96; z += 0.31) pushNoz(BX, boomY, s * z);
+      add(beam(v(BX, 1.28, s * 0.25), v(BX, boomY + 0.03, s * 2.85), 0.01, M.gloss, BOOM)); // 吊りワイヤ
+    } else {
+      // 格納: 前方の支点から後方斜め上へウイングを折りたたむ(移動時の姿勢)
+      const p1 = v(BX, boomY + 0.08, s * 0.8), p2 = v(BX - 2.16, boomY + 0.93, s * 0.74);
+      add(beam(p1, p2, 0.03, M.steel, BOOM));                                          // ウイングブーム
+      add(beam(p1.clone().setY(p1.y + 0.05), p2.clone().setY(p2.y + 0.05), 0.012, M.black, BOOM)); // 送液パイプ
+      for (let t = 0.08; t <= 0.97; t += 0.125) {
+        const p = p1.clone().lerp(p2, t);
+        pushNoz(p.x, p.y, p.z);
+      }
+      const mid = p1.clone().lerp(p2, 0.55);
+      add(beam(v(0.15, 1.08, s * 0.5), mid, 0.028, M.gloss, BOOM));                    // 受けフレーム
+      add(rbox(0.09, 0.16, 0.09, 0.02, M.gloss, mid.x, mid.y - 0.08, mid.z, BOOM));    // 受け金具
+    }
+  });
+  mesh(mergeGeos(nozGeos), M.gloss, BOOM);                                            // ノズル
 
   const members = [
-    { key:"boom", name:"ブーム・ノズル(散布装置)", targets:[BOOM], pos: opt.boom === "extended" ? [-1.45, 2.35, 2.4] : [-1.55, 3.2, 0.65], note:"一体型のため散布装置は機体の一部として評価します。展開したままの走行で電柱・支柱に接触するブーム損傷が典型事故です。格納/展開を切り替えて確認できます。" },
-    { key:"tank", name:"薬液タンク", targets:[TANK], pos:[-0.8, 2.15, 0.6], note:"転覆・衝突時の割れ・変形を確認します。ポンプ・配管まで損害が及んでいないかも確認します。" },
-    { key:"drive", name:"走行部(車輪)", targets:[DRV], pos:[0.95, 0.6, 0.85], note:"高床・細輪距のため転覆リスクが高い機種です。畦越えや傾斜地での転覆時は車軸・ホイールの損傷を確認します。" },
-    { key:"body", name:"車体・エンジン部", targets:[BODY], pos:[0.9, 1.8, 0.45], note:"薬剤を扱うため、事故時は薬液漏れによる二次被害の確認も必要です。" },
-    { key:"ope", name:"操縦部", targets:[OPE], pos:[-0.1, 2.75, 0.45], note:"転覆時にキャノピー・ハンドルまわりが損傷しやすい部位です。" },
+    { key:"boom", name:"ブーム・ノズル(散布装置)", targets:[BOOM], pos: opt.boom === "extended" ? [1.32, 1.35, 2.7] : [0.1, 1.95, 0.8], note:"一体型のため散布装置は機体の一部として評価します。ブームはセンター部と左右のウイングで1組を機体前方に装着し、移動時は左右のウイングを後方斜め上に折りたたみます。展開したままの走行で電柱・支柱に接触するブーム損傷が典型事故です。格納/展開を切り替えて確認できます。" },
+    { key:"tank", name:"薬液タンク", targets:[TANK], pos:[-0.6, 1.88, 0.5], note:"転覆・衝突時の割れ・変形を確認します。ポンプ・配管まで損害が及んでいないかも確認します。" },
+    { key:"drive", name:"走行部(車輪)", targets:[DRV], pos:[0.9, 0.66, 0.95], note:"高床・細輪距のため転覆リスクが高い機種です。畦越えや傾斜地での転覆時は車軸・ホイールの損傷を確認します。" },
+    { key:"body", name:"車体・エンジン部", targets:[BODY], pos:[1.15, 1.78, 0.45], note:"薬剤を扱うため、事故時は薬液漏れによる二次被害の確認も必要です。" },
+    { key:"ope", name:"操縦部", targets:[OPE], pos:[-0.05, 2.02, 0.45], note:"転覆時にハンドル・座席まわりが損傷しやすい部位です。キャノピー付きの機種ではキャノピーの変形も確認します。" },
   ];
-  return { group: g, members, camR: 8, targetY: 1.3 };
+  return { group: g, members, camR: 10, targetY: 1.2 };
 }
 
 const DETAIL_NOTES = {
@@ -1077,9 +1354,11 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   softbox.position.set(8, 30, 6); softbox.lookAt(0, 0, 0);
   envScene.add(softbox);
   const envTex = new THREE.PMREMGenerator(renderer).fromScene(envScene, 0.03).texture;
-  [M.tPaint, M.tPaintDS, M.gloss, M.frame, M.rim, M.chrome, M.lens, M.cabGlass].forEach((m) => { m.envMap = envTex; m.envMapIntensity = 0.6; });
+  [M.tPaint, M.tPaintDS, M.gloss, M.frame, M.rim, M.chrome, M.lens, M.cabGlass, M.cRed, M.cRedDS, M.paintW]
+    .forEach((m) => { m.envMap = envTex; m.envMapIntensity = 0.6; });
   M.cabGlass.envMapIntensity = 1.4;
   M.chrome.envMapIntensity = 1.0;
+  M.cRed.envMapIntensity = M.cRedDS.envMapIntensity = 0.35;  // 濃い赤が白っぽくならないよう映り込みを抑える
 }
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8d9aa5, 1.25));  // 天空光+地面反射。日陰側が黒く潰れないよう底上げ
 const dirL = new THREE.DirectionalLight(0xfff4e0, 1.05);
