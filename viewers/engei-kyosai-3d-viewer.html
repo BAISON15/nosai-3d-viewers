@@ -375,11 +375,15 @@ function buildGableFrame(opt) {
   });
   // 妻面: 間柱・胴ぶち(全幅)
   [[D/2, "妻面A"], [-D/2, "妻面B"]].forEach(([x, part]) => {
-    for (let z = -totalW / 2 + 1.5; z < totalW / 2 - 0.1; z += 1.5) {
-      const k = Math.min(spans - 1, Math.max(0, Math.floor((z + totalW / 2) / W)));
-      const dz = Math.abs(z - zCenter(k));
-      const yTop = Math.max(ridge - dz * (rise / halfSpan), eave * 0.6);
-      g.add(tag(pipeBetween(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, yTop, z), 0.04, frameMat), part, "妻面間柱"));
+    // 棟ごとに等分して棟中心に対し左右対称に配置(両端は柱列と重なるため除く)
+    const nSeg = Math.max(2, Math.round(W / 1.5));
+    for (let k = 0; k < spans; k++) {
+      for (let j = 1; j < nSeg; j++) {
+        const z = zCenter(k) - halfSpan + (W / nSeg) * j;
+        const dz = Math.abs(z - zCenter(k));
+        const yTop = Math.max(ridge - dz * (rise / halfSpan), eave * 0.6);
+        g.add(tag(pipeBetween(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, yTop, z), 0.04, frameMat), part, "妻面間柱"));
+      }
     }
     [0.9, 1.8].forEach((y) => {
       g.add(tag(pipeBetween(new THREE.Vector3(x, y, -totalW / 2), new THREE.Vector3(x, y, totalW / 2), 0.028, frameMat), part, "妻面胴ぶち"));
