@@ -34,7 +34,8 @@
   html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
   #app { display: flex; flex-direction: column; height: 100vh; background: #f1f5f9; }
 
-  header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; }
+  header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
+  header .credit { font-size: 10.5px; color: #94a3b8; white-space: nowrap; margin-left: auto; }
   header h1 { font-size: 13px; margin: 0; font-weight: 600; }
   header p { font-size: 10.5px; margin: 2px 0 0; color: #94a3b8; }
 
@@ -84,8 +85,11 @@
 <body>
 <div id="app">
   <header>
-    <h1>園芸施設 3Dビューア — 園芸施設共済 評価研修用</h1>
-    <p>園芸施設共済評価要領(平成30年5月2日 30経営第367号)の名称・区分を参考にした簡易学習モデル</p>
+    <div>
+      <h1>園芸施設 3Dビューア — 園芸施設共済 評価研修用</h1>
+      <p>園芸施設共済評価要領(平成30年5月2日 30経営第367号)の名称・区分を参考にした簡易学習モデル</p>
+    </div>
+    <div class="credit">Copyright &copy; 2026 BAISON</div>
   </header>
   <main>
     <div id="viewport">
