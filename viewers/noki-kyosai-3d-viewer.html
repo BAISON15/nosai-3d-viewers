@@ -45,6 +45,9 @@
   .label-chip { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.15); border: 1px solid #cbd5e1; background: rgba(255,255,255,.92); color: #334155; }
   .label-chip.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .use-box { position: absolute; bottom: 12px; right: 132px; max-width: 42%; background: rgba(255,255,255,.93); border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; font-size: 11.5px; line-height: 1.55; color: #334155; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .use-box b { display: block; font-size: 11px; color: #b45309; margin-bottom: 1px; }
+  @media (max-width: 860px) { .use-box { left: 12px; right: 12px; bottom: 58px; max-width: none; } }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
   aside { width: 330px; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
   @media (max-width: 860px) { aside { width: auto; border-left: none; border-top: 1px solid #cbd5e1; max-height: 46vh; } }
@@ -76,6 +79,7 @@
     <div id="viewport">
       <div id="canvas-holder"></div>
       <div id="labels"></div>
+      <div class="use-box" id="use-box" hidden></div>
       <button class="reset-btn" id="reset-view">視点をリセット</button>
       <div class="hint">ドラッグ: 回転 / ホイール・ピンチ: ズーム / 橙色の点: 部位の着眼点</div>
     </div>
@@ -389,21 +393,21 @@ function ptoShaft(g, AM, to) {
 }
 
 const ATT = {
-  rotary:      { label: "ロータリー",        camR: 8 },
-  harrow:      { label: "ハロー(代かき)",    camR: 8.5 },
-  plow:        { label: "プラウ",            camR: 8 },
-  broadcaster: { label: "ブロードキャスター", camR: 8 },
-  fertseed:    { label: "施肥播種機",        camR: 8.5 },
-  seeder:      { label: "播種機",            camR: 8.5 },
-  rotaryseeder:{ label: "ロータリーシーダー", camR: 8 },
-  lime:        { label: "ライムソワー",      camR: 8.5 },
-  manure:      { label: "マニュアスプレッダー", camR: 10 },
-  trencher:    { label: "溝堀機",            camR: 8 },
-  azenuri:     { label: "あぜ塗機",          camR: 8 },
-  chuko:       { label: "中耕ロータ",        camR: 8.5 },
-  stubble:     { label: "スタブルカルチ",    camR: 8.5 },
-  subsoiler:   { label: "サブソイラー",      camR: 8 },
-  sprayer:     { label: "ブームスプレーヤ",  camR: 10 },
+  rotary:      { label: "ロータリー",        camR: 8,   use: "爪を回転させて土を耕し、細かく砕きます。田畑の耕うんに使う最も基本的な作業機です。" },
+  harrow:      { label: "ハロー(代かき)",    camR: 8.5, use: "田植え前に水を張った田で土をかき混ぜて平らにならします(代かき)。苗を植えやすくし、水もれも防ぎます。" },
+  plow:        { label: "プラウ",            camR: 8,   use: "土を深く掘り起こして反転させ、稲わらや雑草などを土の中にすき込みます(反転耕)。" },
+  broadcaster: { label: "ブロードキャスター", camR: 8,   use: "ホッパーの肥料や種子を、回転する円盤(スピンナー)で広い範囲にまき散らします。" },
+  fertseed:    { label: "施肥播種機",        camR: 8.5, use: "種をまくと同時に、肥料を種の横に入れます。播種と施肥を1回の作業で行えます。" },
+  seeder:      { label: "播種機",            camR: 8.5, use: "麦・大豆・そばなどの種を、列ごとに一定の間隔と深さでまきます。" },
+  rotaryseeder:{ label: "ロータリーシーダー", camR: 8,   use: "ロータリーで耕しながら同時に種をまき、後部のローラで押さえます(耕うん同時播種)。" },
+  lime:        { label: "ライムソワー",      camR: 8.5, use: "石灰や粒状の肥料を、横長のホッパーから帯状に均一に落としてまきます。土壌改良の石灰散布などに使います。" },
+  manure:      { label: "マニュアスプレッダー", camR: 10, use: "荷台に積んだ堆肥を、後部のビーターで細かく砕きながら田畑に散布します。トラクタでけん引して使います。" },
+  trencher:    { label: "溝堀機",            camR: 8,   use: "田畑に排水用の溝を掘り、掘った土を左右に飛ばします。水はけの改善に使います。" },
+  azenuri:     { label: "あぜ塗機",          camR: 8,   use: "田の畦(あぜ)に土を塗り固めて形を整え、水もれを防ぎます。畦の補修を機械化します。" },
+  chuko:       { label: "中耕ロータ",        camR: 8.5, use: "畑の作物の列と列の間を浅く耕し、除草・土寄せや土の通気改善を行います。" },
+  stubble:     { label: "スタブルカルチ",    camR: 8.5, use: "収穫後の刈り株が残る圃場を爪で砕土し、残さを土と混ぜます。プラウより速く広く作業できます。" },
+  subsoiler:   { label: "サブソイラー",      camR: 8,   use: "地中深くの硬い土の層を爪で切り裂き、排水性と通気性を改善します(心土破砕)。" },
+  sprayer:     { label: "ブームスプレーヤ",  camR: 10,  use: "タンクの農薬や液肥を、左右に広げたブームのノズルから広い範囲に均一に散布します。" },
 };
 const attMemberName = (k) => ATT[k].label + "(附属装置)";
 
@@ -1299,7 +1303,7 @@ function buildTractor(att) {
   ];
   if (att !== "none") {
     const allAtt = Object.keys(ATT).map(attMemberName);
-    members.push({ key:"att", name: attMemberName(att), targets: allAtt, pos:[-2.7, 1.7, 1.1], note: attCaveat });
+    members.push({ key:"att", name: attMemberName(att), targets: allAtt, pos:[-2.7, 1.7, 1.1], note: `<b>用途:</b> ${ATT[att].use}<br><br>${attCaveat}` });
   }
   return { group: g, members, camR: att !== "none" ? ATT[att]?.camR || 8 : 7.5, targetY: 1.0 };
 }
@@ -2130,7 +2134,15 @@ function el(t, cls, html) {
   if (html != null) e.innerHTML = html;
   return e;
 }
+/* ビューア下部(視点リセットの左)に、選択中の附属装置の用途を表示 */
+function updateUseBox() {
+  const ub = document.getElementById("use-box");
+  const a = state.machine === "tractor" && state.tractorAtt !== "none" ? ATT[state.tractorAtt] : null;
+  ub.hidden = !a;
+  if (a) ub.innerHTML = `<b>${a.label}の用途</b>${a.use}`;
+}
 function renderPanel() {
+  updateUseBox();
   panel.innerHTML = "";
 
   const secM = el("div", "section", "<h2>機種</h2>");
