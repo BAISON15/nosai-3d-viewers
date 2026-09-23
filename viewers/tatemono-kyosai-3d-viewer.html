@@ -137,9 +137,6 @@
 
 <script type="module">
 import * as THREE from "three";
-// r128相当の色味を維持するため色管理を無効化(見た目の互換性のため)。
-// 最新のリニア色管理を使う場合は次行を削除してください。
-if (THREE.ColorManagement) THREE.ColorManagement.enabled = false;
 
 /* ============================================================
    マテリアル・部位色
@@ -206,6 +203,7 @@ function makeCanvasTex(draw) {
   cv.width = cv.height = 256;
   draw(cv.getContext("2d"), 256, 256);
   const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
@@ -1484,7 +1482,7 @@ function cubeTextures() {
   if (CTEX) return CTEX;
   CTEX = {
     dark:  cSidingTex([74, 82, 92], 11),
-    light: cSidingTex([166, 172, 175], 23),
+    light: cSidingTex([128, 140, 158], 23),   // 淡色面もネイビー寄りのブルーグレー
     gravel: cSurface(256, 256, 31, (u, v, n) => cFbm(n, u * 74, v * 74, 2), (h) => { const g = .60 + h * .55; return [148 * g, 146 * g, 142 * g]; }, 9),
     conc:  cSurface(256, 256, 47, (u, v, n) => cFbm(n, u * 30, v * 30, 3) * .6 + cFbm(n, u * 120, v * 120, 2) * .4, (h) => { const g = .88 + h * .20; return [196 * g, 193 * g, 187 * g]; }, 3),
     tile:  cSurface(256, 256, 59, (u, v) => { const gx = Math.abs(((u * 2) % 1) - .5) < .022, gy = Math.abs(((v * 2) % 1) - .5) < .022; return (gx || gy) ? .15 : 1; }, (h) => { const g = .80 + h * .24; return [216 * g, 210 * g, 196 * g]; }, 8),
@@ -1591,7 +1589,7 @@ function buildCubeHouse() {
     const grp = new THREE.Group();
     const fr = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.07), CM.sash);
     const gl = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.10, h - 0.10), CM.glass);
-    gl.position.z = 0.02; fr.add(gl);
+    gl.position.z = 0.037; fr.add(gl);   // 枠(厚0.07)の前面より手前に出す
     const inner = new THREE.Mesh(new THREE.BoxGeometry(w - 0.10, h - 0.10, 0.02), new THREE.MeshStandardMaterial({ color: 0x11161b, roughness: .9 }));
     inner.position.z = -0.015; fr.add(inner);   // 凹みの奥面と重ねない
     grp.add(fr);
@@ -2591,7 +2589,8 @@ renderer.setSize(holder.clientWidth, holder.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 holder.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8d9aa5, 1.25));  // 天空光+地面反射。日陰側が黒く潰れないよう底上げ
+const hemiL = new THREE.HemisphereLight(0xffffff, 0x8d9aa5, 1.25);  // 天空光+地面反射。日陰側が黒く潰れないよう底上げ
+scene.add(hemiL);
 const dirL = new THREE.DirectionalLight(0xfff4e0, 1.1);
 dirL.position.set(10, 16, 8);
 scene.add(dirL);
@@ -2707,6 +2706,185 @@ const grid = new THREE.GridHelper(100, 100, 0x5c7a52, 0x6f8f63);
 grid.position.y = 0.025;   // 地面との間隔を確保してZファイティングを防ぐ
 scene.add(grid);
 
+/* ============================================================
+   ライティング — 従来 / 昼 / 夕方
+   ・トーンマッピング(ACES Filmic)で明暗を自然にまとめる
+   ・空のグラデーションを背景と環境光(IBL)に兼用し、ガラスや金物に映り込ませる
+   ・太陽光の影(PCFSoft)。影を落とす部材は表示状態に合わせて毎フレーム同期
+   ・夕方は室内の暖色光と窓ガラスの発光で「明かりの灯った家」にする
+============================================================ */
+const LIGHT_PRESETS = {
+  legacy: { label: "従来" },
+  day: {
+    label: "昼(写実)",
+    exposure: 0.7, envI: 0.9,
+    sun: { el: 42, az: -38, color: 0xfff1dc, i: 2.6 },
+    hemi: { sky: 0xd6e6ff, gnd: 0x6f7a58, i: 0.55 },
+    fill: 0.12, fill2: 0.0,
+    sky: { top: "#3f7fc9", mid: "#8fb8de", hor: "#d7e6ef", gnd: "#7b866a", glow: "rgba(255,248,225,0.55)" },
+    fog: [0xcfdde8, 50, 130],
+    glass: { emissive: 0x000000, ei: 0 },
+    interior: 0,
+  },
+  dusk: {
+    label: "夕方(写実)",
+    exposure: 0.9, envI: 0.8,
+    sun: { el: 7, az: -62, color: 0xffa060, i: 1.9 },
+    hemi: { sky: 0x7a8cc4, gnd: 0x4a4033, i: 0.7 },
+    fill: 0.10, fill2: 0.0,
+    sky: { top: "#1b2d5c", mid: "#5b6fa3", hor: "#f2a66b", gnd: "#2e3428", glow: "rgba(255,170,95,0.85)" },
+    fog: [0x8a8fa8, 40, 120],
+    glass: { emissive: 0xffb060, ei: 0.4 },   // 室内の明かりが窓に灯って見えるよう発光させる
+    interior: 5,
+  },
+};
+state.light = "day";
+
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;   // 静止した場面なので、影を落とす部材が変わった時だけ描き直す
+dirL.shadow.mapSize.set(4096, 4096);
+Object.assign(dirL.shadow.camera, { left: -20, right: 20, top: 20, bottom: -20, near: 1, far: 90 });
+dirL.shadow.bias = -0.0003;
+dirL.shadow.normalBias = 0.035;
+ground.receiveShadow = true;
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+const skyCache = {};
+function sunVec(el, az) {
+  const e = THREE.MathUtils.degToRad(el), a = THREE.MathUtils.degToRad(az);
+  return new THREE.Vector3(Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e));
+}
+// 正距円筒の空テクスチャ(天頂→地平→地面のグラデーション+太陽のにじみ)
+function skyTextures(key) {
+  if (skyCache[key]) return skyCache[key];
+  const p = LIGHT_PRESETS[key], W = 1024, H = 512;
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  const lg = g.createLinearGradient(0, 0, 0, H);
+  lg.addColorStop(0, p.sky.top); lg.addColorStop(0.3, p.sky.mid); lg.addColorStop(0.495, p.sky.hor);
+  lg.addColorStop(0.52, p.sky.gnd); lg.addColorStop(1, p.sky.gnd);
+  g.fillStyle = lg; g.fillRect(0, 0, W, H);
+  const s = sunVec(p.sun.el, p.sun.az);
+  const u = Math.atan2(s.z, s.x) / (2 * Math.PI) + 0.5, v = Math.asin(s.y) / Math.PI + 0.5;
+  const sx = u * W, sy = (1 - v) * H;
+  for (const dx of [-W, 0, W]) {   // 継ぎ目をまたいでも途切れないよう左右にも描く
+    const rg = g.createRadialGradient(sx + dx, sy, 0, sx + dx, sy, H * 0.45);
+    rg.addColorStop(0, p.sky.glow); rg.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = rg; g.fillRect(0, 0, W, H * 0.51);
+    g.fillStyle = "rgba(255,252,240,0.95)";
+    g.beginPath(); g.arc(sx + dx, sy, 5, 0, Math.PI * 2); g.fill();
+  }
+  const bg = new THREE.CanvasTexture(cv);
+  bg.mapping = THREE.EquirectangularReflectionMapping;
+  bg.colorSpace = THREE.SRGBColorSpace;
+  const env = pmrem.fromEquirectangular(bg).texture;
+  return (skyCache[key] = { bg, env });
+}
+
+// 室内の暖色光(2階分×4灯)。灯数を固定してシェーダーの再コンパイルを避ける
+const interiorLights = [];
+for (let i = 0; i < 8; i++) {
+  const pl = new THREE.PointLight(0xffc98a, 0, 6, 2);
+  scene.add(pl);
+  interiorLights.push(pl);
+}
+function placeInteriorLights(intensity) {
+  interiorLights.forEach((pl) => { pl.intensity = 0; });
+  if (!intensity || !modelGroup) return;
+  const bb = new THREE.Box3();
+  modelGroup.children.forEach((c) => { if (!(c.userData && c.userData.isSite)) bb.expandByObject(c); });
+  if (bb.isEmpty()) return;
+  const floors = (bb.max.y - bb.min.y) > 6.2 ? [2.4, 5.15] : [2.4];   // 基礎天端+天井付近
+  const xs = [0.28, 0.72].map((f) => THREE.MathUtils.lerp(bb.min.x, bb.max.x, f));
+  const zs = [0.3, 0.7].map((f) => THREE.MathUtils.lerp(bb.min.z, bb.max.z, f));
+  let n = 0;
+  floors.forEach((y) => xs.forEach((x) => zs.forEach((z) => {
+    const pl = interiorLights[n++];
+    pl.position.set(x, bb.min.y + y, z);
+    pl.intensity = intensity;
+  })));
+}
+
+// ガラスの判定(暗い青系で平滑な材質)。モデルごとに材質が異なるため色と粗さで見分ける
+const glassOrig = new Map();
+function isGlassMat(m) {
+  if (!m || !m.isMeshStandardMaterial || !m.color) return false;
+  const c = m.color;
+  return m.roughness <= 0.25 && c.b > c.r && (c.r + c.g + c.b) / 3 < 0.35;   // リニア値で判定
+}
+function applyGlass(p) {
+  const mats = new Set();
+  [modelGroup, envGroup].forEach((grp) => grp && grp.traverse((o) => {
+    const m = o.isMesh && (o.userData.baseMat || o.userData.origMat || o.material);
+    if (isGlassMat(m)) mats.add(m);
+  }));
+  glassOrig.forEach((_, m) => mats.add(m));
+  mats.forEach((m) => {
+    if (!glassOrig.has(m)) glassOrig.set(m, { transparent: m.transparent, opacity: m.opacity, emissive: m.emissive.getHex(), ei: m.emissiveIntensity, roughness: m.roughness, envI: m.envMapIntensity });
+    const o = glassOrig.get(m);
+    if (!p) {
+      Object.assign(m, { transparent: o.transparent, opacity: o.opacity, emissiveIntensity: o.ei, roughness: o.roughness, envMapIntensity: o.envI });
+      m.emissive.setHex(o.emissive);
+    } else {
+      Object.assign(m, { emissiveIntensity: p.glass.ei, roughness: 0.04, envMapIntensity: 1.6 });
+      m.emissive.setHex(p.glass.emissive);
+    }
+    m.needsUpdate = true;
+  });
+}
+
+function applyLighting() {
+  const key = state.light, p = LIGHT_PRESETS[key];
+  if (key === "legacy") {
+    renderer.toneMapping = THREE.NoToneMapping; renderer.toneMappingExposure = 1;
+    scene.background = new THREE.Color(0xdbe7ef);
+    scene.environment = null;
+    scene.fog.color.setHex(0xdbe7ef); scene.fog.near = 45; scene.fog.far = 95;
+    hemiL.color.setHex(0xffffff); hemiL.groundColor.setHex(0x8d9aa5); hemiL.intensity = 1.25;
+    dirL.color.setHex(0xfff4e0); dirL.intensity = 1.1; dirL.position.set(10, 16, 8); dirL.castShadow = false;
+    fillL.intensity = 0.60; fillL2.intensity = 0.35;
+    grid.layers.set(0);
+    ground.scale.set(1, 1, 1);
+    applyGlass(null);
+    placeInteriorLights(0);
+  } else {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = p.exposure;
+    const sky = skyTextures(key);
+    scene.background = sky.bg;
+    scene.environment = sky.env; scene.environmentIntensity = p.envI;
+    scene.fog.color.setHex(p.fog[0]); scene.fog.near = p.fog[1]; scene.fog.far = p.fog[2];
+    hemiL.color.setHex(p.hemi.sky); hemiL.groundColor.setHex(p.hemi.gnd); hemiL.intensity = p.hemi.i;
+    dirL.color.setHex(p.sun.color); dirL.intensity = p.sun.i;
+    dirL.position.copy(sunVec(p.sun.el, p.sun.az).multiplyScalar(45));
+    dirL.castShadow = true;
+    fillL.intensity = p.fill; fillL2.intensity = p.fill2;
+    grid.layers.set(1);            // カメラは layer 0 のみ描画 → CAD風のグリッドを隠す
+    ground.scale.set(4, 4, 1);     // 地平線まで地面を続ける
+    applyGlass(p);
+    placeInteriorLights(p.interior);
+  }
+  shadowSig = null;
+}
+
+// 影を落とす部材を表示状態に合わせる(透過表示・淡色化中の外装は影を落とさない)
+let shadowSig = null;
+function syncShadows() {
+  if (state.light === "legacy") return;
+  let sig = 17;
+  const visit = (o) => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    const cast = !(m.transparent && m.opacity < 0.6) && !(m.isMeshBasicMaterial);
+    o.castShadow = cast;
+    o.receiveShadow = true;
+    if (cast) sig = (sig * 31 + o.id) | 0;
+  };
+  if (modelGroup) modelGroup.traverseVisible(visit);
+  if (envGroup.visible) envGroup.traverseVisible(visit);
+  if (sig !== shadowSig) { shadowSig = sig; renderer.shadowMap.needsUpdate = true; }
+}
+
 const orbit = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 14, target: new THREE.Vector3(0, 1.8, 0) };
 let modelGroup = null, currentDef = null, markerMeshes = [];
 const raycaster = new THREE.Raycaster();
@@ -2734,6 +2912,7 @@ function rebuild(resetCam) {
   updateFlood();
   modelGroup = currentDef.group;
   scene.add(modelGroup);
+  applyLighting();
 
   buildMemberColors();
   if (state.detailParts) currentDef.members = buildDetailedMembers();
@@ -3374,6 +3553,7 @@ function makeStainTex(kind) {
   }
   ctx.putImageData(id, 0, 0);
   const tx = new THREE.CanvasTexture(cv);
+  tx.colorSpace = THREE.SRGBColorSpace;
   tx.wrapS = THREE.RepeatWrapping; tx.wrapT = THREE.ClampToEdgeWrapping;
   return tx;
 }
@@ -3791,6 +3971,11 @@ dom.addEventListener("click", (e) => {
 window.addEventListener("keydown", (e) => {
   if (e.code === "KeyF" && !e.repeat) { setWalk(!state.walk); e.preventDefault(); return; }
   if (e.code === "KeyM" && !e.repeat) { setMeasure(!state.measure); e.preventDefault(); return; }
+  if (e.code === "KeyL" && !e.repeat) {
+    const ks = Object.keys(LIGHT_PRESETS);
+    state.light = ks[(ks.indexOf(state.light) + 1) % ks.length];
+    applyLighting(); renderPanel(); e.preventDefault(); return;
+  }
   if (!state.walk) return;
   walkState.keys[e.code] = true;
   if (["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
@@ -3835,6 +4020,18 @@ function renderPanel() {
 
   // 階数
   // 建物モデル
+  // ライティング
+  const secLight = el("div", "section", "<h2>ライティング</h2>");
+  const rowLt = el("div", "btn-row");
+  Object.entries(LIGHT_PRESETS).forEach(([k, p]) => {
+    const b = el("button", "btn" + (state.light === k ? " active" : ""), p.label);
+    b.addEventListener("click", () => { state.light = k; applyLighting(); renderPanel(); });
+    rowLt.appendChild(b);
+  });
+  secLight.appendChild(rowLt);
+  secLight.appendChild(el("div", "legend-cap", "「昼」「夕方」はトーンマッピング・空の環境光(映り込み)・太陽の影を加えた写実表示です。夕方は室内に明かりが灯ります。<b>L</b>キーで切替。「従来」は影のない均一な照明で、部材の確認に向きます。"));
+  panel.appendChild(secLight);
+
   const secModel = el("div", "section", "<h2>建物モデル</h2>");
   const rowMd = el("div", "btn-row");
   [["standard", "標準(木造在来)"], ["wafu", "和風住宅(入母屋)"], ["cube", "キューブ型(写真再現)"]].forEach(([k, lb]) => {
@@ -4143,6 +4340,7 @@ function animate() {
   updateMeasure();
   hlMat.emissiveIntensity = 0.35 + 0.3 * Math.sin(performance.now() * 0.004);
   dimHlMat.emissiveIntensity = 0.5 + 0.3 * Math.sin(performance.now() * 0.004);
+  syncShadows();
   renderer.render(scene, camera);
   updateLabelPositions();
   requestAnimationFrame(animate);
