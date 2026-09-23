@@ -195,6 +195,7 @@ const PART_COLORS = {
   "床":            "#65a30d",
   "基礎":          "#64748b",
   "附帯設備":      "#0891b2",
+  "家具類":        "#7c3aed",
 };
 const partMatCache = {};
 function partMat(part, translucent) {
@@ -1985,10 +1986,38 @@ const STD_PLAN = (() => {
     O(2, "N",  0.00, 1.40, 1.00, 0.95, "koshi", "窓(2階)", "rouka2"),
   ];
 
+  // 家具類(部屋の用途に合わせた配置)。at は家具の中心、face は家具の正面(座る側・使う側)の向き。
+  // 窓・建具の前と動線をふさがないよう置く。家具類は建物とは別の共済目的
+  const F = (room, type, x, z, face) => ({ room, type, at: [x, z], face });
+  const furniture = [
+    // LDK: 西の壁のキッチン脇に冷蔵庫、キッチン前にダイニング、東側にリビング(テレビは北の壁、ソファは南の窓を背に)
+    F("ldk", "fridge", -4.10, -0.05, "E"),
+    F("ldk", "diningSet", -2.20, 1.30, "E"),
+    F("ldk", "rug", 1.55, 1.75, "S"),
+    F("ldk", "lowTable", 1.55, 1.65, "S"),
+    F("ldk", "sofa3", 1.55, 2.78, "N"),
+    F("ldk", "tvBoard", 1.72, -0.55, "S"),
+    // 和室: 座卓と座布団、西の壁に箪笥(押入の前は空ける)
+    F("washitsu", "zataku", -2.00, -1.85, "S"),
+    F("washitsu", "tansu", -4.20, -1.60, "E"),
+    // 2階 洋室A(主寝室): 西の壁を頭にダブルベッドとナイトテーブル、東の壁に机とチェスト
+    F("yoA", "bedDouble", -3.39, 1.00, "E"),
+    F("yoA", "nightstand", -4.225, -0.05, "E"),
+    F("yoA", "nightstand", -4.225, 2.05, "E"),
+    F("yoA", "desk", -0.34, 2.40, "W"),
+    F("yoA", "tansu", -0.26, 0.30, "W"),
+    // 2階 洋室B(子ども部屋): 東の壁にシングルベッド、西の壁に机と本棚
+    F("yoB", "bedSingle", 2.02, 0.05, "S"),
+    F("yoB", "desk", 0.335, 1.80, "E"),
+    F("yoB", "bookshelf", 0.185, 0.40, "E"),
+    // 2階 北側廊下: 本棚
+    F("rouka2", "bookshelf", -3.50, -3.39, "S"),
+  ];
+
   const floorY = (f) => f === 1 ? foundH + 0.16 : foundH + storyH + 0.12;   // 床仕上げ面の高さ
   const ceilY = (f, stories) => f === 1 ? foundH + (stories === 1 ? 2.42 : 2.56) : foundH + storyH + 2.56;   // 天井の高さ(1階は階数で変わる)
   const roomArea = (r) => (r.rect[1] - r.rect[0]) * (r.rect[3] - r.rect[2]);
-  return { W, D, foundH, storyH, iX0, iX1, iZ0, iZ1, G, stair, rooms, partitions, openings, floorY, ceilY, roomArea };
+  return { W, D, foundH, storyH, iX0, iX1, iZ0, iZ1, G, stair, rooms, partitions, openings, furniture, floorY, ceilY, roomArea };
 })();
 
 /* 外壁の面ごとの座標(u=面に沿った向き。S/N は x、E/W は z) */
@@ -2122,6 +2151,109 @@ function amadoMesh(w, h, side, M) {
   parts.push([boxGeo(rl, 0.035, 0.11, rc, -h / 2 - 0.0175, 0.055), M.frame]);
   return mergeGeoms(parts);
 }
+/* 家具類。ローカル座標は原点=床面の中心、+z=正面(座る側・使う側)、x=幅。1点を1メッシュにまとめる */
+let _furnM = null;
+function furnMats() {
+  if (_furnM) return _furnM;
+  const S = (color, roughness = 0.7, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
+  _furnM = {
+    wood: S(0xa47b54, 0.6), woodDark: S(0x5b4332, 0.55), white: S(0xefeee9, 0.4), metal: S(0xb9bdc1, 0.35, 0.6),
+    fabric: S(0x74828e, 0.95), fabric2: S(0x86939e, 0.95), rug: S(0xcbb99c, 1.0), screen: S(0x16181b, 0.25, 0.2),
+    sheet: S(0xf4f2ec, 0.9), cover: S(0x9db0c4, 0.95), zabuton: S(0x8a3d35, 0.9), lamp: S(0xf2e8d2, 0.6),
+    gap: S(0x9a9a96, 0.6), book1: S(0x6c7f99, 0.8), book2: S(0xa25e4b, 0.8), book3: S(0xd2c29a, 0.8),
+  };
+  return _furnM;
+}
+const FURNITURE = {
+  fridge: { member: "家具類(冷蔵庫)", build(P, M) {
+    P(0.68, 1.80, 0.66, 0, 0.90, 0, M.white);
+    P(0.66, 0.008, 0.01, 0, 1.20, 0.332, M.gap);                  // 冷蔵室と冷凍室の境
+    P(0.03, 0.46, 0.03, -0.27, 1.48, 0.35, M.metal); P(0.03, 0.36, 0.03, -0.27, 0.86, 0.35, M.metal);
+  } },
+  diningSet: { member: "家具類(ダイニングセット)", build(P, M) {
+    P(1.40, 0.035, 0.80, 0, 0.72, 0, M.wood);
+    [[-0.64, -0.34], [0.64, -0.34], [-0.64, 0.34], [0.64, 0.34]].forEach(([x, z]) => P(0.05, 0.70, 0.05, x, 0.35, z, M.wood));
+    [-0.35, 0.35].forEach((sx) => [-1, 1].forEach((sz) => {        // 椅子4脚(テーブルの長辺に向かい合わせ)
+      const cz = sz * 0.58;
+      P(0.42, 0.04, 0.42, sx, 0.44, cz, M.wood);
+      [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]].forEach(([x, z]) => P(0.03, 0.42, 0.03, sx + x, 0.21, cz + z, M.wood));
+      P(0.42, 0.40, 0.03, sx, 0.66, cz + sz * 0.195, M.wood);
+    }));
+  } },
+  sofa3: { member: "家具類(ソファ)", build(P, M) {
+    P(1.90, 0.22, 0.85, 0, 0.17, 0, M.fabric);
+    P(1.90, 0.46, 0.20, 0, 0.51, -0.325, M.fabric);
+    [-0.87, 0.87].forEach((x) => P(0.16, 0.30, 0.85, x, 0.43, 0, M.fabric));
+    [-0.535, 0, 0.535].forEach((x) => {
+      P(0.52, 0.12, 0.62, x, 0.34, 0.07, M.fabric2);               // 座面クッション
+      P(0.52, 0.36, 0.13, x, 0.60, -0.17, M.fabric2);              // 背クッション
+    });
+    [[-0.85, -0.35], [0.85, -0.35], [-0.85, 0.35], [0.85, 0.35]].forEach(([x, z]) => P(0.05, 0.06, 0.05, x, 0.03, z, M.woodDark));
+  } },
+  lowTable: { member: "家具類(ローテーブル)", build(P, M) {
+    P(1.00, 0.04, 0.50, 0, 0.36, 0, M.wood);
+    [[-0.46, -0.21], [0.46, -0.21], [-0.46, 0.21], [0.46, 0.21]].forEach(([x, z]) => P(0.04, 0.34, 0.04, x, 0.17, z, M.wood));
+  } },
+  rug: { member: "家具類(ラグ)", build(P, M) { P(2.00, 0.012, 1.60, 0, 0.006, 0, M.rug); } },
+  tvBoard: { member: "家具類(テレビ・テレビ台)", build(P, M) {
+    P(1.60, 0.42, 0.40, 0, 0.21, 0, M.woodDark);
+    P(1.56, 0.006, 0.01, 0, 0.21, 0.201, M.gap);                  // 引出しの目地
+    P(0.30, 0.03, 0.20, 0, 0.435, -0.02, M.screen);                // テレビのスタンド
+    P(0.06, 0.08, 0.05, 0, 0.49, -0.02, M.screen);
+    P(1.23, 0.71, 0.045, 0, 0.88, -0.02, M.screen);                // 50型相当
+  } },
+  zataku: { member: "家具類(座卓・座布団)", build(P, M) {
+    P(1.20, 0.05, 0.75, 0, 0.31, 0, M.woodDark);
+    [[-0.53, -0.30], [0.53, -0.30], [-0.53, 0.30], [0.53, 0.30]].forEach(([x, z]) => P(0.07, 0.29, 0.07, x, 0.145, z, M.woodDark));
+    [-0.3, 0.3].forEach((x) => [-0.62, 0.62].forEach((z) => P(0.55, 0.07, 0.55, x, 0.035, z, M.zabuton)));
+  } },
+  tansu: { member: "家具類(たんす・チェスト)", build(P, M) {
+    P(1.00, 1.10, 0.45, 0, 0.55, 0, M.wood);
+    [0.30, 0.56, 0.82].forEach((y) => P(0.96, 0.008, 0.01, 0, y, 0.226, M.woodDark));   // 引出しの目地
+    [0.17, 0.43, 0.69, 0.95].forEach((y) => [-0.25, 0.25].forEach((x) => P(0.10, 0.02, 0.02, x, y, 0.235, M.metal)));
+  } },
+  bedDouble: { member: "家具類(ベッド)", build(P, M) { bedParts(P, M, 1.40); } },
+  bedSingle: { member: "家具類(ベッド)", build(P, M) { bedParts(P, M, 0.98); } },
+  nightstand: { member: "家具類(ナイトテーブル)", build(P, M) {
+    P(0.45, 0.50, 0.40, 0, 0.25, 0, M.wood);
+    P(0.41, 0.008, 0.01, 0, 0.30, 0.201, M.woodDark);
+    P(0.05, 0.16, 0.05, 0, 0.58, 0, M.metal); P(0.22, 0.20, 0.22, 0, 0.76, 0, M.lamp);   // スタンドライト
+  } },
+  desk: { member: "家具類(机・椅子)", build(P, M) {
+    P(1.00, 0.03, 0.60, 0, 0.72, 0, M.wood);
+    [-0.485, 0.485].forEach((x) => P(0.03, 0.705, 0.58, x, 0.3525, -0.01, M.wood));
+    P(0.94, 0.30, 0.02, 0, 0.55, -0.29, M.wood);                  // 幕板
+    // 回転椅子(机の前)
+    P(0.50, 0.03, 0.50, 0, 0.015, 0.50, M.screen); P(0.06, 0.40, 0.06, 0, 0.23, 0.50, M.metal);
+    P(0.46, 0.07, 0.46, 0, 0.465, 0.50, M.fabric); P(0.44, 0.46, 0.06, 0, 0.76, 0.72, M.fabric);
+  } },
+  bookshelf: { member: "家具類(本棚)", build(P, M) {
+    [-0.44, 0.44].forEach((x) => P(0.02, 1.80, 0.30, x, 0.90, 0, M.wood));
+    P(0.90, 1.80, 0.01, 0, 0.90, -0.145, M.wood);
+    for (let i = 0; i < 6; i++) P(0.86, 0.02, 0.28, 0, 0.01 + i * 0.354, 0, M.wood);
+    const books = [M.book1, M.book2, M.book3];
+    for (let i = 0; i < 5; i++) {                                   // 段ごとに本を並べる(幅は段で変える)
+      const y0 = 0.02 + i * 0.354, n = 8 + (i * 3) % 5;
+      for (let k = 0; k < n; k++) {
+        const h = 0.20 + ((k * 7 + i * 3) % 5) * 0.02;
+        P(0.035, h, 0.20, -0.40 + k * 0.042 + (i % 2) * 0.1, y0 + h / 2 + 0.01, 0.02, books[(k + i) % 3]);
+      }
+    }
+  } },
+};
+function bedParts(P, M, w) {
+  P(w + 0.06, 0.28, 2.05, 0, 0.14, 0, M.wood);                    // フレーム
+  P(w, 0.20, 1.95, 0, 0.38, 0.02, M.sheet);                        // マットレス
+  P(w + 0.06, 0.85, 0.06, 0, 0.425, -1.0, M.wood);                 // ヘッドボード
+  (w > 1.2 ? [-w / 4, w / 4] : [0]).forEach((x) => P(0.58, 0.10, 0.38, x, 0.53, -0.72, M.sheet));   // 枕
+  P(w + 0.04, 0.08, 1.35, 0, 0.52, 0.30, M.cover);                 // 掛け布団
+}
+function buildFurniture(type) {
+  const def = FURNITURE[type], M = furnMats(), parts = [];
+  def.build((w, h, d, x, y, z, mat) => parts.push([boxGeo(w, h, d, x, y, z), mat]), M);
+  return { mesh: mergeGeoms(parts), member: def.member };
+}
+
 // 玄関ドアの木目(キューブ型の木目テクスチャを縦目にして使う)
 let _doorWood = null;
 function doorWoodMaterial() {
@@ -2775,6 +2907,18 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     IN(box(0.06, 0.90, holeZ1 - holeZ0, MI.tategu, xCor + 0.05, f2 + 0.45, (holeZ0 + holeZ1) / 2), "階段");
   }
 
+  /* ---- 家具類(設計情報の furniture。部屋の用途に合わせて置く) ---- */
+  const FACE_ROT = { S: 0, N: Math.PI, E: Math.PI / 2, W: -Math.PI / 2 };
+  STD_PLAN.furniture.forEach((it) => {
+    const room = STD_PLAN.rooms.find((r) => r.id === it.room);
+    if (!room || room.floor > n) return;
+    const top = room.floor === 2 ? 0.04 : (room.finish === "畳" ? 0.041 : 0.03);   // 床仕上げの上面
+    const { mesh, member } = buildFurniture(it.type);
+    mesh.position.set(it.at[0], STD_PLAN.floorY(room.floor) + top, it.at[1]);
+    mesh.rotation.y = FACE_ROT[it.face];
+    g.add(tag(mesh, "家具類", member, "int"));
+  });
+
   /* ---- マーカー・寸法 ---- */
   const roofNotes = {
     kiritsuma: "風災では葺き材のめくれ・ずれ・飛散、雹災では割れ・貫通痕、雪害では変形が代表的な損害。棟部(棟瓦・棟板金)は風の影響を最も受けやすい部位です。",
@@ -2805,6 +2949,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     { key:"yuka",  name:"床(フローリング・畳・タイル)", pos:[-2.4, foundH + 0.5, -1.8], note:"水災では浸水深(床下浸水/床上浸水)が損害額算定の基礎になります。フローリングの反り・浮き、畳の濡れ(畳は水を吸うと再使用できず入替えになります)、水回りのタイルの浮きを、室ごとに確認します。" },
     { key:"zosaku", name:"内部造作・住宅設備", pos:[-2.3, foundH + 1.5, -0.2], note:"内部建具・押入・システムキッチン・ユニットバス・洗面化粧台・便器など。建物共済ではこれらの造作・設備は建物に含めて評価されるのが一般的です。浸水では床上何cmまで水が来たかで、キッチン下部やユニットバスの機器の交換要否が変わります。" },
     { key:"setsubi", name:"附帯設備(エコキュート・室外機等)", pos:[0, 2.4, -(D / 2 + 1.1)], note:"建物共済では電気・ガス・水道・冷暖房などの附帯設備は建物に含めて加入・評価されるのが一般的です。エコキュート(貯湯タンク・ヒートポンプ)や室外機は、風災での転倒・飛来物衝突、水災での冠水、雪害での落雪による変形を確認します。給排水設備の事故による水濡れも火災共済の対象事故の例に挙げられます。" },
+    { key:"kazai", name:"家具類(家財)", pos:[1.55, foundH + 1.3, 1.9], note:"ソファ・テーブル・ベッド・家電などの家具類。NOSAIの建物共済では、家具類は建物とは別の共済目的として加入します(システムキッチン・ユニットバス・押入など建物に造り付けたものは建物に含みます)。損害の記録では建物と家具類を区別し、水災では床上浸水の深さと家具類の置かれた高さの関係を確認します。" },
   ];
   if (roofShape !== "rikuyane") {
     const hafuPos = {
@@ -3251,6 +3396,7 @@ const MEMBER_TARGETS = {
   naiso:   ["内壁(クロス)", "天井", "幅木"],
   yuka:    ["床(フローリング)", "床(畳)", "床(タイル)", "床(2階フローリング)", "玄関土間", "上がり框"],
   zosaku:  ["内部建具(開き戸)", "内部建具(引戸)", "内部建具(折れ戸)", "襖", "建具枠", "押入", "システムキッチン", "浴槽(ユニットバス)", "洗面化粧台", "洗濯機置場", "便器", "玄関収納"],
+  kazai:   ["家具類(冷蔵庫)", "家具類(ダイニングセット)", "家具類(ソファ)", "家具類(ローテーブル)", "家具類(ラグ)", "家具類(テレビ・テレビ台)", "家具類(座卓・座布団)", "家具類(たんす・チェスト)", "家具類(ベッド)", "家具類(ナイトテーブル)", "家具類(机・椅子)", "家具類(本棚)"],
   setsubi: ["エコキュート(貯湯タンク)","エコキュート(ヒートポンプ)","エコキュート(基礎)","エコキュート(配管)","室外機","立水栓","電気メーター"],
   doushi:  ["胴差し", "床梁(2階床組)"],
   kaidan:  ["階段"],
@@ -3345,8 +3491,9 @@ const DETAIL_NOTES = {
   "便器": "浸水では給排水設備への影響も含めて確認します。",
   "階段": "内部造作。浸水や消火活動による水濡れの影響を受けやすい動線部位です。",
 };
-const DETAIL_FALLBACK = (name, part, count) =>
-  `${part ? part + "の" : ""}部材「${name}」。損傷の有無・範囲を確認し、修理費(復旧に必要な額)を新調達価額の範囲で見積もります。`;
+const DETAIL_FALLBACK = (name, part, count) => part === "家具類"
+  ? `家具類「${name.replace(/^家具類\(|\)$/g, "")}」。建物とは別の共済目的です。損傷の有無・程度を確認し、建物の損害と区別して記録します。`
+  : `${part ? part + "の" : ""}部材「${name}」。損傷の有無・範囲を確認し、修理費(復旧に必要な額)を新調達価額の範囲で見積もります。`;
 
 /* ============================================================
    部材の個別分割: モデルの実データから部材名ごとにエントリを自動生成
