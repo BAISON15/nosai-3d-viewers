@@ -94,6 +94,25 @@
   #meas-hud .mh small { font-size: 12px; color: #94a3b8; }
   #meas-hud .mt { font-size: 11px; color: #cbd5e1; margin-top: 3px; }
   .legend-cap { font-size: 10px; color: #94a3b8; margin-top: 4px; line-height: 1.5; }
+  details.plan-sec > summary { cursor: pointer; list-style: none; margin-bottom: 8px; }
+  details.plan-sec > summary::-webkit-details-marker { display: none; }
+  details.plan-sec > summary h2 { display: inline; margin: 0; }
+  details.plan-sec > summary::before { content: "▸ "; font-size: 10px; color: #64748b; }
+  details.plan-sec[open] > summary::before { content: "▾ "; }
+  .plan-svg { border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin: 6px 0; }
+  .plan-tbl { width: 100%; border-collapse: collapse; font-size: 10.5px; color: #334155; margin: 4px 0 8px; }
+  .plan-tbl th { font-weight: 600; color: #64748b; text-align: left; padding: 3px 4px; border-bottom: 1px solid #cbd5e1; }
+  .plan-tbl td { padding: 3px 4px; border-bottom: 1px solid #eef2f6; vertical-align: top; }
+  .plan-tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .plan-tbl .sub { display: block; font-size: 9px; color: #94a3b8; }
+  .plan-tbl tr.hl td { background: #fef3c7; }
+  .plan-tbl tfoot td { font-weight: 600; border-top: 1px solid #cbd5e1; border-bottom: none; }
+  .plan-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .plan-overlay-box { background: #fff; border-radius: 10px; padding: 14px 16px; width: min(1150px, 100%); max-height: 92vh; overflow: auto; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+  .plan-overlay-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; color: #0f172a; }
+  .plan-overlay-head span { font-size: 11px; color: #64748b; flex: 1; }
+  .plan-overlay-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .plan-col h3 { font-size: 12px; margin: 0 0 4px; color: #334155; }
 
   .note-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; color: #475569; line-height: 1.7; margin-top: 4px; }
   .note-box .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
@@ -1967,8 +1986,9 @@ const STD_PLAN = (() => {
   ];
 
   const floorY = (f) => f === 1 ? foundH + 0.16 : foundH + storyH + 0.12;   // 床仕上げ面の高さ
+  const ceilY = (f, stories) => f === 1 ? foundH + (stories === 1 ? 2.42 : 2.56) : foundH + storyH + 2.56;   // 天井の高さ(1階は階数で変わる)
   const roomArea = (r) => (r.rect[1] - r.rect[0]) * (r.rect[3] - r.rect[2]);
-  return { W, D, foundH, storyH, iX0, iX1, iZ0, iZ1, G, stair, rooms, partitions, openings, floorY, roomArea };
+  return { W, D, foundH, storyH, iX0, iX1, iZ0, iZ1, G, stair, rooms, partitions, openings, floorY, ceilY, roomArea };
 })();
 
 /* 外壁の面ごとの座標(u=面に沿った向き。S/N は x、E/W は z) */
@@ -2582,7 +2602,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   const IN = (m, member, part) => { g.add(tag(m, part || "内装", member, "int")); return m; };
   const { iX0, iX1, iZ0, iZ1 } = STD_PLAN;
   const f1 = STD_PLAN.floorY(1);
-  const c1 = foundH + (n === 1 ? 2.42 : 2.56);
+  const c1 = STD_PLAN.ceilY(1, n);
   const ih1 = c1 - f1;
 
   /* 間取りの基準線(設計情報 STD_PLAN.G。造作・幅木の割付に使う) */
@@ -2715,7 +2735,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   /* ---- 内装(2階)+階段 ---- */
   if (n === 2) {
     const f2 = foundH + storyH + 0.12;
-    const c2 = foundH + storyH + 2.56;
+    const c2 = STD_PLAN.ceilY(2, n);
     const ih2 = c2 - f2;
     const ST = STD_PLAN.stair;
     const nStep = ST.nStep, run2 = ST.run, rise2 = (f2 - f1) / nStep;
@@ -2834,6 +2854,8 @@ const state = {
   selectedDim: null,
   dmgScenario: "none",   // none | wind | hail | snow | flood
   dmgSeed: 1,
+  planFloor: 1,       // 平面図で表示する階
+  planOpen: false,    // 平面図・面積表の欄を開いているか
 };
 
 const holder = document.getElementById("canvas-holder");
@@ -4302,6 +4324,196 @@ document.getElementById("reset-view").addEventListener("click", () => {
    パネル
 ============================================================ */
 const panel = document.getElementById("panel");
+
+/* ============================================================
+   間取り(平面図・面積表) — 設計情報 STD_PLAN から描く
+   面積は室内側の仕上げ面(内法)による概算。壁面積は壁のある辺の長さ × 天井高から、
+   外部の開口部(窓・玄関戸)と室内建具の開口を差し引く(クロス張替え面積の目安)
+============================================================ */
+const JO = 1.62;                 // 1帖あたりの面積(㎡)。不動産表示の基準
+const FINISH_FILL = { "フローリング": "#f1e2c6", "畳": "#dde5b4", "タイル": "#d9e2e8", "土間": "#d4d0c8", "吹抜け": "#ffffff" };
+function planAreas(stories) {
+  const P = STD_PLAN, eps = 0.02;
+  const ext = { x: [P.iX0, P.iX1], z: [P.iZ0, P.iZ1] };
+  const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+  return P.rooms.filter((r) => r.floor <= stories).map((r) => {
+    const [x0, x1, z0, z1] = r.rect;
+    const area = P.roomArea(r);
+    if (r.finish === "吹抜け") return { room: r, area, wall: 0, ch: 0, openings: 0 };
+    const ch = P.ceilY(r.floor, stories) - 0.02 - P.floorY(r.floor);
+    const sides = [
+      { axis: "z", at: z0, a: x0, b: x1 }, { axis: "z", at: z1, a: x0, b: x1 },
+      { axis: "x", at: x0, a: z0, b: z1 }, { axis: "x", at: x1, a: z0, b: z1 },
+    ];
+    let walled = 0, doorArea = 0;
+    sides.forEach((s) => {
+      if (ext[s.axis].some((v) => Math.abs(v - s.at) < eps)) { walled += s.b - s.a; return; }   // 外壁側
+      P.partitions.filter((p) => p.floor === r.floor && p.axis === s.axis && Math.abs(p.at - s.at) < 0.05).forEach((p) => {
+        walled += overlap(s.a, s.b, p.from, p.to);
+        p.doors.forEach((d) => { doorArea += overlap(s.a, s.b, d.a, d.b) * Math.min(2.02, ch); });
+      });
+    });
+    const extOpen = P.openings.filter((o) => o.floor <= stories && o.room === r.id)
+      .reduce((sum, o) => sum + o.w * Math.min(o.h, ch - Math.max(0, o.sill)), 0);
+    const gross = walled * ch;
+    return { room: r, area, ch, wallGross: gross, openings: extOpen + doorArea, wall: Math.max(0, gross - extOpen - doorArea) };
+  });
+}
+/* 平面図(SVG)。北が上。widthPx: 図の幅(px) */
+function planSVG(floor, stories, widthPx, hoverId) {
+  const P = STD_PLAN, m = 0.9;
+  const s = widthPx / (P.W + 2 * m);
+  const X = (x) => ((x + P.W / 2 + m) * s).toFixed(1), Z = (z) => ((z + P.D / 2 + m) * s).toFixed(1);
+  const L = (v) => (v * s).toFixed(1);
+  const H = (P.D + 2 * m) * s;
+  const out = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx.toFixed(0)} ${H.toFixed(0)}" width="100%" style="display:block;background:#fff;font-family:inherit">`);
+  // 外壁(外周の芯から内外へ)
+  out.push(`<rect x="${X(-P.W / 2 - 0.085)}" y="${Z(-P.D / 2 - 0.085)}" width="${L(P.W + 0.17)}" height="${L(P.D + 0.17)}" fill="#334155"/>`);
+  // 部屋(床仕上げ別の塗り)
+  const areas = planAreas(stories);
+  P.rooms.filter((r) => r.floor === floor).forEach((r) => {
+    const [x0, x1, z0, z1] = r.rect;
+    const hl = hoverId === r.id;
+    out.push(`<rect data-room="${r.id}" x="${X(x0)}" y="${Z(z0)}" width="${L(x1 - x0)}" height="${L(z1 - z0)}" fill="${hl ? "#fde68a" : FINISH_FILL[r.finish] || "#eee"}" style="cursor:default"/>`);
+    if (r.finish === "吹抜け") {
+      out.push(`<path d="M${X(x0)} ${Z(z0)}L${X(x1)} ${Z(z1)}M${X(x1)} ${Z(z0)}L${X(x0)} ${Z(z1)}" stroke="#94a3b8" stroke-width="0.8" fill="none"/>`);
+    }
+    if (r.finish === "畳") {   // 畳割り(2×3枚)
+      const mw = (x1 - x0) / 2, ml = (z1 - z0) / 3;
+      let d = `M${X(x0 + mw)} ${Z(z0)}L${X(x0 + mw)} ${Z(z1)}`;
+      for (let k = 1; k < 3; k++) d += `M${X(x0)} ${Z(z0 + ml * k)}L${X(x1)} ${Z(z0 + ml * k)}`;
+      out.push(`<path d="${d}" stroke="#a3ad78" stroke-width="0.8" fill="none"/>`);
+    }
+  });
+  // 階段(1階は踏面の線と上り方向の矢印)
+  const ST = P.stair, sx0 = (ST.x0 + ST.x1) / 2 - 0.5, sx1 = sx0 + 1.0;
+  if (floor === 1 && stories === 2) {
+    let d = "";
+    for (let i = 0; i <= ST.nStep; i++) { const z = ST.zBottom + ST.run / 2 - ST.run * i; d += `M${X(sx0)} ${Z(z)}L${X(sx1)} ${Z(z)}`; }
+    d += `M${X(sx0)} ${Z(ST.zTop - ST.run / 2)}L${X(sx0)} ${Z(ST.zBottom + ST.run / 2)}M${X(sx1)} ${Z(ST.zTop - ST.run / 2)}L${X(sx1)} ${Z(ST.zBottom + ST.run / 2)}`;
+    out.push(`<path d="${d}" stroke="#64748b" stroke-width="0.7" fill="none"/>`);
+    const cx = X((sx0 + sx1) / 2);
+    out.push(`<path d="M${cx} ${Z(ST.zBottom)}L${cx} ${Z(ST.zTop)}" stroke="#0f172a" stroke-width="1.2" marker-end="url(#arr)"/>`);
+    out.push(`<text x="${cx}" y="${(+Z(ST.zBottom) + 11).toFixed(1)}" font-size="${Math.max(8, s * 0.26).toFixed(0)}" text-anchor="middle" fill="#0f172a">上</text>`);
+  }
+  // 間仕切り(建具の位置は空け、建具記号を描く)
+  const wT = Math.max(2.2, s * 0.08);
+  const doorSym = [];
+  P.partitions.filter((p) => p.floor === floor).forEach((p) => {
+    const seg = (a, b) => {
+      if (b - a <= 0.01) return;
+      out.push(p.axis === "x"
+        ? `<line x1="${X(p.at)}" y1="${Z(a)}" x2="${X(p.at)}" y2="${Z(b)}" stroke="#334155" stroke-width="${wT}"/>`
+        : `<line x1="${X(a)}" y1="${Z(p.at)}" x2="${X(b)}" y2="${Z(p.at)}" stroke="#334155" stroke-width="${wT}"/>`);
+    };
+    let cur = p.from;
+    [...p.doors].sort((d1, d2) => d1.a - d2.a).forEach((d) => {
+      seg(cur, d.a); cur = d.b;
+      const w = d.b - d.a;
+      const pt = (u, v) => p.axis === "x" ? [X(p.at + v), Z(u)] : [X(u), Z(p.at + v)];
+      if (d.kind === "hiraki") {   // 開き戸: 戸板と開きの円弧(廊下・前室側へ)
+        const [ax, ay] = pt(d.a, 0), [bx, by] = pt(d.a, w), [cx, cy] = pt(d.b, 0);
+        doorSym.push(`<path d="M${ax} ${ay}L${bx} ${by}A${L(w)} ${L(w)} 0 0 1 ${cx} ${cy}" stroke="#475569" stroke-width="0.8" fill="none"/>`);
+      } else {                     // 引戸・襖・折れ戸: 2本の建具線
+        const [a1x, a1y] = pt(d.a, -0.03), [b1x, b1y] = pt(d.a + w * 0.55, -0.03);
+        const [a2x, a2y] = pt(d.a + w * 0.45, 0.03), [b2x, b2y] = pt(d.b, 0.03);
+        doorSym.push(`<path d="M${a1x} ${a1y}L${b1x} ${b1y}M${a2x} ${a2y}L${b2x} ${b2y}" stroke="#475569" stroke-width="1.4" fill="none"/>`);
+      }
+    });
+    seg(cur, p.to);
+  });
+  out.push(...doorSym);
+  // 外部の開口部(窓は3本線、玄関戸は開きの円弧)
+  P.openings.filter((o) => o.floor === floor && o.floor <= stories).forEach((o) => {
+    const sn = o.face === "S" || o.face === "N", sgn = sn ? FACE[o.face].nz : FACE[o.face].nx;
+    const c = (sn ? P.D : P.W) / 2;
+    const a = o.at - o.w / 2, b = o.at + o.w / 2;
+    const rx = sn ? X(a) : X(c * sgn - 0.085), ry = sn ? Z(c * sgn - 0.085) : Z(a);
+    out.push(`<rect x="${rx}" y="${ry}" width="${sn ? L(o.w) : L(0.17)}" height="${sn ? L(0.17) : L(o.w)}" fill="#fff"/>`);
+    if (o.kind === "door" && !sn) {
+      const hx = X(sgn * (c + 0.085)), hz0 = Z(a), hz1 = Z(b), ox = X(sgn * (c + 0.085 + o.w));   // 屋外側へ開く
+      out.push(`<path d="M${hx} ${hz0}L${ox} ${hz0}A${L(o.w)} ${L(o.w)} 0 0 1 ${hx} ${hz1}" stroke="#475569" stroke-width="0.8" fill="none"/>`);
+    } else {
+      let d = "";
+      [-0.085, 0, 0.085].forEach((t) => {
+        d += sn ? `M${X(a)} ${Z(c * sgn + t)}L${X(b)} ${Z(c * sgn + t)}` : `M${X(c * sgn + t)} ${Z(a)}L${X(c * sgn + t)} ${Z(b)}`;
+      });
+      out.push(`<path d="${d}" stroke="#1e293b" stroke-width="0.8" fill="none"/>`);
+    }
+  });
+  // 室名・帖数・面積
+  const fs = Math.max(8, Math.min(12, s * 0.3));
+  P.rooms.filter((r) => r.floor === floor && r.finish !== "吹抜け").forEach((r) => {
+    const [x0, x1, z0, z1] = r.rect, a = areas.find((e) => e.room === r);
+    const cx = X((x0 + x1) / 2), cz = +Z((z0 + z1) / 2);
+    const small = (x1 - x0) < 1.3 || (z1 - z0) < 1.1;
+    out.push(`<text x="${cx}" y="${(cz - (small ? 0 : fs * 0.2)).toFixed(1)}" font-size="${(small ? fs * 0.8 : fs).toFixed(1)}" text-anchor="middle" fill="#0f172a" font-weight="600" pointer-events="none">${r.name}</text>`);
+    if (!small) out.push(`<text x="${cx}" y="${(cz + fs * 1.05).toFixed(1)}" font-size="${(fs * 0.8).toFixed(1)}" text-anchor="middle" fill="#475569" pointer-events="none">${(a.area / JO).toFixed(1)}帖・${a.area.toFixed(1)}㎡</text>`);
+  });
+  // 方位・縮尺・全体寸法
+  const nx = widthPx - m * s * 0.5, ny = m * s * 0.55;
+  out.push(`<defs><marker id="arr" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0f172a"/></marker></defs>`);
+  out.push(`<path d="M${nx.toFixed(1)} ${(ny + 10).toFixed(1)}L${nx.toFixed(1)} ${(ny - 8).toFixed(1)}" stroke="#0f172a" stroke-width="1.4" marker-end="url(#arr)"/><text x="${nx.toFixed(1)}" y="${(ny + 21).toFixed(1)}" font-size="9" text-anchor="middle" fill="#0f172a">N</text>`);
+  const bx = m * s * 0.3, by = H - m * s * 0.35;
+  out.push(`<path d="M${bx.toFixed(1)} ${by.toFixed(1)}h${L(1)}M${bx.toFixed(1)} ${(by - 3).toFixed(1)}v6M${(bx + s).toFixed(1)} ${(by - 3).toFixed(1)}v6" stroke="#475569" stroke-width="1"/><text x="${(bx + s + 4).toFixed(1)}" y="${(by + 3).toFixed(1)}" font-size="8" fill="#475569">1m</text>`);
+  out.push(`<text x="${X(0)}" y="${(+Z(-P.D / 2) - m * s * 0.35).toFixed(1)}" font-size="9" text-anchor="middle" fill="#475569">間口 ${P.W.toFixed(2)}m</text>`);
+  out.push(`<text x="${(+X(P.W / 2) + m * s * 0.45).toFixed(1)}" y="${Z(0)}" font-size="9" text-anchor="middle" fill="#475569" transform="rotate(90 ${(+X(P.W / 2) + m * s * 0.45).toFixed(1)} ${Z(0)})">奥行 ${P.D.toFixed(2)}m</text>`);
+  out.push(`</svg>`);
+  return out.join("");
+}
+/* 面積表(HTML)。floor を指定するとその階だけ */
+function planTableHTML(floor, stories) {
+  const rows = planAreas(stories).filter((a) => a.room.floor === floor);
+  const tr = rows.map((a) => a.room.finish === "吹抜け"
+    ? `<tr data-room="${a.room.id}"><td>${a.room.name}</td><td>—</td><td class="n">(${a.area.toFixed(2)})</td><td class="n">—</td></tr>`
+    : `<tr data-room="${a.room.id}"><td>${a.room.name}</td><td>${a.room.finish}</td><td class="n">${a.area.toFixed(2)}<span class="sub">${(a.area / JO).toFixed(1)}帖</span></td><td class="n">${a.wall.toFixed(1)}<span class="sub">天井高${a.ch.toFixed(2)}</span></td></tr>`).join("");
+  const sum = rows.filter((a) => a.room.finish !== "吹抜け").reduce((s, a) => s + a.area, 0);
+  const sumW = rows.reduce((s, a) => s + a.wall, 0);
+  return `<table class="plan-tbl"><thead><tr><th>室名</th><th>床仕上げ</th><th class="n">床面積㎡</th><th class="n">壁面積㎡</th></tr></thead>`
+    + `<tbody>${tr}</tbody><tfoot><tr><td colspan="2">${floor}階 合計(内法)</td><td class="n">${sum.toFixed(2)}<span class="sub">${(sum / JO).toFixed(1)}帖</span></td><td class="n">${sumW.toFixed(1)}</td></tr></tfoot></table>`;
+}
+// 平面図と面積表を連動させる(部屋にポインタを乗せると両方を強調)
+function bindPlanHover(root, floor, stories, widthPx) {
+  let cur = null;
+  const draw = (id) => {
+    if (id === cur) return;   // 同じ部屋の上では描き直さない
+    cur = id;
+    const holder = root.querySelector(".plan-svg");
+    holder.innerHTML = planSVG(floor, stories, widthPx, id);
+    root.querySelectorAll("tr[data-room]").forEach((t) => t.classList.toggle("hl", t.dataset.room === id));
+  };
+  root.addEventListener("pointerover", (e) => {
+    const t = e.target.closest("[data-room]");
+    draw(t ? t.dataset.room : null);
+  });
+  root.addEventListener("pointerleave", () => draw(null));
+}
+function openPlanOverlay() {
+  const ov = el("div", "plan-overlay");
+  const box = el("div", "plan-overlay-box");
+  const head = el("div", "plan-overlay-head", `<b>間取り(設計情報)</b><span>${state.stories === 2 ? "2階建て" : "平屋"}・面積は内法による概算</span>`);
+  const close = el("button", "btn", "閉じる");
+  close.style.width = "auto";
+  close.addEventListener("click", () => ov.remove());
+  head.appendChild(close);
+  box.appendChild(head);
+  const floors = state.stories === 2 ? [1, 2] : [1];
+  const grid = el("div", "plan-overlay-grid");
+  floors.forEach((fl) => {
+    const col = el("div", "plan-col", `<h3>${fl}階</h3><div class="plan-svg"></div>${planTableHTML(fl, state.stories)}`);
+    col.querySelector(".plan-svg").innerHTML = planSVG(fl, state.stories, 520, null);
+    bindPlanHover(col, fl, state.stories, 520);
+    grid.appendChild(col);
+  });
+  box.appendChild(grid);
+  const A = STD_PLAN.W * STD_PLAN.D;
+  box.appendChild(el("div", "legend-cap", `建築面積(外周の芯) ${A.toFixed(2)}㎡ / 延床面積(芯) ${(A * floors.length).toFixed(2)}㎡。表の床面積は室内側の仕上げ面(内法)で測るため、芯で測る延床面積より小さくなります。壁面積は、壁のある辺の長さ × 天井高から、窓・玄関戸と室内建具の開口を差し引いた値(クロス張替え面積の目安)です。1帖=${JO}㎡。`));
+  ov.appendChild(box);
+  ov.addEventListener("click", (e) => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
 function el(t, cls, html) {
   const e = document.createElement(t);
   if (cls) e.className = cls;
@@ -4345,6 +4557,35 @@ function renderPanel() {
   }[state.buildingModel];
   secModel.appendChild(el("div", "legend-cap", modelNote));
   panel.appendChild(secModel);
+
+  // 間取り(平面図・面積表)。標準モデルの設計情報から描く
+  if (state.buildingModel === "standard") {
+    const secPlan = el("details", "section plan-sec");
+    secPlan.open = state.planOpen;
+    secPlan.appendChild(el("summary", "", "<h2>間取り(平面図・面積表)</h2>"));
+    secPlan.addEventListener("toggle", () => { state.planOpen = secPlan.open; });
+    const floors = state.stories === 2 ? [1, 2] : [1];
+    if (!floors.includes(state.planFloor)) state.planFloor = 1;
+    if (floors.length > 1) {
+      const rowF = el("div", "btn-row");
+      floors.forEach((fl) => {
+        const b = el("button", "btn" + (state.planFloor === fl ? " active" : ""), `${fl}階`);
+        b.addEventListener("click", () => { state.planFloor = fl; renderPanel(); });
+        rowF.appendChild(b);
+      });
+      secPlan.appendChild(rowF);
+    }
+    const body = el("div", "", `<div class="plan-svg"></div>${planTableHTML(state.planFloor, state.stories)}`);
+    body.querySelector(".plan-svg").innerHTML = planSVG(state.planFloor, state.stories, 290, null);
+    bindPlanHover(body, state.planFloor, state.stories, 290);
+    secPlan.appendChild(body);
+    const big = el("button", "btn", floors.length > 1 ? "拡大表示(1階・2階を並べて表示)" : "拡大表示");
+    big.style.textAlign = "center";
+    big.addEventListener("click", openPlanOverlay);
+    secPlan.appendChild(big);
+    secPlan.appendChild(el("div", "legend-cap", `面積は室内側の仕上げ面(内法)による概算です。壁面積は窓・戸の開口を差し引いたクロス張替え面積の目安です。1帖=${JO}㎡。`));
+    panel.appendChild(secPlan);
+  }
 
   // 視点モード
   // 浸水シミュレーション(水災)
