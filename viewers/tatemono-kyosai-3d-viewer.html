@@ -147,7 +147,8 @@ const MAT = {
   floor:  new THREE.MeshStandardMaterial({ color: 0xd6b98c, roughness: 0.7 }),
   ceil:   new THREE.MeshStandardMaterial({ color: 0xf3f1e8, roughness: 0.95 }),
   iwall:  new THREE.MeshStandardMaterial({ color: 0xf5f2ea, roughness: 0.95 }),
-  glass:  new THREE.MeshStandardMaterial({ color: 0x35505f, roughness: 0.2, metalness: 0.1 }),
+  glass:  new THREE.MeshStandardMaterial({ color: 0x9fb4bf, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.3, depthWrite: false }),
+  sash:   new THREE.MeshStandardMaterial({ color: 0x6b6f73, roughness: 0.4, metalness: 0.55 }),   // アルミサッシ(ステンカラー)
   gutter: new THREE.MeshStandardMaterial({ color: 0xcfd4d9, roughness: 0.35, metalness: 0.5 }),
   conc:   new THREE.MeshStandardMaterial({ color: 0x8d8d86, roughness: 0.9 }),
   door:   new THREE.MeshStandardMaterial({ color: 0x4a3220, roughness: 0.7 }),
@@ -1880,12 +1881,272 @@ function buildCubeHouse() {
   return { group: g, members, dims, camR: 22, targetY: 3.0, floorY: S.baseH + 0.02 };               // キューブ型
 }
 
+/* ============================================================
+   標準モデルの設計情報(間取り・開口部)
+   座標は建物中心が原点、+x=東、+z=南(正面)。単位はm。外周 W×D は軸組の芯
+   ・rooms      … 部屋。床仕上げ・面積・夕方の室内灯の配置に使う
+   ・partitions … 間仕切り壁と室内建具(axis:"x" は x=at の壁、"z" は z=at の壁)
+   ・openings   … 外壁の開口部。外壁と室内側の仕上げに穴を空け、枠・ガラス(戸)をはめ込む。
+                  face は外壁の面(S/N/E/W)、at は面に沿った中心(S/N は x、E/W は z)、
+                  sill・h は各階の床仕上げ面からの高さ。軸組(柱・筋かい)も開口を避けて割り付ける
+   2階(floor:2)の情報は2階建てのときだけ使う
+============================================================ */
+const STD_PLAN = (() => {
+  const W = 9.10, D = 7.28, foundH = 0.45, storyH = 2.75;   // 1階63㎡
+  const iX0 = -W / 2 + 0.09, iX1 = W / 2 - 0.09, iZ0 = -D / 2 + 0.09, iZ1 = D / 2 - 0.09;   // 室内側の仕上げ面
+  // 間取りの基準線
+  const G = {
+    xCor: 2.60,     // 居室 ⇔ 廊下・階段
+    zMid: -0.82,    // LDK ⇔ 北側(和室・水回り)
+    xWa: -0.82,     // 和室 ⇔ 水回り
+    zWat: -1.94,    // 浴室・洗面の帯 ⇔ トイレ・前室の帯
+    xBath: 0.95,    // 洗面 ⇔ 浴室
+    xToi: 1.40,     // 前室 ⇔ トイレ
+    domaX0: 3.50, domaZ0: 0.90, domaZ1: 2.60,   // 玄関土間(東面の玄関戸 z=1.6 に対応)
+    w2A: 0.00,      // 2階 洋室A ⇔ 洋室B
+    zHall: -1.90,   // 2階 北側廊下 ⇔ 洋室
+  };
+  // 階段(玄関ホールの隣 z=0.70 から北へ14段で上る)。2階の床はその上を吹抜けにする
+  const stair = { x0: G.xCor, x1: iX1, zBottom: 0.70, nStep: 14, run: 0.20 };
+  stair.zTop = stair.zBottom - stair.run * (stair.nStep - 1);
+  stair.holeZ0 = stair.zTop - 0.20; stair.holeZ1 = stair.zBottom + 0.20;
+
+  const R = (floor, id, name, x0, x1, z0, z1, finish) => ({ floor, id, name, rect: [x0, x1, z0, z1], finish });
+  const rooms = [
+    R(1, "ldk",     "LDK",          iX0, G.xCor, G.zMid, iZ1, "フローリング"),
+    R(1, "washitsu","和室",         iX0, G.xWa, iZ0, G.zMid, "畳"),
+    R(1, "senmen",  "洗面脱衣",     G.xWa, G.xBath, iZ0, G.zWat, "タイル"),
+    R(1, "bath",    "浴室",         G.xBath, G.xCor, iZ0, G.zWat, "タイル"),
+    R(1, "zenshitsu","前室",        G.xWa, G.xToi, G.zWat, G.zMid, "フローリング"),
+    R(1, "toilet",  "トイレ",       G.xToi, G.xCor, G.zWat, G.zMid, "タイル"),
+    R(1, "rouka",   "廊下・階段下", G.xCor, iX1, iZ0, G.domaZ0, "フローリング"),
+    R(1, "hall",    "玄関ホール",   G.xCor, G.domaX0, G.domaZ0, G.domaZ1, "フローリング"),
+    R(1, "doma",    "玄関土間",     G.domaX0, iX1, G.domaZ0, G.domaZ1, "土間"),
+    R(1, "hallS",   "ホール(南)",   G.xCor, iX1, G.domaZ1, iZ1, "フローリング"),
+    R(2, "yoA",     "洋室A",        iX0, G.w2A, G.zHall, iZ1, "フローリング"),
+    R(2, "yoB",     "洋室B",        G.w2A, G.xCor, G.zHall, iZ1, "フローリング"),
+    R(2, "rouka2",  "北側廊下",     iX0, G.xCor, iZ0, G.zHall, "フローリング"),
+    R(2, "stair2",  "階段ホール",   G.xCor, iX1, iZ0, stair.holeZ0, "フローリング"),
+    R(2, "void",    "階段(吹抜け)", G.xCor, iX1, stair.holeZ0, stair.holeZ1, "吹抜け"),
+    R(2, "hallS2",  "ホール(南・2階)", G.xCor, iX1, stair.holeZ1, iZ1, "フローリング"),
+  ];
+
+  const P = (floor, axis, at, from, to, doors = []) => ({ floor, axis, at, from, to, doors });
+  const Dr = (a, b, kind, member) => ({ a, b, kind, member });
+  const partitions = [
+    // 廊下壁: 開口は LDK引戸のみ(階段は廊下側)
+    P(1, "x", G.xCor, iZ0, iZ1, [Dr(1.35, 2.25, "hiki", "内部建具(引戸)")]),
+    // LDK ⇔ 北側: 和室の襖(引違い2枚)、水回り前室の戸
+    P(1, "z", G.zMid, iX0, G.xCor, [Dr(-3.20, -1.80, "fusuma", "襖"), Dr(0.10, 0.80, "hiraki", "内部建具(開き戸)")]),
+    P(1, "x", G.xWa, iZ0, G.zMid),                                                          // 和室 ⇔ 水回り
+    P(1, "z", G.zWat, G.xWa, G.xCor, [Dr(-0.35, 0.35, "hiraki", "内部建具(開き戸)")]),      // 洗面脱衣の入口
+    P(1, "x", G.xBath, iZ0, G.zWat, [Dr(-3.10, -2.40, "bath", "内部建具(折れ戸)")]),       // 浴室(アルミ框・樹脂パネルの折れ戸)
+    P(1, "x", G.xToi, G.zWat, G.zMid, [Dr(-1.70, -1.05, "hiraki", "内部建具(開き戸)")]),   // トイレ
+    // 2階: 北側廊下と居室を分ける壁(洋室A・Bの戸)、洋室A ⇔ B、洋室B ⇔ 階段室
+    P(2, "z", G.zHall, iX0, G.xCor, [Dr(-2.60, -1.90, "hiraki", "内部建具(開き戸)"), Dr(1.10, 1.80, "hiraki", "内部建具(開き戸)")]),
+    P(2, "x", G.w2A, G.zHall, iZ1),
+    P(2, "x", G.xCor, stair.holeZ0, iZ1),
+  ];
+
+  const O = (floor, face, at, w, h, sill, kind, member, room, extra = {}) => ({ floor, face, at, w, h, sill, kind, member, room, ...extra });
+  const openings = [
+    // 1階 南面: LDKの掃き出し窓2か所(雨戸の戸袋は外側、上に庇)
+    O(1, "S", -2.50, 1.70, 2.00, 0, "hakidashi", "掃き出し窓(1階)", "ldk", { tobukuro: -1, hisashi: true }),
+    O(1, "S",  0.90, 1.70, 2.00, 0, "hakidashi", "掃き出し窓(1階)", "ldk", { tobukuro: 1, hisashi: true }),
+    // 1階 北面: 和室の腰窓(押入を避ける)、洗面・浴室・廊下の小窓(エコキュートを避ける)
+    O(1, "N", -1.80, 1.50, 1.10, 0.90, "koshi", "腰窓(1階)", "washitsu", { hisashi: true }),
+    O(1, "N",  0.45, 0.60, 0.50, 1.50, "small", "小窓(1階)", "senmen"),
+    O(1, "N",  1.78, 0.80, 0.80, 1.25, "small", "小窓(1階)", "bath"),
+    O(1, "N",  3.55, 0.60, 0.90, 1.10, "small", "小窓(1階)", "rouka"),
+    // 1階 東面: 玄関戸(土間=基礎天+0.02 から立ち上げる)
+    O(1, "E",  1.60, 1.00, 2.10, -0.14, "door", "玄関戸", "doma"),
+    // 2階: 洋室の南窓(クローゼットは北側)、北側廊下の窓
+    O(2, "S", -2.25, 1.60, 1.10, 0.90, "koshi", "窓(2階)", "yoA"),
+    O(2, "S",  1.30, 1.60, 1.10, 0.90, "koshi", "窓(2階)", "yoB"),
+    O(2, "N",  0.00, 1.40, 1.00, 0.95, "koshi", "窓(2階)", "rouka2"),
+  ];
+
+  const floorY = (f) => f === 1 ? foundH + 0.16 : foundH + storyH + 0.12;   // 床仕上げ面の高さ
+  const roomArea = (r) => (r.rect[1] - r.rect[0]) * (r.rect[3] - r.rect[2]);
+  return { W, D, foundH, storyH, iX0, iX1, iZ0, iZ1, G, stair, rooms, partitions, openings, floorY, roomArea };
+})();
+
+/* 外壁の面ごとの座標(u=面に沿った向き。S/N は x、E/W は z) */
+const FACE = {
+  S: { nx: 0, nz: 1, rotY: 0 },
+  N: { nx: 0, nz: -1, rotY: Math.PI },
+  E: { nx: 1, nz: 0, rotY: Math.PI / 2 },
+  W: { nx: -1, nz: 0, rotY: -Math.PI / 2 },
+};
+// 開口部の矩形(v は y の実高さ)
+function openingRect(o) {
+  const y0 = STD_PLAN.floorY(o.floor) + o.sill;
+  return { u0: o.at - o.w / 2, u1: o.at + o.w / 2, y0, y1: y0 + o.h };
+}
+/* 開口部の穴を空けた壁(面材)。面に沿って u0〜u1、高さ y0〜y1、厚み t。
+   面の中心線は法線方向の位置 c(S/N は z、E/W は x)。開口が下端に接する場合は切り欠きにする */
+function wallWithOpenings(face, c, t, u0, u1, y0, y1, rects, mat) {
+  const H = y1 - y0, eps = 0.002;
+  const inside = rects
+    .map((r) => ({ a: Math.max(r.u0, u0 + 0.01), b: Math.min(r.u1, u1 - 0.01), v0: r.y0 - y0, v1: Math.min(r.y1, y1 - 0.01) - y0 }))
+    .filter((r) => r.b > r.a && r.v1 > Math.max(r.v0, 0))
+    .sort((p, q) => p.a - q.a);
+  const shape = new THREE.Shape();
+  shape.moveTo(u0, 0);
+  inside.filter((r) => r.v0 <= eps).forEach((r) => {   // 下端に接する開口(戸)は切り欠き
+    shape.lineTo(r.a, 0); shape.lineTo(r.a, r.v1); shape.lineTo(r.b, r.v1); shape.lineTo(r.b, 0);
+  });
+  shape.lineTo(u1, 0); shape.lineTo(u1, H); shape.lineTo(u0, H); shape.lineTo(u0, 0);
+  inside.filter((r) => r.v0 > eps).forEach((r) => {
+    const h = new THREE.Path();
+    h.moveTo(r.a, r.v0); h.lineTo(r.a, r.v1); h.lineTo(r.b, r.v1); h.lineTo(r.b, r.v0); h.lineTo(r.a, r.v0);
+    shape.holes.push(h);
+  });
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });   // UV は面の実寸(m)
+  const m = new THREE.Mesh(geo, mat);
+  if (face === "S" || face === "N") m.position.set(0, y0, c - t / 2);
+  else { m.rotation.y = -Math.PI / 2; m.position.set(c + t / 2, y0, 0); }
+  return m;
+}
+/* 開口部に納める建具(外壁の面から室内側の仕上げ面までの枠+ガラス、または玄関戸)。
+   外壁の中心線(法線方向の位置 c)を原点に、+z が屋外側のローカル座標で組み、面の向きに回す */
+function buildOpeningUnit(o, c, depthIn, mats) {
+  const r = openingRect(o);
+  const grp = new THREE.Group();
+  const f = FACE[o.face];
+  const uc = o.at, yc = (r.y0 + r.y1) / 2;
+  grp.position.set(f.nx ? f.nx * c : uc, yc, f.nz ? f.nz * c : uc);
+  grp.rotation.y = f.rotY;
+  const w = o.w, h = o.h, fw = 0.045;            // 枠の見付
+  const zOut = 0.045, zIn = -depthIn;            // 外壁の外面より少し出し、室内側の仕上げ面まで回す
+  const fd = zOut - zIn, fz = (zOut + zIn) / 2;
+  const isDoor = o.kind === "door";                // 戸は下枠の代わりに沓摺を付ける
+  const sideH = isDoor ? h - fw : h - 2 * fw, sideY = isDoor ? -fw / 2 : 0;
+  const parts = [
+    [boxGeo(w, fw, fd, 0, h / 2 - fw / 2, fz), mats.sash],
+    [boxGeo(fw, sideH, fd, -w / 2 + fw / 2, sideY, fz), mats.sash],
+    [boxGeo(fw, sideH, fd, w / 2 - fw / 2, sideY, fz), mats.sash],
+  ];
+  if (!isDoor) parts.push([boxGeo(w, fw, fd, 0, -h / 2 + fw / 2, fz), mats.sash]);
+  const zG = zOut - 0.05;                        // ガラス・戸の面(外寄り)
+  if (o.kind === "door") {
+    // 片開きの玄関ドア(木目調)。吊元側に縦長の採光スリット、縦の化粧溝、プッシュプル錠、下に沓摺
+    const lw = w - 2 * fw, th = 0.025, lh = h - fw - th, ly = -h / 2 + th + lh / 2;
+    parts.push([boxGeo(lw, lh, 0.05, 0, ly, zG), mats.door]);
+    const slitX = -lw / 2 + 0.16;
+    parts.push([boxGeo(0.11, lh - 0.56, 0.054, slitX, ly, zG), mats.frost]);                    // 採光スリット(型板ガラス)
+    [slitX - 0.075, slitX + 0.075].forEach((x) => parts.push([boxGeo(0.018, lh - 0.52, 0.058, x, ly, zG), mats.handle]));
+    [0.02, 0.17, 0.32].forEach((x) => parts.push([boxGeo(0.008, lh - 0.3, 0.054, x, ly, zG), mats.doorDark]));   // 縦の化粧溝
+    const hx = lw / 2 - 0.12, hy = -h / 2 + 1.0;
+    parts.push([boxGeo(0.028, 0.62, 0.028, hx, hy, zG + 0.075), mats.handle]);                     // プッシュプルの握り
+    [-0.25, 0.25].forEach((dy) => parts.push([boxGeo(0.022, 0.022, 0.05, hx, hy + dy, zG + 0.045), mats.handle]));
+    [-0.34, 0.34].forEach((dy) => parts.push([boxGeo(0.045, 0.07, 0.012, hx + 0.07, hy + dy * 0.5, zG + 0.028), mats.handle]));   // 錠(2ロック)
+    parts.push([boxGeo(w, th, fd + 0.02, 0, -h / 2 + th / 2, fz), mats.sash]);                   // 沓摺
+  } else if (o.kind !== "small") {
+    // 引違い: 召合せ框(中央の縦框)と、内外の障子の上下框
+    parts.push([boxGeo(0.06, h - 2 * fw, 0.07, 0, 0, zG - 0.01), mats.sash]);
+    [[-1, zG], [1, zG - 0.03]].forEach(([s, z]) => {
+      parts.push([boxGeo(w / 2 - fw, 0.035, 0.035, s * (w / 4), h / 2 - fw - 0.018, z), mats.sash]);
+      parts.push([boxGeo(w / 2 - fw, 0.035, 0.035, s * (w / 4), -h / 2 + fw + 0.018, z), mats.sash]);
+    });
+  }
+  const frame = mergeGeoms(parts);
+  grp.add(tag(frame, o.kind === "door" ? "開口部" : "開口部", o.member, "ext"));
+  if (o.kind !== "door") {
+    const gl = new THREE.Mesh(new THREE.BoxGeometry(w - 2 * fw, h - 2 * fw, 0.006), mats.glass);
+    gl.position.z = zG - 0.015;
+    tag(gl, "開口部", o.member, "ext");
+    gl.userData.noCount = true;                  // 枠とガラスで1か所(使用数は枠で数える)
+    grp.add(gl);
+  }
+  return grp;
+}
+/* 外壁の面に部品を取り付ける(ローカル座標: x=面に沿った向き、+z=屋外側、原点=取付位置の外壁面) */
+function placeOnFace(obj, face, u, y, c) {
+  const f = FACE[face];
+  obj.position.set(f.nx ? f.nx * c : u, y, f.nz ? f.nz * c : u);
+  obj.rotation.y = f.rotY;
+  return obj;
+}
+/* アルミ製の小庇。断面は壁際で厚く先端で薄い台形に、先端へ水切りを垂らし、壁との取合いに水切り板金を回す。
+   w: 幅 / d: 出 / 原点は壁際の上端 */
+function hisashiMesh(w, d, mat) {
+  const drop = d * 0.1;                          // 約1/10の水勾配
+  const s = new THREE.Shape();
+  s.moveTo(0, 0); s.lineTo(d, -drop); s.lineTo(d, -drop - 0.075); s.lineTo(d - 0.022, -drop - 0.075);
+  s.lineTo(d - 0.022, -drop - 0.035); s.lineTo(0, -0.105); s.lineTo(0, 0);
+  const body = new THREE.ExtrudeGeometry(s, { depth: w, bevelEnabled: false });
+  body.rotateY(-Math.PI / 2); body.translate(w / 2, 0, 0);   // 断面(出, 高さ)→(z, y)、押し出し→x
+  return mergeGeoms([
+    [body, mat],
+    [boxGeo(w + 0.02, 0.06, 0.012, 0, 0.028, 0.006), mat],   // 壁際の水切り板金
+  ]);
+}
+/* 雨戸の戸袋と雨戸レール。戸袋は框付きの鏡板(横リブ)、レールは窓の上下から戸袋まで通す。
+   原点は窓の中心・外壁面。side: 戸袋を付ける側(-1/1)、w・h: 窓の幅・高さ */
+function amadoMesh(w, h, side, M) {
+  const tw = 0.95, td = 0.13, th = h + 0.1;
+  const tc = side * (w / 2 + 0.02 + tw / 2);
+  const parts = [
+    [boxGeo(tw, th, td, tc, 0, td / 2), M.body],
+    // 鏡板の框
+    [boxGeo(tw, 0.05, 0.016, tc, th / 2 - 0.025, td + 0.008), M.frame],
+    [boxGeo(tw, 0.05, 0.016, tc, -th / 2 + 0.025, td + 0.008), M.frame],
+    [boxGeo(0.04, th - 0.1, 0.016, tc - tw / 2 + 0.02, 0, td + 0.008), M.frame],
+    [boxGeo(0.04, th - 0.1, 0.016, tc + tw / 2 - 0.02, 0, td + 0.008), M.frame],
+  ];
+  for (let y = -th / 2 + 0.16; y < th / 2 - 0.1; y += 0.13) parts.push([boxGeo(tw - 0.1, 0.014, 0.008, tc, y, td + 0.004), M.rib]);   // 鏡板の横リブ
+  // 雨戸レール(上は鴨居、下は敷居)。窓の反対側の端から戸袋の外端まで
+  const r0 = -side * (w / 2 + 0.03), r1 = tc + side * tw / 2, rl = Math.abs(r1 - r0), rc = (r0 + r1) / 2;
+  parts.push([boxGeo(rl, 0.06, 0.11, rc, h / 2 + 0.03, 0.055), M.frame]);
+  parts.push([boxGeo(rl, 0.035, 0.11, rc, -h / 2 - 0.0175, 0.055), M.frame]);
+  return mergeGeoms(parts);
+}
+// 玄関ドアの木目(キューブ型の木目テクスチャを縦目にして使う)
+let _doorWood = null;
+function doorWoodMaterial() {
+  if (_doorWood) return _doorWood;
+  const T = cubeTextures().wood;
+  const map = T.map.clone(), nm = T.normalMap.clone();
+  [map, nm].forEach((t) => { t.needsUpdate = true; t.center.set(0.5, 0.5); t.rotation = Math.PI / 2; t.repeat.set(1, 1.6); });
+  _doorWood = new THREE.MeshStandardMaterial({ map, normalMap: nm, normalScale: new THREE.Vector2(0.5, 0.5), color: 0x9c7552, roughness: 0.55 });
+  return _doorWood;
+}
+
+/* 壁1面の軸組(管柱・間柱・筋かい)の割付。開口部の両脇に柱を立て、開口に掛かる間柱・筋かいを除く。
+   base: 標準の割付 { posts:[u...], studs:[u...], braces:[[u端, u内], ...] } / L: 面の長さ */
+function frameLayout(base, L, rects) {
+  const iv = rects.map((r) => [r.u0, r.u1]);
+  const hit = (u, m) => iv.some(([a, b]) => u > a - m && u < b + m);
+  const posts = base.posts.filter((u) => !hit(u, 0.06));
+  iv.forEach(([a, b]) => [a - 0.055, b + 0.055].forEach((u) => {
+    if (Math.abs(u) < L / 2 - 0.15 && !posts.some((p) => Math.abs(p - u) < 0.15)) posts.push(u);
+  }));
+  const studs = base.studs.filter((u) => !hit(u, 0.03) && !posts.some((p) => Math.abs(p - u) < 0.1));
+  const overlaps = (a, b) => iv.some(([p, q]) => Math.max(a, p) < Math.min(b, q) + 0.05 && Math.min(a, p) < Math.max(b, q));
+  const braces = [], used = [];
+  const free = (a, b) => !overlaps(Math.min(a, b), Math.max(a, b)) && !used.some(([p, q]) => Math.max(Math.min(a, b), p) < Math.min(Math.max(a, b), q));
+  base.braces.forEach(([uE, uI]) => {
+    if (free(uE, uI)) { braces.push([uE, uI]); used.push([Math.min(uE, uI), Math.max(uE, uI)]); return; }
+    // 開口に掛かる筋かいは、開口のない区間(0.9m以上)へ移す
+    const edges = [-L / 2 + 0.15, ...iv.flat().map((v, i) => v + (i % 2 ? 0.1 : -0.1)), L / 2 - 0.15].sort((p, q) => p - q);
+    const segs = [];
+    for (let i = 0; i + 1 < edges.length; i += 2) segs.push([edges[i], edges[i + 1]]);
+    const cand = segs.map(([a, b]) => [a, Math.min(b, a + 1.8)]).filter(([a, b]) => b - a >= 0.9 && free(a, b))
+      .sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]));
+    if (cand.length) { const [a, b] = cand[0]; braces.push(uE > uI ? [b, a] : [a, b]); used.push([a, b]); }
+  });
+  return { posts, studs, braces };
+}
+
 function buildHouse(stories, roofShape, roofKey, wallKey) {
   const g = new THREE.Group();
   const n = stories;
-  const W = 9.10, D = 7.28, ov = 0.5, foundH = 0.45, storyH = 2.75;   // 1階63㎡。間取りが成立する広さ
+  const { W, D, foundH, storyH } = STD_PLAN;
   const wallTop = foundH + storyH * n;
-  const winX = [-(W / 4 + 0.25), W / 4 + 0.25];   // 南面の窓・庇の割付
+  const OPEN = STD_PLAN.openings.filter((o) => o.floor <= n);   // この階数で使う開口部
+  const openOn = (face, floor) => OPEN.filter((o) => o.face === face && (floor === undefined || o.floor === floor));
+  const ov = 0.5;
   const We = W / 2 + ov, Ze = D / 2 + ov;
   const roofW = W + 2 * ov;
 
@@ -1939,22 +2200,28 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     const yb = foundH + 0.12 + storyH * f;
     const yt = foundH + storyH * (f + 1);
     const h = yt - yb;
-    const kuraX = [-1, -1 / 3, 1 / 3, 1].map((t) => +(t * (W / 2 - 0.85)).toFixed(3));
-    kuraX.forEach((x) => [D / 2, -D / 2].forEach((z) => {
-      g.add(tag(box(0.11, h, 0.11, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "管柱", "frame"));
-    }));
-    [-(D / 2 - 1.6), D / 2 - 1.6].forEach((z) => [W / 2, -W / 2].forEach((x) => {
-      g.add(tag(box(0.11, h, 0.11, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "管柱", "frame"));
-    }));
-    [-(W / 2 - 0.45), W / 2 - 0.45].forEach((x) => [D / 2, -D / 2].forEach((z) => {
-      g.add(tag(box(0.045, h, 0.1, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "間柱", "frame"));
-    }));
-    [-(D / 2 - 1.0), 0, D / 2 - 1.0].forEach((z) => [W / 2, -W / 2].forEach((x) => {
-      g.add(tag(box(0.1, h, 0.045, MAT.wood, x, yb + h / 2, z), "軸組(構造材)", "間柱", "frame"));
-    }));
-    [[ W/2 - 0.15,  D/2], [ W/2 - 0.15, -D/2], [-(W/2 - 0.15),  D/2], [-(W/2 - 0.15), -D/2]].forEach(([x, z]) => {
-      const inner = x > 0 ? x - 1.8 : x + 1.8;
-      g.add(tag(beamBetween(new THREE.Vector3(x, yb, z), new THREE.Vector3(inner, yt, z), 0.045, MAT.wood), "軸組(構造材)", "筋かい", "frame"));
+    // 標準の割付(開口部に掛かるものは frameLayout で避ける)
+    const kura = [-1, -1 / 3, 1 / 3, 1].map((t) => +(t * (W / 2 - 0.85)).toFixed(3));
+    const eX = W / 2 - 0.15;
+    const baseSN = { posts: kura, studs: [-(W / 2 - 0.45), W / 2 - 0.45], braces: [[eX, eX - 1.8], [-eX, -eX + 1.8]] };
+    const baseEW = { posts: [-(D / 2 - 1.6), D / 2 - 1.6], studs: [-(D / 2 - 1.0), 0, D / 2 - 1.0], braces: [] };
+    ["S", "N", "E", "W"].forEach((face) => {
+      const sn = face === "S" || face === "N";
+      const c = sn ? FACE[face].nz * D / 2 : FACE[face].nx * W / 2;
+      const at = (u, y) => sn ? new THREE.Vector3(u, y, c) : new THREE.Vector3(c, y, u);
+      const rects = openOn(face, f + 1).map(openingRect);
+      const L = sn ? W : D;
+      const lay = frameLayout(sn ? baseSN : baseEW, L, rects);
+      lay.posts.forEach((u) => { const p = at(u, yb + h / 2); g.add(tag(box(0.11, h, 0.11, MAT.wood, p.x, p.y, p.z), "軸組(構造材)", "管柱", "frame")); });
+      lay.studs.forEach((u) => { const p = at(u, yb + h / 2); g.add(tag(box(sn ? 0.045 : 0.1, h, sn ? 0.1 : 0.045, MAT.wood, p.x, p.y, p.z), "軸組(構造材)", "間柱", "frame")); });
+      lay.braces.forEach(([u0, u1]) => g.add(tag(beamBetween(at(u0, yb), at(u1, yt), 0.045, MAT.wood), "軸組(構造材)", "筋かい", "frame")));
+      // 開口部のまぐさ(上)・窓台(下)
+      rects.forEach((r) => {
+        const len = r.u1 - r.u0 + 0.11, uc = (r.u0 + r.u1) / 2;
+        const sz = (y) => { const p = at(uc, y); return box(sn ? len : 0.105, 0.105, sn ? 0.105 : len, MAT.wood, p.x, p.y, p.z); };
+        g.add(tag(sz(r.y1 + 0.055), "軸組(構造材)", "まぐさ・窓台", "frame"));
+        if (r.y0 > yb + 0.2) g.add(tag(sz(r.y0 - 0.055), "軸組(構造材)", "まぐさ・窓台", "frame"));
+      });
     });
   }
 
@@ -2038,10 +2305,13 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   const wallY0 = foundH + 0.02;                 // 基礎天と面を一致させない
   const wallH = wallTop - wallY0;
   const wallYc = wallY0 + wallH / 2;
-  g.add(tag(box(W, wallH, 0.07, wallMatFor(W, wallH), 0, wallYc,  D / 2 + 0.05), "外壁", "外壁", "ext"));
-  g.add(tag(box(W, wallH, 0.07, wallMatFor(W, wallH), 0, wallYc, -(D / 2 + 0.05)), "外壁", "外壁", "ext"));
-  g.add(tag(box(0.07, wallH, D, wallMatFor(D, wallH),  W / 2 + 0.05, wallYc, 0), "外壁", "外壁", "ext"));
-  g.add(tag(box(0.07, wallH, D, wallMatFor(D, wallH), -(W / 2 + 0.05), wallYc, 0), "外壁", "外壁", "ext"));
+  // 設計情報の開口部に合わせて穴を空ける(模様は面の実寸で連続させる)
+  const wallMatM = texturedMaterial("wall", wallKey, 1 / wallCell, 1 / wallCell);
+  ["S", "N", "E", "W"].forEach((face) => {
+    const sn = face === "S" || face === "N", L = sn ? W : D;
+    const c = sn ? FACE[face].nz * (D / 2 + 0.05) : FACE[face].nx * (W / 2 + 0.05);
+    g.add(tag(wallWithOpenings(face, c, 0.07, -L / 2, L / 2, wallY0, wallTop, openOn(face).map(openingRect), wallMatM), "外壁", "外壁", "ext"));
+  });
 
   /* ---- 外壁(屋根形状別の上部) ---- */
   if (roofShape === "kiritsuma") {
@@ -2175,43 +2445,58 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     downspout(W / 2 - 0.3, -(D / 2 + 0.08), wallTop + 0.1);
   }
 
-  /* ---- 庇・雨戸(共通) ---- */
-  const hEnt = box(0.55, 0.05, 1.5, capMat, W / 2 + 0.32, foundH + 2.3, 1.6);
-  hEnt.rotation.z = -0.14;
-  g.add(tag(hEnt, "雨樋・附帯", "庇", "ext"));
-  winX.forEach((x) => {
-    const h1 = box(2.0, 0.05, 0.5, capMat, x, foundH + 2.18, D / 2 + 0.3);
-    h1.rotation.x = 0.14;
-    g.add(tag(h1, "雨樋・附帯", "庇", "ext"));
-    const h2 = box(1.7, 0.05, 0.45, capMat, x, foundH + 2.42, -(D / 2 + 0.28));
-    h2.rotation.x = -0.14;
-    g.add(tag(h2, "雨樋・附帯", "庇", "ext"));
-    const tb = box(0.95, 1.95, 0.13, MAT.equip, x + (x > 0 ? 1.35 : -1.35), foundH + 1.07, D / 2 + 0.1);
-    g.add(tag(tb, "開口部", "雨戸・戸袋", "ext"));
+  /* ---- 庇・雨戸・玄関ポーチ(設計情報の hisashi / tobukuro / 玄関戸) ---- */
+  const hisaMat = new THREE.MeshStandardMaterial({ color: 0x8c9094, roughness: 0.4, metalness: 0.5 });   // アルミ庇(ステンカラー)
+  const amadoM = {
+    body:  new THREE.MeshStandardMaterial({ color: 0xdcd9d0, roughness: 0.55, metalness: 0.15 }),   // 戸袋の鏡板(アイボリー)
+    rib:   new THREE.MeshStandardMaterial({ color: 0xc4c0b5, roughness: 0.6, metalness: 0.1 }),
+    frame: MAT.sash,
+  };
+  const localSide = (face, s) => (face === "S" || face === "W" ? s : -s);   // 面のローカル x と実座標の向きの対応
+  OPEN.forEach((o) => {
+    const r = openingRect(o), sn = o.face === "S" || o.face === "N";
+    const cOut = (sn ? D : W) / 2 + 0.085;                                    // 外壁の外面
+    if (o.hisashi && sn) {
+      g.add(tag(placeOnFace(hisashiMesh(o.w + 0.3, o.face === "S" ? 0.5 : 0.45, hisaMat), o.face, o.at, r.y1 + 0.14, cOut), "雨樋・附帯", "庇", "ext"));
+    }
+    if (o.tobukuro && sn) {
+      g.add(tag(placeOnFace(amadoMesh(o.w, o.h, localSide(o.face, o.tobukuro), amadoM), o.face, o.at, (r.y0 + r.y1) / 2, cOut), "開口部", "雨戸・戸袋", "ext"));
+    }
+    if (o.kind === "door") {
+      // 玄関の庇(戸より一回り広く深く)
+      g.add(tag(placeOnFace(hisashiMesh(o.w + 0.8, 0.8, hisaMat), o.face, o.at, r.y1 + 0.3, cOut), "雨樋・附帯", "庇", "ext"));
+      // 玄関ポーチ(土間コンクリート+タイル)と2段の踏段。上面は戸の沓摺の下
+      const top = r.y0 - 0.015, pw = o.w + 0.9;
+      const porchMat = new THREE.MeshStandardMaterial({ color: 0xb5aea2, roughness: 0.8 });
+      const porch = mergeGeoms([
+        [boxGeo(pw, top, 1.0, 0, top / 2, 0.5), porchMat],
+        [boxGeo(pw, top * 2 / 3, 0.3, 0, top / 3, 1.15), porchMat],
+        [boxGeo(pw, top / 3, 0.3, 0, top / 6, 1.45), porchMat],
+      ]);
+      g.add(tag(placeOnFace(porch, o.face, o.at, 0, cOut - 0.02), "基礎", "玄関ポーチ", "found"));
+    }
   });
 
-  /* ---- 開口部 ---- */
-  winX.forEach((x) => {
-    g.add(tag(box(1.7, 1.9, 0.09, MAT.glass, x, foundH + 1.07,  D / 2 + 0.1), "開口部", "掃き出し窓(1階)", "ext"));
-    g.add(tag(box(1.4, 1.0, 0.09, MAT.glass, x, foundH + 1.75, -(D / 2 + 0.1)), "開口部", "腰窓(1階)", "ext"));
+  /* ---- 開口部(設計情報の openings。外壁の穴に枠・ガラス・戸を納める) ---- */
+  const unitMats = {
+    sash: MAT.sash, glass: MAT.glass, door: doorWoodMaterial(), handle: MAT.gutter,
+    doorDark: new THREE.MeshStandardMaterial({ color: 0x3b2a1c, roughness: 0.7 }),
+    frost: new THREE.MeshStandardMaterial({ color: 0xe2e8eb, roughness: 0.35, transparent: true, opacity: 0.8 }),   // 型板ガラス
+  };
+  OPEN.forEach((o) => {
+    const sn = o.face === "S" || o.face === "N";
+    g.add(buildOpeningUnit(o, (sn ? D : W) / 2 + 0.05, 0.148, unitMats));   // 室内側の仕上げ面(外周の芯から0.098内側)まで枠を回す
   });
-  if (n === 2) {
-    winX.forEach((x) => {
-      g.add(tag(box(1.6, 1.2, 0.09, MAT.glass, x, foundH + storyH + 1.5, D / 2 + 0.1), "開口部", "窓(2階)", "ext"));
-    });
-    g.add(tag(box(1.4, 1.0, 0.09, MAT.glass, 0, foundH + storyH + 1.5, -(D / 2 + 0.1)), "開口部", "窓(2階)", "ext"));
-  }
-  g.add(tag(box(0.09, 2.1, 1.0, MAT.door, W / 2 + 0.16, foundH + 1.07, 1.6), "開口部", "玄関戸", "ext"));   // 柱の面と重ねない
 
   /* ---- 附帯設備 ----
      配置の考え方: 玄関(東面)のアプローチを避け、窓と竪樋にも干渉しない位置に置く。
-       ・エコキュート … 北面の窓と窓の間(x≈±0.6の空き)
+       ・エコキュート … 北面の和室の腰窓と浴室の小窓の間(洗面・浴室の外)
        ・室外機       … 開口部のない西面
        ・立水栓       … 南西の庭先  ・電気メーター … 玄関と反対の西面    */
   const EQP = "附帯設備";
   const zN = -(D / 2 + 0.05);
   const xWface = -(W / 2 + 0.05);
-  // エコキュート(北面・窓の間)
+  // エコキュート(北面・和室と浴室の窓の間)
   {
     const bx = -0.62, bz = zN - 0.48;
     g.add(tag(box(0.62, 0.1, 0.86, MAT.conc, bx, 0.05, bz), EQP, "エコキュート(基礎)", "ext"));
@@ -2295,92 +2580,86 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     hikite:  new THREE.MeshStandardMaterial({ color: 0x8a7443, roughness: 0.35, metalness: 0.6 }), // 襖の引手
   };
   const IN = (m, member, part) => { g.add(tag(m, part || "内装", member, "int")); return m; };
-  const iX0 = -W / 2 + 0.09, iX1 = W / 2 - 0.09, iZ0 = -D / 2 + 0.09, iZ1 = D / 2 - 0.09;
-  const f1 = foundH + 0.16;
+  const { iX0, iX1, iZ0, iZ1 } = STD_PLAN;
+  const f1 = STD_PLAN.floorY(1);
   const c1 = foundH + (n === 1 ? 2.42 : 2.56);
   const ih1 = c1 - f1;
 
-  /* 間取りの基準線 */
-  const xCor = 2.60;     // 居室 ⇔ 廊下
-  const zMid = -0.82;    // LDK ⇔ 北側(和室・水回り)
-  const xWa = -0.82;     // 和室 ⇔ 水回り
-  const zWat = -1.94;    // 浴室・洗面の帯 ⇔ トイレ・前室の帯
-  const xBath = 0.95;    // 洗面 ⇔ 浴室
-  const xToi = 1.40;     // 前室 ⇔ トイレ
-  const domaX0 = 3.50, domaZ0 = 0.90, domaZ1 = 2.60;   // 玄関土間(東面の玄関戸 z=1.6 に対応)
+  /* 間取りの基準線(設計情報 STD_PLAN.G。造作・幅木の割付に使う) */
+  const { xCor, zMid, xWa, zWat, xBath, xToi, domaX0, domaZ0, domaZ1 } = STD_PLAN.G;
 
-  /* 床(部屋ごとに仕上げを分ける) */
+  /* 床(設計情報の部屋ごとに仕上げを分ける) */
   const slabF = (x0, x1, z0, z1, mat, member, y, th) => {
     const inset = (mat === MI.tile) ? 0.012 : 0;   // タイルは側面を隣の床と共有しない
     const w = x1 - x0 - inset * 2, d = z1 - z0 - inset * 2;
     const m = (mat === MI.yuka) ? flooringMaterial(w, d) : mat;   // フローリングは板の目地・木目を張って床材を見分けやすくする
     return IN(box(w, th || 0.06, d, m, (x0 + x1) / 2, y === undefined ? f1 : y, (z0 + z1) / 2), member, "床");
   };
-  slabF(iX0, xCor, zMid, iZ1, MI.yuka, "床(フローリング)");            // LDK
   const tileY = f1 - 0.004;   // タイルはフローリングよりわずかに低くし、面を一致させない
-  slabF(xWa, xBath, iZ0, zWat, MI.tile, "床(タイル)", tileY);           // 洗面脱衣
-  slabF(xBath, xCor, iZ0, zWat, MI.tile, "床(タイル)", tileY);          // 浴室
-  slabF(xToi, xCor, zWat, zMid, MI.tile, "床(タイル)", tileY);          // トイレ
-  slabF(xWa, xToi, zWat, zMid, MI.yuka, "床(フローリング)");           // 水回りの前室
-  slabF(xCor, iX1, iZ0, domaZ0, MI.yuka, "床(フローリング)");          // 廊下・階段室
-  slabF(xCor, domaX0, domaZ0, domaZ1, MI.yuka, "床(フローリング)");    // 玄関ホール(幅0.90m)
-  slabF(xCor, iX1, domaZ1, iZ1, MI.yuka, "床(フローリング)");
-  slabF(domaX0, iX1, domaZ0, domaZ1, MI.doma, "玄関土間", foundH + 0.02, 0.05);
-  IN(box(0.14, 0.16, domaZ1 - domaZ0, MI.tategu, domaX0, f1 - 0.02, (domaZ0 + domaZ1) / 2), "上がり框");
-  // 和室 6帖(畳6枚・縁付き。1枚=1.82×0.91)
-  {
-    const mw = (xWa - iX0) / 2, ml = (zMid - iZ0) / 3;
-    // 畳の下地(隙間から下が見えないように敷く)
-    IN(box(xWa - iX0 - 0.05, 0.04, zMid - iZ0 - 0.05, MI.yuka, (iX0 + xWa) / 2, f1 - 0.012, (iZ0 + zMid) / 2), "床(畳)", "床");   // 隣の床と面を共有しないよう少し内側に
+  // 畳敷き(縁付き。長手を z 方向に、x 方向2枚 × z 方向3枚で割り付ける)
+  const tatamiFloor = (x0r, x1r, z0r, z1r) => {
+    const mw = (x1r - x0r) / 2, ml = (z1r - z0r) / 3;
+    // 畳の下地(隙間から下が見えないように敷く。隣の床と面を共有しないよう少し内側に)
+    IN(box(x1r - x0r - 0.05, 0.04, z1r - z0r - 0.05, MI.yuka, (x0r + x1r) / 2, f1 - 0.012, (z0r + z1r) / 2), "床(畳)", "床");
     for (let cx = 0; cx < 2; cx++) for (let rz = 0; rz < 3; rz++) {
-      const x0 = iX0 + cx * mw, z0 = iZ0 + rz * ml;
+      const x0 = x0r + cx * mw, z0 = z0r + rz * ml;
       // 畳本体(合わせ目は6mm。畳は突き付けで敷くため隙間はほとんど無い)
       IN(box(mw - 0.006, 0.07, ml - 0.006, MI.tatami, x0 + mw / 2, f1 + 0.005, z0 + ml / 2), "床(畳)", "床");
       // 畳縁(長辺の上面に乗せる)
       [z0 + 0.032, z0 + ml - 0.032].forEach((ez) =>
         IN(box(mw - 0.006, 0.073, 0.05, MI.heri, x0 + mw / 2, f1 + 0.0065, ez), "床(畳)", "床"));
     }
-  }
+  };
+  STD_PLAN.rooms.filter((r) => r.floor === 1).forEach((r) => {
+    const [x0, x1, z0, z1] = r.rect;
+    if (r.finish === "フローリング") slabF(x0, x1, z0, z1, MI.yuka, "床(フローリング)");
+    else if (r.finish === "タイル") slabF(x0, x1, z0, z1, MI.tile, "床(タイル)", tileY);
+    else if (r.finish === "畳") tatamiFloor(x0, x1, z0, z1);
+    else if (r.finish === "土間") {
+      slabF(x0, x1, z0, z1, MI.doma, "玄関土間", foundH + 0.02, 0.05);
+      IN(box(0.14, 0.16, z1 - z0, MI.tategu, x0, f1 - 0.02, (z0 + z1) / 2), "上がり框");
+    }
+  });
 
   /* 天井 */
   IN(box(iX1 - iX0, 0.04, iZ1 - iZ0, MI.tenjo, (iX0 + iX1) / 2, c1, (iZ0 + iZ1) / 2), "天井");
   /* 外壁の室内側の仕上げ(クロス)
      間仕切り・床・天井・幅木の端(境界線 iX0〜iX1 / iZ0〜iZ1)を受け、外壁との間に隙間を残さない。
-     室内側の面は境界線より8mm内側(ユニットバスの壁パネルと面を重ねない)。
+     室内側の面は境界線より8mm内側(ユニットバスの壁パネルと面を重ねない)。開口部は外壁と同じ位置に穴を空ける。
      「内部(外装を透過)」表示では外壁と一緒に透過させるため layer は ext とする */
-  const liningAt = (y0, y1) => {
-    const h = y1 - y0, yc = (y0 + y1) / 2, t = 0.02, ln = 0.012;
+  const liningAt = (y0, y1, floor) => {
+    const t = 0.02, ln = 0.012;
     [
-      [iX1 - iX0 + 0.04, t, (iX0 + iX1) / 2, iZ0 - ln + t / 2],   // 北
-      [iX1 - iX0 + 0.04, t, (iX0 + iX1) / 2, iZ1 + ln - t / 2],   // 南
-      [t, iZ1 - iZ0 + 0.04, iX0 - ln + t / 2, (iZ0 + iZ1) / 2],   // 西
-      [t, iZ1 - iZ0 + 0.04, iX1 + ln - t / 2, (iZ0 + iZ1) / 2],   // 東
-    ].forEach(([w, d, x, z]) => g.add(tag(box(w, h, d, MI.kabe, x, yc, z), "内装", "内壁(クロス)", "ext")));
+      ["N", iZ0 - ln + t / 2, iX0, iX1],
+      ["S", iZ1 + ln - t / 2, iX0, iX1],
+      ["W", iX0 - ln + t / 2, iZ0, iZ1],
+      ["E", iX1 + ln - t / 2, iZ0, iZ1],
+    ].forEach(([face, c, a, b]) => g.add(tag(
+      wallWithOpenings(face, c, t, a - 0.02, b + 0.02, y0, y1, openOn(face, floor).map(openingRect), MI.kabe), "内装", "内壁(クロス)", "ext")));
   };
-  liningAt(foundH + 0.02, c1 - 0.02);
+  liningAt(foundH + 0.02, c1 - 0.02, 1);
 
-  /* 間仕切り壁(建具の開口を空け、上部に垂れ壁) */
-  const wallX = (x, z0, z1) => { if (z1 - z0 > 0.06) IN(box(0.07, ih1, z1 - z0, MI.kabe, x, f1 + ih1 / 2, (z0 + z1) / 2), "内壁(クロス)"); };
-  const wallZ = (z, x0, x1) => { if (x1 - x0 > 0.06) IN(box(x1 - x0, ih1, 0.07, MI.kabe, (x0 + x1) / 2, f1 + ih1 / 2, z), "内壁(クロス)"); };
-  const lintX = (x, z0, z1) => IN(box(0.07, ih1 - 2.02, z1 - z0, MI.kabe, x, f1 + 2.02 + (ih1 - 2.02) / 2, (z0 + z1) / 2), "内壁(クロス)");
-  const lintZ = (z, x0, x1) => IN(box(x1 - x0, ih1 - 2.02, 0.07, MI.kabe, (x0 + x1) / 2, f1 + 2.02 + (ih1 - 2.02) / 2, z), "内壁(クロス)");
-  // 廊下壁(x=2.60): 開口は LDK引戸(z 1.35〜2.25)のみ。階段は廊下側にあるため他の開口は設けない
-  wallX(xCor, iZ0, 1.35); wallX(xCor, 2.25, iZ1);
-  lintX(xCor, 1.35, 2.25);
-  // LDK ⇔ 北側(z=-0.82): 和室の襖(x -3.20〜-1.80)、水回り前室の戸(x 0.10〜0.80)
-  wallZ(zMid, iX0, -3.20); wallZ(zMid, -1.80, 0.10); wallZ(zMid, 0.80, xCor);
-  lintZ(zMid, -3.20, -1.80); lintZ(zMid, 0.10, 0.80);
-  // 和室 ⇔ 水回り(x=-0.82)
-  wallX(xWa, iZ0, zMid);
-  // 浴室・洗面の帯 ⇔ 前室(z=-1.94): 洗面の戸(x -0.35〜0.35)
-  wallZ(zWat, xWa, -0.35); wallZ(zWat, 0.35, xCor);
-  lintZ(zWat, -0.35, 0.35);
-  // 洗面 ⇔ 浴室(x=0.95): 浴室の戸(z -3.10〜-2.40)
-  wallX(xBath, iZ0, -3.10); wallX(xBath, -2.40, zWat);
-  lintX(xBath, -3.10, -2.40);
-  // 前室 ⇔ トイレ(x=1.40): トイレの戸(z -1.70〜-1.05)
-  wallX(xToi, zWat, -1.70); wallX(xToi, -1.05, zMid);
-  lintX(xToi, -1.70, -1.05);
+  /* 建具
+     開口ごとに枠(縦枠2本・上枠)を回し、戸は開口の上端(垂れ壁の下端)まで隙間なく納める。
+     戸は取手・引手・襖縁ごと1枚=1部材にまとめる(使用数・ハイライト・汚損表示を戸の単位で扱うため)。
+     枠は部材ごとに分ける(汚損表示は部材の外形で描くため、まとめると開口をふさいでしまう) */
+  const doorSet = makeDoorKit(IN, MI, { openH: 2.02, wallT: 0.07, frameMember: "建具枠" });
+  /* 間仕切り壁(設計情報の partitions。建具の開口を空け、上部に垂れ壁を付けて建具を納める) */
+  const buildPartitions = (floor, fy, ih, ft) => {
+    STD_PLAN.partitions.filter((p) => p.floor === floor).forEach((p) => {
+      const seg = (a, b, y0, h) => {
+        if (b - a <= 0.06) return;
+        IN(p.axis === "x" ? box(0.07, h, b - a, MI.kabe, p.at, y0 + h / 2, (a + b) / 2)
+                          : box(b - a, h, 0.07, MI.kabe, (a + b) / 2, y0 + h / 2, p.at), "内壁(クロス)");
+      };
+      const ds = [...p.doors].sort((d1, d2) => d1.a - d2.a);
+      let cur = p.from;
+      ds.forEach((d) => { seg(cur, d.a, fy, ih); seg(d.a, d.b, fy + 2.02, ih - 2.02); cur = d.b; });
+      seg(cur, p.to, fy, ih);
+      ds.forEach((d) => doorSet(fy, ft, p.axis, p.at, d.a, d.b, d.kind, d.member));
+    });
+  };
+  buildPartitions(1, f1, ih1, 0.03);
 
   /* 幅木 */
   const habakiX = (x, z0, z1) => IN(box(0.02, 0.09, z1 - z0, MI.habaki, x, f1 + 0.075, (z0 + z1) / 2), "幅木");
@@ -2391,18 +2670,6 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   habakiX(xCor - 0.05, zMid, 1.35); habakiX(xCor - 0.05, 2.25, iZ1);   // LDK入口の開口で切る
   habakiZ(iZ0 + 0.02, iX0, xWa); habakiX(iX0 + 0.02, iZ0, zMid); habakiX(xWa - 0.05, iZ0, zMid);
   habakiX(xCor + 0.05, domaZ1, iZ1); habakiZ(iZ1 - 0.02, xCor, iX1); habakiX(iX1 - 0.02, iZ0, domaZ0);
-
-  /* 建具
-     開口ごとに枠(縦枠2本・上枠)を回し、戸は開口の上端(垂れ壁の下端)まで隙間なく納める。
-     戸は取手・引手・襖縁ごと1枚=1部材にまとめる(使用数・ハイライト・汚損表示を戸の単位で扱うため)。
-     枠は部材ごとに分ける(汚損表示は部材の外形で描くため、まとめると開口をふさいでしまう) */
-  const doorSet = makeDoorKit(IN, MI, { openH: 2.02, wallT: 0.07, frameMember: "建具枠" });
-  doorSet(f1, 0.03, "x", xCor, 1.35, 2.25, "hiki", "内部建具(引戸)");          // LDK入口(玄関ホールから)
-  doorSet(f1, 0.03, "z", zMid, -3.20, -1.80, "fusuma", "襖");                 // 和室(引違いの襖2枚)
-  doorSet(f1, 0.03, "z", zMid, 0.10, 0.80, "hiraki", "内部建具(開き戸)");     // 水回り前室
-  doorSet(f1, 0.03, "z", zWat, -0.35, 0.35, "hiraki", "内部建具(開き戸)");    // 洗面脱衣
-  doorSet(f1, 0.03, "x", xBath, -3.10, -2.40, "bath", "内部建具(折れ戸)");   // 浴室(アルミ框・樹脂パネルの折れ戸)
-  doorSet(f1, 0.03, "x", xToi, -1.70, -1.05, "hiraki", "内部建具(開き戸)");   // トイレ
 
   /* 押入(和室・1間) */
   IN(box(1.78, 2.00, 0.85, MI.cabinet, iX0 + 0.94, f1 + 1.00, iZ0 + 0.45), "押入");
@@ -2450,35 +2717,25 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     const f2 = foundH + storyH + 0.12;
     const c2 = foundH + storyH + 2.56;
     const ih2 = c2 - f2;
-    const nStep = 14, run2 = 2.80 / nStep, rise2 = (f2 - f1) / nStep;
-    const stZb = 0.70, stZt = stZb - run2 * (nStep - 1);    // 下端(玄関側) → 上端(北)
-    const holeZ0 = stZt - 0.20, holeZ1 = stZb + 0.20;       // 2階の吹抜け
-    const w2A = 0.00;                                       // 洋室A ⇔ 洋室B
-    const zHall = -1.90;                                    // 2階の北側廊下の境
+    const ST = STD_PLAN.stair;
+    const nStep = ST.nStep, run2 = ST.run, rise2 = (f2 - f1) / nStep;
+    const stZb = ST.zBottom, stZt = ST.zTop;                // 下端(玄関側) → 上端(北)
+    const holeZ0 = ST.holeZ0, holeZ1 = ST.holeZ1;           // 2階の吹抜け
+    const { w2A, zHall } = STD_PLAN.G;                      // 洋室A ⇔ 洋室B / 2階の北側廊下の境
 
-    // 2階の床(吹抜けを避ける)
-    slabF(iX0, xCor, iZ0, iZ1, MI.yuka, "床(2階フローリング)", f2, 0.08);
-    slabF(xCor, iX1, iZ0, holeZ0, MI.yuka, "床(2階フローリング)", f2, 0.08);
-    slabF(xCor, iX1, holeZ1, iZ1, MI.yuka, "床(2階フローリング)", f2, 0.08);
+    // 2階の床(設計情報の部屋ごと。吹抜けは張らない)
+    STD_PLAN.rooms.filter((r) => r.floor === 2 && r.finish !== "吹抜け").forEach((r) => {
+      const [x0, x1, z0, z1] = r.rect;
+      slabF(x0, x1, z0, z1, MI.yuka, "床(2階フローリング)", f2, 0.08);
+    });
     IN(box(iX1 - iX0, 0.04, iZ1 - iZ0, MI.tenjo, (iX0 + iX1) / 2, c2, (iZ0 + iZ1) / 2), "天井");
-    liningAt(f2 - 0.04, c2 - 0.02);   // 2階の外壁の室内側の仕上げ
+    liningAt(f2 - 0.04, c2 - 0.02, 2);   // 2階の外壁の室内側の仕上げ
 
-    const w2x = (x, z0, z1) => { if (z1 - z0 > 0.06) IN(box(0.07, ih2, z1 - z0, MI.kabe, x, f2 + ih2 / 2, (z0 + z1) / 2), "内壁(クロス)"); };
-    const w2z = (z, x0, x1) => { if (x1 - x0 > 0.06) IN(box(x1 - x0, ih2, 0.07, MI.kabe, (x0 + x1) / 2, f2 + ih2 / 2, z), "内壁(クロス)"); };
-    const l2z = (z, x0, x1) => IN(box(x1 - x0, ih2 - 2.02, 0.07, MI.kabe, (x0 + x1) / 2, f2 + 2.02 + (ih2 - 2.02) / 2, z), "内壁(クロス)");
-    const l2x = (x, z0, z1) => IN(box(0.07, ih2 - 2.02, z1 - z0, MI.kabe, x, f2 + 2.02 + (ih2 - 2.02) / 2, (z0 + z1) / 2), "内壁(クロス)");
-    // 北側廊下(踊り場)と居室を分ける壁。開口: 洋室A(x -2.60〜-1.90)、洋室B(x 1.10〜1.80)
-    w2z(zHall, iX0, -2.60); w2z(zHall, -1.90, 1.10); w2z(zHall, 1.80, xCor);
-    l2z(zHall, -2.60, -1.90); l2z(zHall, 1.10, 1.80);
-    // 洋室A ⇔ 洋室B
-    w2x(w2A, zHall, iZ1);
-    // 洋室B ⇔ 階段室
-    w2x(xCor, holeZ0, iZ1);
-    doorSet(f2, 0.04, "z", zHall, -2.60, -1.90, "hiraki", "内部建具(開き戸)");   // 洋室A
-    doorSet(f2, 0.04, "z", zHall, 1.10, 1.80, "hiraki", "内部建具(開き戸)");     // 洋室B
-    // クローゼット
-    IN(box(1.78, 2.05, 0.62, MI.cabinet, iX0 + 0.94, f2 + 1.03, iZ1 - 0.33), "押入");
-    IN(box(1.40, 2.05, 0.62, MI.cabinet, w2A + 0.78, f2 + 1.03, iZ1 - 0.33), "押入");
+    // 間仕切り(北側廊下 ⇔ 洋室A・B、洋室A ⇔ B、洋室B ⇔ 階段室)
+    buildPartitions(2, f2, ih2, 0.04);
+    // クローゼット(南の窓を避けて北側廊下の壁に付ける。洋室Bは戸の脇)
+    IN(box(1.78, 2.05, 0.62, MI.cabinet, iX0 + 0.94, f2 + 1.03, zHall + 0.345), "押入");
+    IN(box(1.00, 2.05, 0.62, MI.cabinet, w2A + 0.54, f2 + 1.03, zHall + 0.345), "押入");
     IN(box(0.02, 0.09, iZ1 - zHall, MI.habaki, iX0 + 0.02, f2 + 0.075, (zHall + iZ1) / 2), "幅木");
     IN(box(w2A - iX0, 0.09, 0.02, MI.habaki, (iX0 + w2A) / 2, f2 + 0.075, iZ1 - 0.02), "幅木");
     IN(box(xCor - w2A, 0.09, 0.02, MI.habaki, (w2A + xCor) / 2, f2 + 0.075, iZ1 - 0.02), "幅木");
@@ -2511,14 +2768,15 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     katanagare: [2, wallTop + 0.9, -0.5],
     rikuyane: [0, wallTop + 0.15, 1.5],
   }[roofShape];
+  const mkTob = OPEN.find((o) => o.face === "S" && o.tobukuro === 1);   // 戸袋付きの掃き出し窓(マーカーの位置)
   const members = [
     { key:"roof",  name: roofShape === "rikuyane" ? "屋根(防水層)" : "屋根葺き材・棟", pos:[0, ridgeY + 0.25, 0], note: roofNotes[roofShape] },
     { key:"koya",  name: roofShape === "rikuyane" ? "屋根梁" : "小屋組(垂木・母屋・棟木)", pos: koyaPos, note:"屋根面に波打ち・変形がある場合は、葺き材だけでなく下地・垂木・母屋まで損害が及んでいないか確認します。小屋組まで損害が及ぶと損害割合が大きく変わります。「骨組み表示」で構成を確認できます。" },
     { key:"doi",   name: roofShape === "rikuyane" ? "排水(ルーフドレン・竪樋)" : "雨樋(軒樋・竪樋)", pos: roofShape === "rikuyane" ? [W / 2 - 0.3, wallTop - 0.8, -(D / 2 + 0.25)] : [2.5, wallTop + 0.1, Ze + 0.25], note: roofShape === "rikuyane" ? "陸屋根の雨水はルーフドレン(排水口)から竪樋で排水します。ドレンの詰まりは漏水・滞水の主要因で、豪雨後は特に確認が必要です。" : "雪の重みや台風で変形・脱落しやすい部位。単価は小さくても被害件数が多く、本数・延長の把握と写真記録が重要です。" },
     { key:"hisashi", name:"庇", pos:[W / 2 + 0.5, foundH + 2.5, 1.6], note:"窓や出入口の上部に設ける小庇。強風で煽られて変形・脱落しやすい付帯部位で、本体屋根とは別に有無・損傷を確認します。" },
-    { key:"amado", name:"雨戸・戸袋", pos:[3.3, foundH + 1.15, D / 2 + 0.3], note:"掃き出し窓の雨戸と戸袋。風災時は雨戸自体の飛散・変形のほか、戸袋内への飛来物・浸水も確認します。" },
+    { key:"amado", name:"雨戸・戸袋", pos:[mkTob.at + mkTob.tobukuro * (mkTob.w / 2 + 0.5), foundH + 1.15, D / 2 + 0.3], note:"掃き出し窓の雨戸と戸袋。風災時は雨戸自体の飛散・変形のほか、戸袋内への飛来物・浸水も確認します。" },
     { key:"wall",  name:"外壁", pos:[-2.8, foundH + 1.6, D / 2 + 0.15], note:"飛来物の衝突痕・ひび割れ・剥落を確認。水災では外壁に残る浸水痕の高さが浸水深の証拠となり、損害評価の基礎になります。" },
-    { key:"open",  name:"開口部(窓・サッシ)", pos:[1.8, foundH + 1.15, D / 2 + 0.25], note:"ガラス割れ・サッシ変形・網戸や雨戸の飛散は風災・雹災で件数の多い損害箇所です。破損位置と飛来物の方向の整合も確認します。" },
+    { key:"open",  name:"開口部(窓・サッシ)", pos:[mkTob.at, foundH + 1.15, D / 2 + 0.25], note:"ガラス割れ・サッシ変形・網戸や雨戸の飛散は風災・雹災で件数の多い損害箇所です。破損位置と飛来物の方向の整合も確認します。" },
     { key:"genkan",name:"玄関戸", pos:[W / 2 + 0.2, foundH + 1.15, 1.6], note:"開口部(建具)として評価します。浸水時は戸・枠の変形や開閉不良も損害の対象になり得ます。" },
     { key:"jiku",  name:"軸組(柱・梁・筋かい)", pos:[-(W / 2 + 0.15), foundH + 1.7, -1], note:"柱・梁の折損や建物の傾きは損害割合に大きく影響する構造部位です。参考: 損害割合80%以上は特別費用共済金の支払要件、地震火災費用共済金の「半焼」は損害割合20%以上が目安とされます(細部は各組合の約款によります)。" },
     { key:"dodai", name:"土台・床組", pos:[2.5, foundH + 0.15, -(D / 2 + 0.15)], note:"床上浸水時は土台・大引の含水・汚損を確認します。浸水被害は床下浸水か床上浸水か、浸水深がどこまでかで被害範囲が大きく変わります。" },
@@ -2792,6 +3050,19 @@ for (let i = 0; i < 8; i++) {
 function placeInteriorLights(intensity) {
   interiorLights.forEach((pl) => { pl.intensity = 0; });
   if (!intensity || !modelGroup) return;
+  if (state.buildingModel === "standard") {
+    // 設計情報の部屋の中央(天井下)に灯す。灯数が足りない場合は広い部屋を優先
+    STD_PLAN.rooms
+      .filter((r) => r.floor <= state.stories && r.finish !== "吹抜け")
+      .sort((a, b) => STD_PLAN.roomArea(b) - STD_PLAN.roomArea(a))
+      .slice(0, interiorLights.length)
+      .forEach((r, i) => {
+        const [x0, x1, z0, z1] = r.rect;
+        interiorLights[i].position.set((x0 + x1) / 2, STD_PLAN.floorY(r.floor) + 2.1, (z0 + z1) / 2);
+        interiorLights[i].intensity = intensity * Math.min(1.6, Math.max(0.6, STD_PLAN.roomArea(r) / 10));
+      });
+    return;
+  }
   const bb = new THREE.Box3();
   modelGroup.children.forEach((c) => { if (!(c.userData && c.userData.isSite)) bb.expandByObject(c); });
   if (bb.isEmpty()) return;
@@ -2950,9 +3221,9 @@ const MEMBER_TARGETS = {
   koya:    ["垂木", "母屋", "棟木", "小屋束", "小屋梁"],
   doi:     ["軒樋", "竪樋"],
   wall:    ["外壁", "外壁(妻壁)"],
-  open:    ["掃き出し窓(1階)", "腰窓(1階)", "窓(2階)"],
-  genkan:  ["玄関戸"],
-  jiku:    ["通し柱", "柱(隅柱)", "管柱", "間柱", "筋かい"],
+  open:    ["掃き出し窓(1階)", "腰窓(1階)", "小窓(1階)", "窓(2階)"],
+  genkan:  ["玄関戸", "玄関ポーチ"],
+  jiku:    ["通し柱", "柱(隅柱)", "管柱", "間柱", "筋かい", "まぐさ・窓台"],
   dodai:   ["土台", "床組(大引)"],
   kiso:    ["布基礎", "布基礎(中通り)"],
   naiso:   ["内壁(クロス)", "天井", "幅木"],
@@ -2972,6 +3243,7 @@ const DETAIL_NOTES = {
   "管柱": "各階ごとの柱。壁内にあるため、内装を剥がした状態での確認が必要になることがあります。",
   "間柱": "壁下地を支える細い柱。外壁の飛来物衝突では、下地まで損害が及んでいるかを確認します。",
   "筋かい": "耐力壁の斜材。地震・強風後は破断・抜けの有無を確認します。",
+  "まぐさ・窓台": "窓・出入口の上下に渡す横架材。開口部の変形(サッシの歪み・開閉不良)がある場合は、まぐさ・窓台の損傷も疑います。",
   "土台": "床上浸水時は含水・汚損を確認します。基礎との緊結部(アンカーボルト)も確認対象です。",
   "床組(大引)": "床を支える横架材。浸水時の含水・腐朽を確認します。",
   "胴差し": "1階と2階の境の横架材。2階建てでは階ごとに損害範囲を整理します。",
@@ -2998,9 +3270,11 @@ const DETAIL_NOTES = {
   "外壁(妻壁)": "妻側の壁面。高所のため強風の影響を受けやすい部位です。",
   "掃き出し窓(1階)": "開口部。ガラス割れ・サッシ変形を確認します。",
   "腰窓(1階)": "開口部。飛来物の飛来方向と破損位置の整合を確認します。",
+  "小窓(1階)": "洗面・浴室・廊下の小窓。型板ガラス・面格子付きが多く、面格子の変形や外れも併せて確認します。",
   "窓(2階)": "2階の開口部。高所のため飛来物被害を受けやすい部位です。",
   "雨戸・戸袋": "風災時は飛散・変形のほか、戸袋内への飛来物・浸水も確認します。",
   "玄関戸": "開口部(建具)。浸水時は戸・枠の変形や開閉不良も損害の対象になり得ます。",
+  "玄関ポーチ": "玄関前の土間コンクリート・タイルと踏段。タイルの浮き・割れ、踏段の欠け、浸水時の汚損を確認します。",
   "床(板張り)": "台所・廊下などの板張り。浸水では反り・浮き・継ぎ目の開きを確認します。",
   "床(2階板張り)": "2階の床。上階からの漏水や雨漏りの影響を確認します。",
   "天井(2階)": "2階の天井。シミは屋根からの雨漏りのサインです。",
@@ -3067,7 +3341,7 @@ function buildDetailedMembers() {
     const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
     g.computeBoundingBox();
     e.box.union(g.boundingBox);
-    e.count++;
+    if (!m.userData.noCount) e.count++;   // 窓のガラスは枠と合わせて1か所
   });
   const out = [];
   let i = 0;
@@ -3173,7 +3447,11 @@ function applyDamage() {
   const seedMix = { wind: 131, hail: 313, snow: 977, flood: 613 }[sc] || 1;
   const rng = mulberry32(state.dmgSeed * 7919 + seedMix);
   const shape = state.roofShape, n = state.stories;
-  const W = 8, D = 6, ov = 0.5, foundH = 0.45, storyH = 2.75;
+  const { W, D, foundH, storyH } = STD_PLAN, ov = 0.5;   // 寸法・開口部は設計情報に合わせる
+  const sWins = STD_PLAN.openings.filter((o) => o.floor === 1 && o.face === "S" && o.kind === "hakidashi");
+  const winY = (o) => { const r = openingRect(o); return (r.y0 + r.y1) / 2; };
+  const hisaY = (o) => openingRect(o).y1 + 0.12;
+  const tobO = sWins.find((o) => o.tobukuro) || sWins[0];
   const wallTop = foundH + storyH * n;
   const We = W / 2 + ov, Ze = D / 2 + ov;
   const rise = 1.8, riseT = 1.6;
@@ -3205,11 +3483,27 @@ function applyDamage() {
     }
     return { pos: new THREE.Vector3((rng() - 0.5) * (W - 1), wallTop + 0.14, (rng() - 0.5) * (D - 1)), nrm: new THREE.Vector3(0, 1, 0) };
   };
+  // 外壁上のランダム点(開口部に掛かる点は引き直す)
+  const onOpening = (face, u, y) => STD_PLAN.openings.some((o) => o.floor <= n && o.face === face && (() => {
+    const r = openingRect(o); return u > r.u0 - 0.35 && u < r.u1 + 0.35 && y > r.y0 - 0.35 && y < r.y1 + 0.35;
+  })());
   const wallPoint = (side) => {
-    const sf = side !== undefined ? side : (rng() < 0.5 ? 1 : -1);
-    const front = rng() < 0.6;
-    if (front) return { pos: new THREE.Vector3((rng() - 0.5) * (W - 1.5), foundH + 0.5 + rng() * 1.6, sf * (D / 2 + 0.09)), nrm: new THREE.Vector3(0, 0, sf) };
-    return { pos: new THREE.Vector3(sf * (W / 2 + 0.09), foundH + 0.5 + rng() * 1.6, (rng() - 0.5) * (D - 1.5)), nrm: new THREE.Vector3(sf, 0, 0) };
+    let p;
+    for (let k = 0; k < 8; k++) {
+      const sf = side !== undefined ? side : (rng() < 0.5 ? 1 : -1);
+      const front = rng() < 0.6;
+      const y = foundH + 0.5 + rng() * 1.6;
+      if (front) {
+        const x = (rng() - 0.5) * (W - 1.5);
+        p = { pos: new THREE.Vector3(x, y, sf * (D / 2 + 0.09)), nrm: new THREE.Vector3(0, 0, sf) };
+        if (!onOpening(sf > 0 ? "S" : "N", x, y)) break;
+      } else {
+        const z = (rng() - 0.5) * (D - 1.5);
+        p = { pos: new THREE.Vector3(sf * (W / 2 + 0.09), y, z), nrm: new THREE.Vector3(sf, 0, 0) };
+        if (!onOpening(sf > 0 ? "E" : "W", z, y)) break;
+      }
+    }
+    return p;
   };
 
   if (sc === "wind") {
@@ -3241,16 +3535,16 @@ function applyDamage() {
     }
     if (rng() > 0.45) {
       addPatch("庇の変形・脱落", "hisashi", "雨樋・附帯", "ext",
-        new THREE.Vector3(1.8, foundH + 2.2, D / 2 + 0.45), new THREE.Vector3(0, 0, 1), jaggedPatch(0.3, rng, dmgHoleMat, 6));
+        new THREE.Vector3(sWins[1].at, hisaY(sWins[1]), D / 2 + 0.56), new THREE.Vector3(0, 0, 1), jaggedPatch(0.3, rng, dmgHoleMat, 6));
     }
     if (rng() > 0.4) {
-      const x = rng() < 0.5 ? -1.8 : 1.8;
+      const wo = sWins[rng() < 0.5 ? 0 : 1];
       addPatch("窓ガラスの破損", "glass", "開口部", "ext",
-        new THREE.Vector3(x, foundH + 1.07, D / 2 + 0.16), new THREE.Vector3(0, 0, 1), crackLines(0.6, rng, dmgGlassMat));
+        new THREE.Vector3(wo.at, winY(wo), D / 2 + 0.04), new THREE.Vector3(0, 0, 1), crackLines(0.6, rng, dmgGlassMat));
     }
     if (rng() > 0.55) {
       addPatch("雨戸・戸袋の変形", "amado", "開口部", "ext",
-        new THREE.Vector3(3.15, foundH + 1.1, D / 2 + 0.2), new THREE.Vector3(0, 0, 1), jaggedPatch(0.28, rng, dmgHoleMat, 6));
+        new THREE.Vector3(tobO.at + tobO.tobukuro * (tobO.w / 2 + 0.5), winY(tobO), D / 2 + 0.235), new THREE.Vector3(0, 0, 1), jaggedPatch(0.28, rng, dmgHoleMat, 6));
     }
   }
 
@@ -3260,9 +3554,9 @@ function applyDamage() {
       const p = roofPoint();
       addPatch("雹による葺き材の割れ・打痕", "hailRoof", "屋根", "ext", p.pos, p.nrm, dentGrid(0.7, rng, dmgCrackMat, 7 + ((rng() * 6) | 0)));
     }
-    const x = rng() < 0.5 ? -1.8 : 1.8;
+    const wo = sWins[rng() < 0.5 ? 0 : 1];
     addPatch("窓ガラスの破損", "glass", "開口部", "ext",
-      new THREE.Vector3(x, foundH + 1.07, D / 2 + 0.16), new THREE.Vector3(0, 0, 1), crackLines(0.55, rng, dmgGlassMat));
+      new THREE.Vector3(wo.at, winY(wo), D / 2 + 0.04), new THREE.Vector3(0, 0, 1), crackLines(0.55, rng, dmgGlassMat));
     if (rng() > 0.4) {
       const wp = wallPoint(1);
       addPatch("外壁の打痕・剥落", "wallCrack", "外壁", "ext", wp.pos, wp.nrm, dentGrid(0.6, rng, dmgCrackMat, 6));
@@ -3292,7 +3586,7 @@ function applyDamage() {
     }
     if (rng() > 0.4) {
       addPatch("庇の変形(雪の重み)", "hisashi", "雨樋・附帯", "ext",
-        new THREE.Vector3(-1.8, foundH + 2.2, D / 2 + 0.45), new THREE.Vector3(0, 0, 1), jaggedPatch(0.32, rng, dmgHoleMat, 6));
+        new THREE.Vector3(sWins[0].at, hisaY(sWins[0]), D / 2 + 0.56), new THREE.Vector3(0, 0, 1), jaggedPatch(0.32, rng, dmgHoleMat, 6));
     }
     if (rng() > 0.5) {
       const c1 = foundH + (n === 1 ? 2.4 : 2.55);
@@ -3375,7 +3669,7 @@ function memberLegendItems() {
   const counts = new Map();
   modelGroup.traverse((m) => {
     if (!m.isMesh || !m.userData.member || m.userData.member.indexOf("DMG") === 0) return;
-    counts.set(m.userData.member, (counts.get(m.userData.member) || 0) + 1);
+    if (!m.userData.noCount) counts.set(m.userData.member, (counts.get(m.userData.member) || 0) + 1);
   });
   return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"));
 }
