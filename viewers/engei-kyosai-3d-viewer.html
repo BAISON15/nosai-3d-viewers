@@ -104,9 +104,6 @@
 
 <script type="module">
 import * as THREE from "three";
-// r128相当の色味を維持するため色管理を無効化(見た目の互換性のため)。
-// 最新のリニア色管理を使う場合は次行を削除してください。
-if (THREE.ColorManagement) THREE.ColorManagement.enabled = false;
 
 /* ============================================================
    共通マテリアル・色定義
@@ -144,6 +141,7 @@ const PART_COLORS = {
   "側屋根面A": "#0d9488", "側屋根面B": "#99f6e4",
   "周囲面": "#2563eb", "天井面": "#16a34a",
   "基礎": "#64748b",
+  "施設内農作物": "#a855f7",
 };
 
 const partMatCache = {};
@@ -655,6 +653,7 @@ const TYPES = {
     build: buildPipeHouse,
     covers: ["noubi", "po", "taikyu_po"],
     defaultCover: "po",
+    defaultCrop: "strawberry",
     info: "主要骨材が直管パイプ(φ19.1〜25.4mm級)。別表1では40-1型(間口3.6〜6.0m)・40-2型(間口6.0〜10.0m)。分損時はスパン数の割合で本体被害額を算出する点が他型式と異なります。※奥行は表示用に短縮しています(標準型式は奥行40〜70m級)。",
   },
   steel: {
@@ -663,6 +662,7 @@ const TYPES = {
     build: buildSteelHouse,
     covers: ["soft", "hard", "kanreisha"],
     defaultCover: "soft",
+    defaultCrop: "tomato",
     spansSelectable: true,
     info: "鉄骨(中)造の屋根型。軟質フィルム被覆=Ⅳ類甲(61型系)、硬質フィルム被覆=Ⅳ類乙(62型系)。損害割合は部材別価額割合(別表5)×施設構造部分別価額割合(別表4)を積み上げて算出します。61-9/62-9型(2連棟)に相当する連棟にも切替できます。",
   },
@@ -672,6 +672,7 @@ const TYPES = {
     build: buildGlassHouse,
     covers: ["glass3", "glass4", "amiiri"],
     defaultCover: "glass4",
+    defaultCrop: "flower",
     spansSelectable: true,
     info: "鉄骨造のガラス室。価額=再建築価額×時価現有率。ガラスのずれは補修扱い、補修割合の係数はガラスのみ0.5です。木造のガラス室はⅠ類(10型系)になります。20-7型(2連)・20-8型(3連)に相当する連棟にも切替できます。",
   },
@@ -681,6 +682,7 @@ const TYPES = {
     build: buildAmayoke,
     covers: ["noubi", "po"],
     defaultCover: "noubi",
+    defaultCrop: "tomato",
     info: "80-1〜80-18型が雨よけ施設、80-19〜80-36型がネットハウス。被覆面積構成割合は屋根面A・B各50%(別表3)。係数・割合は骨組が対応する30〜62型の値を準用します。",
   },
   net: {
@@ -689,9 +691,149 @@ const TYPES = {
     build: buildNetHouse,
     covers: ["net_gen", "net_taikyu"],
     defaultCover: "net_gen",
+    defaultCrop: "leafy",
     info: "90-1型。施設構造部分は周囲面・天井面・基礎の3区分(他型式は妻面・側面・屋根面・基礎の4区分)。標準設置面積は1,000〜10,000㎡で、本モデルは表示用に縮小しています。",
   },
 };
+
+/* ============================================================
+   施設内農作物(ボタンで表示)
+   園芸施設共済では、施設内農作物は特定園芸施設にあわせて選択して加入する共済目的。
+   区分を「施設内農作物」として施設本体と分ける。株・葉・果実は同じ形が多数並ぶため InstancedMesh で描く
+============================================================ */
+const CROPS = {
+  tomato:     { label: "トマト(誘引栽培)", member: "施設内農作物(トマト)", pitch: 1.20, bed: 0.60 },
+  strawberry: { label: "イチゴ(高設栽培)", member: "施設内農作物(イチゴ)", pitch: 1.10, bed: 0.35 },
+  leafy:      { label: "葉物(ホウレンソウ等)", member: "施設内農作物(葉物)", pitch: 1.50, bed: 1.20 },
+  flower:     { label: "花き(キク)",       member: "施設内農作物(キク)", pitch: 1.40, bed: 1.00 },
+};
+// 型式ごとの作付けできる範囲(妻面の出入口前は通路として空ける)と、位置 z での屋根下の高さ
+function cropArea(typeKey, spans) {
+  const r = 2.7;
+  switch (typeKey) {
+    case "pipe":    return { x0: -5.2, x1: 5.2, z0: -1.9, z1: 1.9, hAt: (z) => Math.sqrt(Math.max(r * r - z * z, 0)) };
+    case "amayoke": return { x0: -5.2, x1: 5.2, z0: -2.2, z1: 2.2, hAt: (z) => 1.8 + Math.sqrt(Math.max(r * r - z * z, 0)) };
+    case "steel":
+    case "glass":   { const hw = 4 * (spans || 1) - 0.7; return { x0: -6.2, x1: 6.2, z0: -hw, z1: hw, hAt: () => 2.4 }; }
+    default:        return { x0: -9.0, x1: 9.0, z0: -6.2, z1: 6.2, hAt: () => 2.6 };   // 多目的ネットハウス
+  }
+}
+let _cropM = null;
+function cropMats() {
+  if (_cropM) return _cropM;
+  const S = (color, roughness = 0.8, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
+  _cropM = {
+    soil: S(0x6b4f36, 1.0), mulch: S(0x2b2b2b, 0.6), leaf: S(0xffffff, 0.75), stem: S(0x55803a, 0.8),
+    tomato: S(0xd8322a, 0.35), berry: S(0xc81e2d, 0.4), trough: S(0xe4e7ea, 0.5), leg: S(0x9aa1a8, 0.45, { metalness: 0.5 }),
+    string: S(0xf1f1ec, 0.9), wire: S(0x94a3b8, 0.4, { metalness: 0.6 }), flower: S(0xffffff, 0.7), net: S(0xf5f5f0, 0.9),
+  };
+  return _cropM;
+}
+// 同じ形を多数置く(matrices: THREE.Matrix4 の配列、colors: 株ごとの色のばらつき)
+function instanced(geo, mat, matrices, colors) {
+  const m = new THREE.InstancedMesh(geo, mat, Math.max(1, matrices.length));
+  matrices.forEach((mx, i) => m.setMatrixAt(i, mx));
+  if (colors) colors.forEach((c, i) => m.setColorAt(i, c));
+  m.count = matrices.length;
+  m.instanceMatrix.needsUpdate = true;
+  if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  return m;
+}
+function buildCrops(cropKey, typeKey, spans) {
+  const C = CROPS[cropKey], M = cropMats(), A = cropArea(typeKey, spans);
+  const g = new THREE.Group();
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const mx = (x, y, z, sx = 1, sy = 1, sz = 1, ry = 0) =>
+    new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(sx, sy, sz));
+  const green = (l) => new THREE.Color().setHSL(0.27 + rnd() * 0.05, 0.45 + rnd() * 0.15, l + rnd() * 0.08);
+  const L = A.x1 - A.x0, cxm = (A.x0 + A.x1) / 2;
+  const nRow = Math.max(1, Math.floor((A.z1 - A.z0) / C.pitch) + 1);
+  const rows = [...Array(nRow)].map((_, i) => (A.z0 + A.z1) / 2 + (i - (nRow - 1) / 2) * C.pitch);
+  const add = (mesh, member) => { g.add(tag(mesh, "施設内農作物", member)); return mesh; };
+  const bedMember = cropKey === "strawberry" ? "高設栽培ベンチ" : "畝・マルチ";
+  const beds = [], mulch = [];
+  const leafM = [], leafC = [], stemM = [], fruitM = [], extraM = [], extra2M = [];
+  const leafGeo = new THREE.IcosahedronGeometry(1, 0);
+
+  if (cropKey === "tomato") {
+    rows.forEach((z) => {
+      beds.push(mx(cxm, 0.09, z, L, 0.18, C.bed)); mulch.push(mx(cxm, 0.185, z, L, 0.01, C.bed + 0.02));
+      const hMax = Math.min(1.8, A.hAt(Math.abs(z)) - 0.25);
+      extraM.push(mx(cxm, hMax + 0.12, z, L, 0.012, 0.012));                            // 誘引線(棚線)
+      for (let x = A.x0 + 0.2; x <= A.x1 - 0.2; x += 0.40) {
+        const h = hMax * (0.9 + rnd() * 0.1);
+        stemM.push(mx(x, 0.19 + h / 2, z, 0.018, h, 0.018));
+        extra2M.push(mx(x, 0.19 + (hMax + 0.12 - 0.19) / 2, z + 0.02, 0.004, hMax - 0.07, 0.004));   // 誘引ひも
+        for (let k = 0; k < 5; k++) {
+          const y = 0.45 + k * (h - 0.4) / 4.5;
+          leafM.push(mx(x + (rnd() - 0.5) * 0.1, y, z + (rnd() - 0.5) * 0.2, 0.22, 0.09, 0.2, rnd() * 6.28)); leafC.push(green(0.26));
+        }
+        [0.55, 0.85, 1.15].filter((y) => y < h).forEach((y) => {                          // 果房(下から赤く色づく)
+          for (let k = 0; k < 4; k++) fruitM.push(mx(x + (rnd() - 0.5) * 0.12, y + (rnd() - 0.5) * 0.08, z + (rnd() - 0.5) * 0.14, 0.04, 0.04, 0.04));
+        });
+      }
+    });
+    add(instanced(new THREE.CylinderGeometry(1, 1, 1, 6), M.stem, stemM), C.member);
+    add(instanced(leafGeo, M.leaf, leafM, leafC), C.member);
+    add(instanced(new THREE.SphereGeometry(1, 8, 6), M.tomato, fruitM), C.member);
+    add(instanced(new THREE.BoxGeometry(1, 1, 1), M.wire, extraM), "誘引線・誘引ひも");
+    add(instanced(new THREE.BoxGeometry(1, 1, 1), M.string, extra2M), "誘引線・誘引ひも");
+  } else if (cropKey === "strawberry") {
+    // 高設ベンチ(地上約0.9m)に2条植え。果実は栽培槽の外側へ垂らす
+    const benchY = 0.9;
+    rows.forEach((z) => {
+      beds.push(mx(cxm, benchY - 0.12, z, L, 0.24, C.bed));
+      for (let x = A.x0 + 0.3; x <= A.x1 - 0.3; x += 1.5) [-1, 1].forEach((s) => extraM.push(mx(x, (benchY - 0.24) / 2, z + s * 0.14, 0.03, benchY - 0.24, 0.03)));
+      [-1, 1].forEach((s) => {
+        for (let x = A.x0 + 0.1; x <= A.x1 - 0.1; x += 0.22) {
+          const zz = z + s * 0.09;
+          leafM.push(mx(x, benchY + 0.07, zz + s * 0.02, 0.15, 0.08, 0.14, rnd() * 6.28)); leafC.push(green(0.24));
+          leafM.push(mx(x + 0.05, benchY + 0.1, zz, 0.1, 0.06, 0.1, rnd() * 6.28)); leafC.push(green(0.28));
+          for (let k = 0; k < 2; k++) fruitM.push(mx(x + (rnd() - 0.5) * 0.15, benchY - 0.02 - rnd() * 0.12, z + s * (C.bed / 2 + 0.03), 0.028, 0.034, 0.028));
+        }
+      });
+    });
+    add(instanced(leafGeo, M.leaf, leafM, leafC), C.member);
+    add(instanced(new THREE.SphereGeometry(1, 8, 6), M.berry, fruitM), C.member);
+    add(instanced(new THREE.BoxGeometry(1, 1, 1), M.leg, extraM), bedMember);
+  } else if (cropKey === "leafy") {
+    rows.forEach((z) => {
+      beds.push(mx(cxm, 0.08, z, L, 0.16, C.bed));
+      for (let x = A.x0 + 0.1; x <= A.x1 - 0.1; x += 0.16)
+        for (let zz = z - C.bed / 2 + 0.1; zz <= z + C.bed / 2 - 0.1; zz += 0.16) {
+          leafM.push(mx(x + (rnd() - 0.5) * 0.04, 0.2, zz + (rnd() - 0.5) * 0.04, 0.075, 0.05, 0.075, rnd() * 6.28)); leafC.push(green(0.28));
+        }
+    });
+    add(instanced(leafGeo, M.leaf, leafM, leafC), C.member);
+  } else {
+    // キク: 株を密に植え、倒伏防止のフラワーネットを張る
+    rows.forEach((z) => {
+      beds.push(mx(cxm, 0.08, z, L, 0.16, C.bed));
+      // フラワーネット(15cm目の網を2段に水平に張る)。長手の糸と横糸を細い棒で格子に組む
+      [0.45, 0.75].forEach((y) => {
+        for (let zz = z - C.bed / 2; zz <= z + C.bed / 2 + 1e-6; zz += C.bed / 6) extra2M.push(mx(cxm, y, zz, L, 0.004, 0.004));
+        for (let x = A.x0; x <= A.x1 + 1e-6; x += 0.15) extra2M.push(mx(x, y, z, 0.004, 0.004, C.bed));
+      });
+      for (let x = A.x0 + 0.1; x <= A.x1 - 0.1; x += 0.15)
+        for (let zz = z - C.bed / 2 + 0.1; zz <= z + C.bed / 2 - 0.1; zz += 0.2) {
+          const h = 0.8 + rnd() * 0.15;
+          stemM.push(mx(x, 0.16 + h / 2, zz, 0.008, h, 0.008));
+          leafM.push(mx(x, 0.16 + h * 0.55, zz, 0.07, 0.12, 0.07, rnd() * 6.28)); leafC.push(green(0.24));
+          fruitM.push(mx(x, 0.16 + h + 0.02, zz, 0.045, 0.03, 0.045));
+          extraM.push(new THREE.Color().setHSL(0.13 + rnd() * 0.03, 0.8, 0.55));
+        }
+    });
+    add(instanced(new THREE.CylinderGeometry(1, 1, 1, 5), M.stem, stemM), C.member);
+    add(instanced(leafGeo, M.leaf, leafM, leafC), C.member);
+    add(instanced(new THREE.SphereGeometry(1, 8, 6), M.flower, fruitM, extraM), C.member);
+    add(instanced(new THREE.BoxGeometry(1, 1, 1), M.net, extra2M), "フラワーネット");
+  }
+  add(instanced(new THREE.BoxGeometry(1, 1, 1), cropKey === "strawberry" ? M.trough : M.soil, beds), bedMember);
+  if (mulch.length) add(instanced(new THREE.BoxGeometry(1, 1, 1), M.mulch, mulch), bedMember);
+  g.userData.center = [cxm, 1.2, rows[0]];
+  return g;
+}
 
 /* ============================================================
    アプリ状態・three.js基盤
@@ -700,6 +842,8 @@ const state = {
   typeKey: "pipe",
   spans: 1,
   coverKey: TYPES.pipe.defaultCover,
+  showCrops: false,     // 施設内農作物の表示
+  cropKey: TYPES.pipe.defaultCrop,
   mode: "normal",       // normal | parts | frame
   showDims: false,
   selectedMember: null,
@@ -755,6 +899,18 @@ function rebuild(resetCam) {
   currentDef = t.build(state.coverKey, t.spansSelectable ? state.spans : 1);
   modelGroup = currentDef.group;
   scene.add(modelGroup);
+  if (state.showCrops) {
+    // 施設内農作物(畝・ベンチ・誘引資材を含む)を施設の中に並べ、着眼点のマーカーを1つ加える
+    const cg = buildCrops(state.cropKey, state.typeKey, t.spansSelectable ? state.spans : 1);
+    modelGroup.add(cg);
+    const names = new Set();
+    cg.traverse((m) => { if (m.isMesh) names.add(m.userData.member); });
+    if (currentDef.parts && !currentDef.parts.includes("施設内農作物")) currentDef.parts = currentDef.parts.concat("施設内農作物");
+    currentDef.members = currentDef.members.concat([{
+      key: "crop", name: CROPS[state.cropKey].member, targets: [...names], pos: cg.userData.center,
+      note: "施設内農作物は、特定園芸施設(本体)にあわせて選択して加入する共済目的です。施設本体・附帯施設とは区分して評価し、被害が施設の損壊(被覆材の破損・倒壊など)に伴うものかを確認します。高設栽培のベンチなどの栽培設備が附帯施設に当たるかは、組合の取扱いを確認してください。",
+    }]);
+  }
 
   buildMemberColors();
   if (state.detailParts) currentDef.members = buildDetailedMembers();
@@ -1464,6 +1620,7 @@ function renderPanel() {
     b.addEventListener("click", () => {
       state.typeKey = key;
       state.coverKey = TYPES[key].defaultCover;
+      state.cropKey = TYPES[key].defaultCrop;
       state.selectedMember = null;
       rebuild(true);
     });
@@ -1526,6 +1683,23 @@ function renderPanel() {
     secCover.appendChild(b);
   });
   panel.appendChild(secCover);
+
+  // 施設内農作物
+  const secCrop = el("div", "section", "<h2>施設内農作物</h2>");
+  const tg = el("button", "btn" + (state.showCrops ? " active" : ""), state.showCrops ? "☑ 施設内の作物を表示" : "☐ 施設内の作物を表示");
+  tg.addEventListener("click", () => { state.showCrops = !state.showCrops; rebuild(false); });
+  secCrop.appendChild(tg);
+  if (state.showCrops) {
+    const rowC = el("div", "btn-row");
+    Object.entries(CROPS).forEach(([k, c]) => {
+      const b = el("button", "btn" + (state.cropKey === k ? " active" : ""), c.label);
+      b.addEventListener("click", () => { state.cropKey = k; rebuild(false); });
+      rowC.appendChild(b);
+    });
+    secCrop.appendChild(rowC);
+  }
+  secCrop.appendChild(el("div", "legend-cap", "施設内農作物は、特定園芸施設にあわせて選択して加入する共済目的です。表示すると区分「施設内農作物」として施設本体と分けて色分け・ハイライトできます。作物は型式ごとの代表例を初期表示しています。"));
+  panel.appendChild(secCrop);
 
   // 損害評価の練習(被害シミュレーション)
   const secDmg = el("div", "section", "<h2>損害評価の練習(被害シミュレーション)</h2>");
