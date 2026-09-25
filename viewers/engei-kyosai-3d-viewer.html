@@ -32,18 +32,18 @@
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
-  #app { display: flex; flex-direction: column; height: 100vh; background: #f1f5f9; }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; background: #f1f5f9; }
 
   header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
   header .credit { font-size: 10.5px; color: #94a3b8; white-space: nowrap; margin-left: auto; }
   header h1 { font-size: 13px; margin: 0; font-weight: 600; }
   header p { font-size: 10.5px; margin: 2px 0 0; color: #94a3b8; }
 
-  main { flex: 1; display: flex; min-height: 0; flex-direction: row; }
+  main { flex: 1; display: flex; min-height: 0; min-width: 0; flex-direction: row; }
   @media (max-width: 860px) { main { flex-direction: column; } }
 
-  #viewport { position: relative; flex: 1; min-height: 360px; }
-  #canvas-holder { position: absolute; inset: 0; }
+  #viewport { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+  #canvas-holder { position: absolute; inset: 0; overflow: hidden; }
   #canvas-holder canvas { display: block; touch-action: none; }
 
   .label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; user-select: none; transform: translate(-50%, -100%); }
@@ -56,8 +56,17 @@
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
 
-  aside { width: 320px; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
-  @media (max-width: 860px) { aside { width: auto; border-left: none; border-top: 1px solid #cbd5e1; max-height: 46vh; } }
+  aside { flex: none; width: clamp(260px, 30vw, 320px); min-height: 0; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
+  @media (max-width: 860px) {
+    #viewport { flex: none; height: 56%; min-height: 220px; }
+    aside { flex: 1 1 auto; width: auto; border-left: none; border-top: 1px solid #cbd5e1; }
+  }
+  @media (max-width: 860px) and (orientation: landscape) and (max-height: 520px) {
+    main { flex-direction: row; }
+    #viewport { flex: 1 1 auto; height: auto; min-height: 0; }
+    aside { flex: none; width: min(300px, 42vw); border-left: 1px solid #cbd5e1; border-top: none; }
+  }
+  @media (max-width: 560px) { .hint { bottom: auto; top: 8px; left: 8px; max-width: calc(100% - 16px); } }
 
   .section { margin-bottom: 16px; }
   .section h2 { font-size: 11px; font-weight: 600; color: #64748b; margin: 0 0 8px; }
@@ -1584,11 +1593,16 @@ dom.addEventListener("click", (e) => {
   }
 });
 
-window.addEventListener("resize", () => {
-  camera.aspect = holder.clientWidth / holder.clientHeight;
+// ウィンドウだけでなくヘッダーの折り返しやパネル幅の変化にも追従する
+function fitRenderer() {
+  const w = holder.clientWidth, h = holder.clientHeight;
+  if (w === 0 || h === 0) return;
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(holder.clientWidth, holder.clientHeight);
-});
+  renderer.setSize(w, h);
+}
+new ResizeObserver(fitRenderer).observe(holder);
+window.addEventListener("resize", fitRenderer);
 document.getElementById("reset-view").addEventListener("click", () => {
   orbit.theta = Math.PI/4; orbit.phi = Math.PI/3;
   orbit.radius = currentDef.camR;

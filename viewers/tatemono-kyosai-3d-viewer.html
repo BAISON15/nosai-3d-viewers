@@ -32,18 +32,18 @@
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
-  #app { display: flex; flex-direction: column; height: 100vh; background: #f1f5f9; }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; background: #f1f5f9; }
 
   header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
   header .credit { font-size: 10.5px; color: #94a3b8; white-space: nowrap; margin-left: auto; }
   header h1 { font-size: 13px; margin: 0; font-weight: 600; }
   header p { font-size: 10.5px; margin: 2px 0 0; color: #94a3b8; }
 
-  main { flex: 1; display: flex; min-height: 0; flex-direction: row; }
+  main { flex: 1; display: flex; min-height: 0; min-width: 0; flex-direction: row; }
   @media (max-width: 860px) { main { flex-direction: column; } }
 
-  #viewport { position: relative; flex: 1; min-height: 360px; }
-  #canvas-holder { position: absolute; inset: 0; }
+  #viewport { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+  #canvas-holder { position: absolute; inset: 0; overflow: hidden; }
   #canvas-holder canvas { display: block; touch-action: none; }
 
   .label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; user-select: none; transform: translate(-50%, -100%); }
@@ -66,8 +66,17 @@
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
 
-  aside { width: 320px; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
-  @media (max-width: 860px) { aside { width: auto; border-left: none; border-top: 1px solid #cbd5e1; max-height: 46vh; } }
+  aside { flex: none; width: clamp(260px, 30vw, 320px); min-height: 0; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
+  @media (max-width: 860px) {
+    #viewport { flex: none; height: 56%; min-height: 220px; }
+    aside { flex: 1 1 auto; width: auto; border-left: none; border-top: 1px solid #cbd5e1; }
+  }
+  @media (max-width: 860px) and (orientation: landscape) and (max-height: 520px) {
+    main { flex-direction: row; }
+    #viewport { flex: 1 1 auto; height: auto; min-height: 0; }
+    aside { flex: none; width: min(300px, 42vw); border-left: 1px solid #cbd5e1; border-top: none; }
+  }
+  @media (max-width: 560px) { .hint { bottom: auto; top: 8px; left: 8px; max-width: calc(100% - 16px); } }
 
   .section { margin-bottom: 16px; }
   .section h2 { font-size: 11px; font-weight: 600; color: #64748b; margin: 0 0 8px; }
@@ -226,6 +235,7 @@ function makeCanvasTex(draw) {
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;   // 斜めから見た屋根・壁の模様がぼやけないように(実際の上限はGPUに合わせて丸められる)
   return t;
 }
 
@@ -736,11 +746,25 @@ function beamBetween(p1, p2, r, mat) {
    住宅モデル生成
    W=8(間口, X方向=棟方向), D=6(奥行, Z方向), 南面=+Z, 玄関=+X妻側
 ============================================================ */
+// 面内の平面投影でUVを求める(a→b を u 軸、面内でそれに直交する向きを v 軸)。
+// 矩形なら従来の 0〜1 と同じ値になり、台形・三角形でも模様が歪まず、軒(a→b)から段が揃う。
+function planarUV(pts) {
+  const [a, b, c] = pts;
+  const uAx = new THREE.Vector3().subVectors(b, a);
+  const uLen = uAx.length();
+  uAx.divideScalar(uLen);
+  const n = new THREE.Vector3().crossVectors(uAx, new THREE.Vector3().subVectors(c, a)).normalize();
+  const vAx = new THREE.Vector3().crossVectors(n, uAx);
+  const rel = pts.map((p) => new THREE.Vector3().subVectors(p, a));
+  const vLen = Math.max(...rel.map((r) => r.dot(vAx)));
+  return rel.map((r) => [r.dot(uAx) / uLen, r.dot(vAx) / vLen]);
+}
 function quadMesh(a, b, c, d, mat) {
   const geo = new THREE.BufferGeometry();
   const pos = [a, b, c, a, c, d].flatMap((v) => [v.x, v.y, v.z]);
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute("uv", new THREE.Float32BufferAttribute([0,0, 1,0, 1,1, 0,0, 1,1, 0,1], 2));
+  const [ua, ub, uc, ud] = planarUV([a, b, c, d]);
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute([ua, ub, uc, ua, uc, ud].flat(), 2));
   geo.computeVertexNormals();
   return new THREE.Mesh(geo, mat);
 }
@@ -748,7 +772,7 @@ function triMesh(a, b, c, mat) {
   const geo = new THREE.BufferGeometry();
   const pos = [a, b, c].flatMap((v) => [v.x, v.y, v.z]);
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute("uv", new THREE.Float32BufferAttribute([0,0, 1,0, 0.5,1], 2));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(planarUV([a, b, c]).flat(), 2));
   geo.computeVertexNormals();
   return new THREE.Mesh(geo, mat);
 }
@@ -2779,10 +2803,12 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
       g.add(tag(box(0.12, 0.18, D, MAT.woodD, x, wallTop + 0.02, 0), "軸組(構造材)", "小屋梁", "frame"));
     });
     [-0.6, 0.6].forEach((x) => g.add(tag(box(0.1, 1.5, 0.1, MAT.wood, x, wallTop + 0.86, 0), "軸組(構造材)", "小屋束", "frame")));
-    g.add(tag(box(2 * rh + 0.2, 0.12, 0.12, MAT.woodD, 0, wallTop + rise - 0.1, 0), "軸組(構造材)", "棟木", "frame"));
+    // 屋根面は厚みのない面(軒で wallTop+0.03)なので、垂木・隅木は面より十分下げて突き抜けないようにする
+    const rDrop = 0.1;
+    g.add(tag(box(2 * rh + 0.2, 0.12, 0.12, MAT.woodD, 0, wallTop + rise - 0.16, 0), "軸組(構造材)", "棟木", "frame"));
     for (let x = -rh + 0.25; x <= rh - 0.24; x += 0.5) {
       [[Ze], [-Ze]].forEach(([sz]) => {
-        g.add(tag(beamBetween(new THREE.Vector3(x, wallTop + 0.02, sz), new THREE.Vector3(x, ridgeY - 0.08, 0), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+        g.add(tag(beamBetween(new THREE.Vector3(x, wallTop + 0.03 - rDrop, sz), new THREE.Vector3(x, ridgeY - rDrop, 0), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
       });
     }
     // 主平部の垂木(隅木ラインまで)
@@ -2791,16 +2817,19 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
       const t = (We - Math.abs(x)) / (We - rh);
       [[1], [-1]].forEach(([sz]) => {
         g.add(tag(beamBetween(
-          new THREE.Vector3(x, wallTop + 0.02, sz * Ze),
-          new THREE.Vector3(x, wallTop + rise * t - 0.06, sz * Ze * (1 - t)), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+          new THREE.Vector3(x, wallTop + 0.03 - rDrop, sz * Ze),
+          new THREE.Vector3(x, wallTop + 0.03 + (rise - 0.03) * t - rDrop, sz * Ze * (1 - t)), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
       });
     }));
     // 隅木・配付垂木(端部)
     [[We, Ze, rh], [We, -Ze, rh], [-We, Ze, -rh], [-We, -Ze, -rh]].forEach(([cx, cz, rx]) => {
-      g.add(tag(beamBetween(new THREE.Vector3(cx, wallTop + 0.02, cz), new THREE.Vector3(rx, ridgeY - 0.06, 0), 0.04, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+      g.add(tag(beamBetween(new THREE.Vector3(cx, wallTop + 0.03 - rDrop, cz), new THREE.Vector3(rx, ridgeY - rDrop, 0), 0.04, MAT.wood), "軸組(構造材)", "垂木", "frame"));
     });
-    [[We, rh], [-We, -rh]].forEach(([cx, rx]) => [-(D / 2 + ov - 1.2), 0, D / 2 + ov - 1.2].forEach((z) => {
-      g.add(tag(beamBetween(new THREE.Vector3(cx, wallTop + 0.02, z), new THREE.Vector3(rx, ridgeY - 0.06, 0), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
+    // 配付垂木は妻側の下り面に沿って、軒から隅木まで(軒と直交)
+    [[We, rh], [-We, -rh]].forEach(([cx, rx]) => [-(D / 2 + ov - 1.2), -1.2, 0, 1.2, D / 2 + ov - 1.2].forEach((z) => {
+      const t = 1 - Math.abs(z) / Ze;                       // 隅木に当たる位置(0=軒, 1=棟端)
+      const x1 = cx + (rx - cx) * t;
+      g.add(tag(beamBetween(new THREE.Vector3(cx, wallTop + 0.03 - rDrop, z), new THREE.Vector3(x1, wallTop + 0.03 + (rise - 0.03) * t - rDrop, z), 0.035, MAT.wood), "軸組(構造材)", "垂木", "frame"));
     }));
   } else if (roofShape === "katanagare") {
     for (let bx = -(W / 2 - 1.0); bx <= W / 2 - 0.99; bx += (W - 2.0) / 3) g.add(tag(box(0.12, 0.18, D, MAT.woodD, +bx.toFixed(3), wallTop + 0.02, 0), "軸組(構造材)", "小屋梁", "frame"));
@@ -4812,11 +4841,16 @@ document.querySelectorAll("#walk-pad button, #walk-updown button").forEach((b) =
   b.addEventListener("pointercancel", off);
 });
 
-window.addEventListener("resize", () => {
-  camera.aspect = holder.clientWidth / holder.clientHeight;
+// ウィンドウだけでなくヘッダーの折り返しやパネル幅の変化にも追従する
+function fitRenderer() {
+  const w = holder.clientWidth, h = holder.clientHeight;
+  if (w === 0 || h === 0) return;
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(holder.clientWidth, holder.clientHeight);
-});
+  renderer.setSize(w, h);
+}
+new ResizeObserver(fitRenderer).observe(holder);
+window.addEventListener("resize", fitRenderer);
 document.getElementById("reset-view").addEventListener("click", () => {
   orbit.theta = Math.PI / 4; orbit.phi = Math.PI / 3;
   orbit.radius = currentDef.camR;
