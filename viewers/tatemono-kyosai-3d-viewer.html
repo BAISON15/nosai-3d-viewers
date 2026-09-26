@@ -1011,14 +1011,15 @@ function buildWafuHouse() {
     const lay = frameLayout(base, sn ? S.W1 + 0.4 : S.D1 - 0.2, rectsW(face, 1), 0.09);
     lay.posts.forEach((u) => {
       const w = sn ? 0.155 : 0.16;
-      T(box(w, S.f1, w, M2.hashira, sn ? u : c, yFloor + S.f1 / 2, sn ? c : u), P.frame, "柱(化粧柱)");
+      const hP = S.f1 - 0.1;   // 柱の頭は桁の中に納め、下屋の屋根面から出さない
+      T(box(w, hP, w, M2.hashira, sn ? u : c, yFloor + hP / 2, sn ? c : u), P.frame, "柱(化粧柱)");
     });
   });
-  // 桁・梁
-  T(box(S.W1 + 0.2, 0.24, 0.18, M2.kigumi, 0, y1F - 0.12, D1h), P.frame, "桁");
-  T(box(S.W1 + 0.2, 0.24, 0.18, M2.kigumi, 0, y1F - 0.12, -D1h), P.frame, "桁");
-  T(box(0.18, 0.24, S.D1, M2.kigumi, W1h, y1F - 0.12, 0), P.frame, "梁");
-  T(box(0.18, 0.24, S.D1, M2.kigumi, -W1h, y1F - 0.12, 0), P.frame, "梁");
+  // 桁・梁(下屋の屋根面より下に収める)
+  T(box(S.W1 + 0.2, 0.24, 0.18, M2.kigumi, 0, y1F - 0.22, D1h), P.frame, "桁");
+  T(box(S.W1 + 0.2, 0.24, 0.18, M2.kigumi, 0, y1F - 0.22, -D1h), P.frame, "桁");
+  T(box(0.18, 0.24, S.D1, M2.kigumi, W1h, y1F - 0.22, 0), P.frame, "梁");
+  T(box(0.18, 0.24, S.D1, M2.kigumi, -W1h, y1F - 0.22, 0), P.frame, "梁");
 
   /* ---- 1階 外壁(真壁: 腰板張り＋漆喰)。設計情報の開口部に穴を空ける ---- */
   const koshiH = 0.95;
@@ -1027,7 +1028,7 @@ function buildWafuHouse() {
     const c = sn ? FACE[face].nz * D1h : FACE[face].nx * W1h;
     const L = sn ? S.W1 : S.D1 + 0.065;
     const rects = rectsW(face, 1);
-    const y0 = yFloor + 0.025, yK = y0 + koshiH, yTop = yFloor + S.f1 - 0.045;
+    const y0 = yFloor + 0.025, yK = y0 + koshiH, yTop = yFloor + S.f1 - 0.12;   // 上端は桁の裏に納める(下屋の屋根面から出さない)
     T(wallWithOpenings(face, c, 0.06, -L / 2, L / 2, y0, yK, rects, M2.ita), P.wall, "外壁(腰板張り)");
     T(wallWithOpenings(face, c, 0.065, -L / 2, L / 2, yK, yTop, rects, M2.shikkui), P.wall, "外壁(漆喰・土壁)");
   });
