@@ -3404,7 +3404,7 @@ const state = {
   focusDim: true,
   walk: false,
   walkPass: true,   // 壁をすり抜けて内部も歩ける
-  buildingModel: "standard",   // standard | cube
+  buildingModel: "standard",   // standard | wafu | cube
   floodH: null,       // 浸水痕の高さ(1階床面からのm。nullで痕跡なし)
   measure: false,     // 実測ツール
   showEnv: true,      // 周辺環境(隣家・道路・塀)の表示
@@ -3960,6 +3960,10 @@ const dmgCrackMat = new THREE.MeshStandardMaterial({ color: 0x3f3f46, side: THRE
 const dmgStainMat = new THREE.MeshStandardMaterial({ color: 0x8a7a52, transparent: true, opacity: 0.72, side: THREE.DoubleSide, roughness: 0.95 });
 const dmgWaterMat = new THREE.MeshStandardMaterial({ color: 0x6b7f8c, transparent: true, opacity: 0.45, side: THREE.DoubleSide, roughness: 0.5 });
 const dmgGlassMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, emissive: 0x64748b, emissiveIntensity: 0.3, side: THREE.DoubleSide });
+// 濃色の面(金属屋根・濃色サイディング)で見分けやすい色: 露出した下地(野地板)、サイディングの素地、明るい打痕
+const dmgBareMat  = new THREE.MeshStandardMaterial({ color: 0xb08a58, side: THREE.DoubleSide, roughness: 0.9 });
+const dmgCoreMat  = new THREE.MeshStandardMaterial({ color: 0xc9c2b2, side: THREE.DoubleSide, roughness: 0.95 });
+const dmgDentLightMat = new THREE.MeshStandardMaterial({ color: 0xaab2bb, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.3 });
 
 const DMG_NOTES = {
   roofPeel:  "屋根葺き材のめくれ・飛散。枚数と範囲を屋根面ごとに記録し、下地(野地板)や防水紙まで損害が及んでいるかを確認します。風災は建物共済の代表的な支払事故です。",
@@ -3977,6 +3981,23 @@ const DMG_NOTES = {
   snowRoof:  "積雪荷重による屋根面の変形・波打ち。葺き材だけでなく垂木・母屋など小屋組への影響を確認します。参考: 損害割合80%以上は特別費用共済金の支払要件とされます(細部は各組合の約款によります)。",
   parapet:   "パラペット・笠木の外れ。笠木板金は強風で外れやすく、取合い部は雨漏りの起点になりやすい部位です。",
   waterproof:"陸屋根の防水層の破断・膨れ。ドレン(排水口)まわりの詰まり・漏水痕も併せて確認します。",
+  // 和風住宅
+  kawara:    "瓦のずれ・割れ・飛散。瓦は1枚単位で差し替えられますが、範囲が広いと葺き直しになります。枚数と範囲を屋根面ごとに記録し、葺き土・桟木・野地板への雨水の浸入も確認します。",
+  geya:      "下屋根の瓦の割れ・ずれ。主屋根からの落雪を受けやすく、軒先の瓦の割れや化粧垂木の折損も確認します。主屋根とは分けて数量を拾います。",
+  oni:       "鬼瓦の欠け・ずれ・落下。大棟の端部に据えられ、強風・地震で緊結が外れやすい部位です。意匠(家紋入り等)で再調達価額が大きく異なるため、形状・寸法を記録します。",
+  gegyo:     "破風板・懸魚の剥離・脱落。入母屋の妻側の化粧材で、強風の巻き上げを受けやすい部位です。和風住宅特有の造作のため、材種・意匠を記録します。",
+  porch:     "玄関ポーチ屋根の破損。独立した小屋根のため風や落雪の影響を受けやすく、本屋根とは分けて数量を拾います。",
+  shikkui:   "漆喰・土壁の剥落・ひび割れ。真壁の漆喰は部分補修の跡が目立つため、柱間(1スパン)単位で塗り直すことがあります。剥落の範囲を柱間ごとに記録します。",
+  tatami:    "畳の浸水。畳は水を吸うと再使用できず入替えになるため、浸水した室の畳の枚数と種類(畳表・畳床)を記録します。床下の荒床・根太の含水も確認します。",
+  kyokabe:   "京壁(繊維壁)・土壁の浸水痕。土壁は濡れると崩れやすく、浸水深より上まで被害が及ぶことがあります。部分補修が難しいため、面単位での塗り替えを前提に範囲を記録します。",
+  engawaW:   "縁側(濡れ縁)の浸水。室内の床より低い位置にあるため先に浸水する部位です。床板の反り・汚損、縁束・束石の沈下を確認します。",
+  // キューブ型
+  metalRoof: "金属屋根の捲れ・剥がれ。緩勾配の金属屋根は端部(軒先・けらば)から風で捲れやすく、捲れた範囲と下地(野地板・ルーフィング)の損傷を確認します。",
+  siding:    "窯業系サイディングの割れ・欠け・打痕。飛来物の衝突痕か、経年・凍害による欠けかを区別します。柄・色の廃番で部分張替えが難しい場合があり、張替えの範囲(面単位)に影響します。",
+  louver:    "木目ルーバー(バルコニー手すり・目隠しフェンス)の外れ・破損。風を受けやすい付帯部位で、羽板の枚数と取付金物の損傷を確認します。",
+  balcony:   "インナーバルコニーの防水層の破断。積雪や排水不良で滞水すると、直下の室内への漏水につながります。ドレン(排水口)の詰まりと直下の天井のシミも確認します。",
+  downpipe:  "縦樋の外れ・変形。受け金物(でんでん)の外れや継手の破損を確認し、損傷した本数・延長を把握します。",
+  equip:     "附帯設備(室外機・エコキュート等)の冠水。浸水深が機器の設置高さを超えると内部の電装品まで被害が及び、交換になることがあります。機器ごとに浸水痕の高さを記録します。",
 };
 
 function tagAll(obj, part, member, layer) {
@@ -4025,20 +4046,10 @@ function placeOn(obj, pos, normal) {
 
 function applyDamage() {
   const out = [];
-  if (state.dmgScenario === "none" || state.buildingModel !== "standard") return out;
+  if (state.dmgScenario === "none") return out;
   const sc = state.dmgScenario;
   const seedMix = { wind: 131, hail: 313, snow: 977, flood: 613 }[sc] || 1;
   const rng = mulberry32(state.dmgSeed * 7919 + seedMix);
-  const shape = state.roofShape, n = state.stories;
-  const { W, D, foundH, storyH } = STD_PLAN, ov = 0.5;   // 寸法・開口部は設計情報に合わせる
-  const sWins = STD_PLAN.openings.filter((o) => o.floor === 1 && o.face === "S" && o.kind === "hakidashi");
-  const winY = (o) => { const r = openingRect(o); return (r.y0 + r.y1) / 2; };
-  const hisaY = (o) => openingRect(o).y1 + 0.12;
-  const tobO = sWins.find((o) => o.tobukuro) || sWins[0];
-  const wallTop = foundH + storyH * n;
-  const We = W / 2 + ov, Ze = D / 2 + ov;
-  const rise = 1.8, riseT = 1.6;
-  const ridgeY = shape === "katanagare" ? wallTop + riseT : (shape === "rikuyane" ? wallTop + 0.62 : wallTop + rise);
   let idx = 0;
   const reg = (label, kind, pos, member) => {
     idx++;
@@ -4050,6 +4061,56 @@ function applyDamage() {
     modelGroup.add(obj);
     reg(label, kind, pos.clone().addScaledVector(nrm, 0.3), member);
   };
+  // 外壁に残る浸水痕(面に沿った半透明の帯)。face の外側 c の位置に u0〜u1 の幅で貼る
+  const floodBand = (label, face, c, u0, u1, lvl) => {
+    const member = "DMG" + (idx + 1) + ":浸水痕";
+    const f = FACE[face], sn = face === "S" || face === "N";
+    const nrm = new THREE.Vector3(f.nx, 0, f.nz);
+    const um = (u0 + u1) / 2;
+    const band = new THREE.Mesh(new THREE.PlaneGeometry(u1 - u0, lvl), dmgWaterMat);
+    tagAll(placeOn(band, sn ? new THREE.Vector3(um, lvl / 2, c) : new THREE.Vector3(c, lvl / 2, um), nrm), "外壁", member, "ext");
+    modelGroup.add(band);
+    const u = um + (rng() - 0.5) * 3;
+    reg(label, "flood", (sn ? new THREE.Vector3(u, lvl + 0.2, c) : new THREE.Vector3(c, lvl + 0.2, u)).addScaledVector(nrm, 0.3), member);
+  };
+  const ctx = { sc, rng, addPatch, floodBand };
+  if (state.buildingModel === "wafu") damageWafu(ctx);
+  else if (state.buildingModel === "cube") damageCube(ctx);
+  else damageStandard(ctx);
+  return out;
+}
+
+/* 外壁上のランダム点。faces は候補の面 [{ face, c, u0, u1, y0, y1, ... }]。
+   avoidOf(f) が返す矩形 {u0,u1,y0,y1}(開口部など)に余白0.35mで掛かる点は引き直す */
+function randomWallPoint(rng, faces, avoidOf) {
+  let p;
+  for (let k = 0; k < 10; k++) {
+    const f = faces[(rng() * faces.length) | 0];
+    const u = f.u0 + rng() * (f.u1 - f.u0), y = f.y0 + rng() * (f.y1 - f.y0);
+    const fc = FACE[f.face], sn = f.face === "S" || f.face === "N";
+    p = { f, pos: sn ? new THREE.Vector3(u, y, f.c) : new THREE.Vector3(f.c, y, u), nrm: new THREE.Vector3(fc.nx, 0, fc.nz) };
+    if (!avoidOf(f).some((r) => u > r.u0 - 0.35 && u < r.u1 + 0.35 && y > r.y0 - 0.35 && y < r.y1 + 0.35)) break;
+  }
+  return p;
+}
+/* 開口部のガラス面上の点(外側の面 c から法線方向へ off だけ出す) */
+function glassPoint(o, plan, c, off) {
+  const r = openingRect(o, plan), fc = FACE[o.face], sn = o.face === "S" || o.face === "N";
+  const y = (r.y0 + r.y1) / 2, cc = c + off;
+  return { pos: sn ? new THREE.Vector3(o.at, y, fc.nz * cc) : new THREE.Vector3(fc.nx * cc, y, o.at), nrm: new THREE.Vector3(fc.nx, 0, fc.nz) };
+}
+
+function damageStandard({ sc, rng, addPatch, floodBand }) {
+  const shape = state.roofShape, n = state.stories;
+  const { W, D, foundH, storyH } = STD_PLAN, ov = 0.5;   // 寸法・開口部は設計情報に合わせる
+  const sWins = STD_PLAN.openings.filter((o) => o.floor === 1 && o.face === "S" && o.kind === "hakidashi");
+  const winY = (o) => { const r = openingRect(o); return (r.y0 + r.y1) / 2; };
+  const hisaY = (o) => openingRect(o).y1 + 0.12;
+  const tobO = sWins.find((o) => o.tobukuro) || sWins[0];
+  const wallTop = foundH + storyH * n;
+  const We = W / 2 + ov, Ze = D / 2 + ov;
+  const rise = 1.8, riseT = 1.6;
+  const ridgeY = shape === "katanagare" ? wallTop + riseT : (shape === "rikuyane" ? wallTop + 0.62 : wallTop + rise);
   // 屋根面上のランダム点と法線(形状別)
   const roofPoint = () => {
     if (shape === "kiritsuma" || shape === "yosemune") {
@@ -4181,13 +4242,8 @@ function applyDamage() {
   if (sc === "flood") {
     const deep = rng() < 0.5;                       // 床上浸水 or 床下浸水
     const lvl = deep ? foundH + 0.55 + rng() * 0.5 : foundH * 0.7;
-    [[0, 0, D / 2 + 0.09, new THREE.Vector3(0, 0, 1)], [0, 0, -(D / 2 + 0.09), new THREE.Vector3(0, 0, -1)]].forEach(([x, , z, nrm]) => {
-      const member = "DMG" + (idx + 1) + ":浸水痕";
-      const band = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.2, lvl), dmgWaterMat);
-      tagAll(placeOn(band, new THREE.Vector3(0, lvl / 2, z), nrm), "外壁", member, "ext");
-      modelGroup.add(band);
-      reg((deep ? "床上浸水の浸水痕" : "床下浸水の浸水痕") + "(外壁)", "flood", new THREE.Vector3((rng() - 0.5) * 3, lvl + 0.2, z + nrm.z * 0.3), member);
-    });
+    [["S", D / 2 + 0.09], ["N", -(D / 2 + 0.09)]].forEach(([face, z]) =>
+      floodBand((deep ? "床上浸水の浸水痕" : "床下浸水の浸水痕") + "(外壁)", face, z, -(W - 0.2) / 2, (W - 0.2) / 2, lvl));
     if (deep) {
       const f1 = foundH + 0.16;
       addPatch("床の浸水被害", "floorWet", "床", "int",
@@ -4202,7 +4258,319 @@ function applyDamage() {
         new THREE.Vector3((rng() - 0.5) * 4, foundH / 2, D / 2 + 0.09), new THREE.Vector3(0, 0, 1), jaggedPatch(0.3, rng, dmgStainMat, 8));
     }
   }
-  return out;
+}
+
+/* 和風住宅(入母屋・瓦葺き・下屋・縁側)の被害。寸法は WSPEC・WAFU_PLAN から buildWafuHouse と同じ式で求める */
+function damageWafu({ sc, rng, addPatch, floodBand }) {
+  const S = WSPEC, WP = WAFU_PLAN;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const yFloor = S.foundH, y1F = yFloor + S.f1, yG = y1F + 0.35, yTop2 = yG + S.f2;
+  const W1h = S.W1 / 2, D1h = S.D1 / 2, W2h = S.W2 / 2, D2h = S.D2 / 2;
+  const We = W2h + S.ovR, Ze = D2h + S.ovR;
+  const rx = We - S.hHip / S.tanA, rz = Ze - S.hHip / S.tanA;
+  const y1 = yTop2 + S.hHip, y2 = y1 + rz * S.tanA;
+  const ix = W2h, iz = D2h, ox = W1h + S.ovG, oz = D1h + S.ovG, yi = yG + 0.03, yo = y1F - 0.35;   // 下屋
+  const oEn = WP.openings.find((o) => o.kind === "engawa"), gx = WP.openings.find((o) => o.kind === "genkanW").at;
+  const enL = oEn.at - oEn.w / 2, pw = oEn.w / 5, tateguH = 1.85;
+  const sgn = () => (rng() < 0.5 ? 1 : -1);
+
+  // 主屋根(入母屋)の面上の点: 下部の寄棟部分(台形)と上部の切妻部分を勾配でつなぐ
+  const mainRoofPoint = () => {
+    const sf = sgn(), zA = (0.12 + rng() * 0.78) * Ze;
+    let y, xMax;
+    if (zA >= rz) { const t = (Ze - zA) / (Ze - rz); y = yTop2 + 0.03 + t * (y1 - yTop2 - 0.03); xMax = rx + (1 - t) * (We - rx); }
+    else { y = y1 + (rz - zA) / rz * (y2 - y1); xMax = rx; }
+    const ang = Math.atan(S.tanA);
+    return { pos: V((rng() - 0.5) * 2 * (xMax - 0.7), y + 0.04, sf * zA), nrm: V(0, Math.cos(ang), sf * Math.sin(ang)) };
+  };
+  // 下屋の面上の点(南面は玄関ポーチ屋根の下を避ける)
+  const geyaPoint = () => {
+    const sf = sgn(), t = 0.15 + rng() * 0.7;
+    const xMax = ix + t * (ox - ix) - 0.5, xHi = sf > 0 ? Math.min(xMax, gx - 2.0) : xMax;
+    const ang = Math.atan2(yi - yo, oz - iz);
+    return { pos: V(-xMax + rng() * (xHi + xMax), yi + t * (yo - yi) + 0.03, sf * (iz + t * (oz - iz))), nrm: V(0, Math.cos(ang), sf * Math.sin(ang)) };
+  };
+  // 玄関ポーチ(切妻)の南側の屋根面
+  const porchPoint = () => {
+    const pY = yFloor + 2.55, pRise = 0.75, half = 1.35, d = (0.2 + rng() * 0.6) * half, ang = Math.atan2(pRise, half);
+    return { pos: V(gx + (rng() - 0.5) * 2.2, pY + pRise - d * pRise / half + 0.06, D1h + 1.0 + d), nrm: V(0, Math.cos(ang), Math.sin(ang)) };
+  };
+  // 軒樋(main: 主屋根 / 下屋)
+  const gutterPoint = (main, sf) => main
+    ? { pos: V((rng() - 0.5) * 2 * (We - 0.6), yTop2 - 0.03, sf * (Ze + 0.17)), nrm: V(0, 0, sf) }
+    : { pos: V((rng() - 0.5) * 2 * (ox - 0.6), yo - 0.02, sf * (oz + 0.17)), nrm: V(0, 0, sf) };
+  // 外壁(1階は下屋の下、2階は下屋の上)。開口部を避ける
+  const wallFaces = [
+    ...["S", "N"].map((f) => ({ face: f, floor: 1, c: FACE[f].nz * (D1h + 0.09), u0: -W1h + 0.4, u1: W1h - 0.4, y0: yFloor + 0.4, y1: y1F - 0.6 })),
+    ...["E", "W"].map((f) => ({ face: f, floor: 1, c: FACE[f].nx * (W1h + 0.09), u0: -D1h + 0.4, u1: D1h - 0.4, y0: yFloor + 0.4, y1: y1F - 0.6 })),
+    ...["S", "N"].map((f) => ({ face: f, floor: 2, c: FACE[f].nz * (D2h + 0.09), u0: -W2h + 0.4, u1: W2h - 0.4, y0: yG + 0.5, y1: yTop2 - 0.4 })),
+    ...["E", "W"].map((f) => ({ face: f, floor: 2, c: FACE[f].nx * (W2h + 0.09), u0: -D2h + 0.4, u1: D2h - 0.4, y0: yG + 0.5, y1: yTop2 - 0.4 })),
+  ];
+  const wallAvoid = (f) => WP.openings.filter((o) => o.face === f.face && o.floor === f.floor).map((o) => openingRect(o, WP));
+  // 窓ガラス(縁側のガラス戸、または腰窓)
+  const glassAt = () => {
+    if (rng() < 0.5) {
+      const i = (rng() * 5) | 0;
+      return { pos: V(enL + pw * (i + 0.5), yFloor + 0.05 + tateguH / 2, D1h + 0.07), nrm: V(0, 0, 1) };
+    }
+    const wins = WP.openings.filter((o) => o.kind === "koshi");
+    const o = wins[(rng() * wins.length) | 0], sn = o.face === "S" || o.face === "N";
+    return glassPoint(o, WP, o.floor === 1 ? (sn ? D1h : W1h) : (sn ? D2h : W2h), 0.06);
+  };
+  const tobukuro = V(enL - 0.52, yFloor + 0.04 + (tateguH + 0.16) / 2, D1h + 0.27);
+
+  if (sc === "wind") {
+    const nP = 1 + ((rng() * 2) | 0);
+    for (let i = 0; i < nP; i++) {
+      const p = mainRoofPoint();
+      addPatch("瓦のずれ・飛散(主屋根)", "kawara", "屋根", "ext", p.pos, p.nrm, jaggedPatch(0.5 + rng() * 0.3, rng, dmgWoodMat));
+    }
+    if (rng() > 0.35) {
+      addPatch("棟瓦(大棟)の崩れ・ずれ", "ridge", "屋根", "ext",
+        V((rng() - 0.5) * 2 * (rx - 0.4), y2 + 0.24, 0), V(0, 1, 0), jaggedPatch(0.4, rng, dmgWoodMat, 7));
+    }
+    if (rng() > 0.7) {
+      const sx = sgn();
+      addPatch("鬼瓦の欠け・ずれ", "oni", "屋根", "ext", V(sx * (rx + 0.23), y2 + 0.28, 0), V(sx, 0, 0), jaggedPatch(0.2, rng, dmgHoleMat, 6));
+    }
+    if (rng() > 0.6) {
+      const sx = sgn();
+      addPatch("破風板・懸魚の剥離", "gegyo", "屋根", "ext", V(sx * (rx + 0.09), y2 - 0.35, 0), V(sx, 0, 0), jaggedPatch(0.26, rng, dmgWoodMat, 6));
+    }
+    if (rng() > 0.5) {
+      const p = geyaPoint();
+      addPatch("下屋根の瓦のずれ・飛散", "kawara", "屋根", "ext", p.pos, p.nrm, jaggedPatch(0.45, rng, dmgWoodMat));
+    }
+    if (rng() > 0.65) {
+      const p = porchPoint();
+      addPatch("玄関ポーチ屋根の瓦のずれ", "porch", "屋根", "ext", p.pos, p.nrm, jaggedPatch(0.3, rng, dmgWoodMat, 7));
+    }
+    if (rng() > 0.5) {
+      const p = gutterPoint(rng() < 0.5, sgn());
+      addPatch("軒樋の変形・脱落", "gutter", "雨樋・附帯", "ext", p.pos, p.nrm, jaggedPatch(0.26, rng, dmgHoleMat, 6));
+    }
+    if (rng() > 0.55) {
+      const p = glassAt();
+      addPatch("窓ガラスの破損", "glass", "開口部", "ext", p.pos, p.nrm, crackLines(0.55, rng, dmgGlassMat));
+    }
+    if (rng() > 0.5) {
+      addPatch("雨戸・戸袋の変形", "amado", "開口部", "ext", tobukuro, V(0, 0, 1), jaggedPatch(0.28, rng, dmgHoleMat, 6));
+    }
+    if (rng() > 0.7) {
+      const p = randomWallPoint(rng, wallFaces, wallAvoid);
+      addPatch("漆喰の剥落(飛来物)", "shikkui", "外壁", "ext", p.pos, p.nrm, jaggedPatch(0.35, rng, dmgWoodMat, 8));
+    }
+  }
+
+  if (sc === "hail") {
+    const nH = 2 + ((rng() * 2) | 0);
+    for (let i = 0; i < nH; i++) {
+      const p = mainRoofPoint();
+      addPatch("雹による瓦の割れ・打痕", "hailRoof", "屋根", "ext", p.pos, p.nrm, dentGrid(0.7, rng, dmgCrackMat, 7 + ((rng() * 6) | 0)));
+    }
+    const pg = geyaPoint();
+    addPatch("雹による下屋根の瓦の割れ", "hailRoof", "屋根", "ext", pg.pos, pg.nrm, dentGrid(0.6, rng, dmgCrackMat, 6 + ((rng() * 4) | 0)));
+    const pw2 = glassAt();
+    addPatch("窓ガラスの破損", "glass", "開口部", "ext", pw2.pos, pw2.nrm, crackLines(0.5, rng, dmgGlassMat));
+    if (rng() > 0.5) {
+      const p = randomWallPoint(rng, wallFaces, wallAvoid);
+      addPatch("漆喰外壁の打痕・剥落", "shikkui", "外壁", "ext", p.pos, p.nrm, dentGrid(0.6, rng, dmgCrackMat, 7));
+    }
+    if (rng() > 0.5) {
+      const p = gutterPoint(rng() < 0.5, 1);
+      addPatch("軒樋の変形", "gutter", "雨樋・附帯", "ext", p.pos, p.nrm, dentGrid(0.25, rng, dmgCrackMat, 5));
+    }
+  }
+
+  if (sc === "snow") {
+    const p = mainRoofPoint();
+    addPatch("積雪荷重による瓦のずれ・割れ", "snowRoof", "屋根", "ext", p.pos, p.nrm, jaggedPatch(0.7 + rng() * 0.3, rng, dmgWoodMat, 11));
+    const nG = 1 + (rng() > 0.5 ? 1 : 0);
+    for (let i = 0; i < nG; i++) {
+      const pg = geyaPoint();
+      addPatch("落雪による下屋根の瓦の割れ・ずれ", "geya", "屋根", "ext", pg.pos, pg.nrm, jaggedPatch(0.5, rng, dmgWoodMat, 9));
+    }
+    [1, -1].forEach((sf) => {
+      const pt = gutterPoint(false, sf);
+      addPatch("下屋の軒樋の変形・脱落(雪の重み)", "gutter", "雨樋・附帯", "ext", pt.pos, pt.nrm, jaggedPatch(0.28, rng, dmgHoleMat, 6));
+    });
+    if (rng() > 0.6) {
+      const pp = porchPoint();
+      addPatch("玄関ポーチ屋根の破損(落雪)", "porch", "屋根", "ext", pp.pos, pp.nrm, jaggedPatch(0.35, rng, dmgWoodMat, 8));
+    }
+    if (rng() > 0.5) {
+      addPatch("広縁の天井の雨漏りシミ", "leak", "内装", "int",
+        V(WP.iX0 + 0.8 + rng() * 4.5, WP.ceilY(1) - 0.03, (WP.G.zEn + WP.iZ1) / 2), V(0, -1, 0), jaggedPatch(0.4, rng, dmgStainMat, 10));
+    } else if (rng() > 0.4) {
+      addPatch("天井(2階)の雨漏りシミ", "leak", "内装", "int",
+        V((rng() - 0.5) * 5, WP.ceilY(2) - 0.03, (rng() - 0.5) * 3), V(0, -1, 0), jaggedPatch(0.5, rng, dmgStainMat, 10));
+    }
+  }
+
+  if (sc === "flood") {
+    const deep = rng() < 0.5;                       // 床上浸水 or 床下浸水(床が高いので床下の範囲が広い)
+    const fl = yFloor + 0.04;                       // 1階の床面(畳の上面)
+    const lvl = deep ? fl + 0.2 + rng() * 0.6 : yFloor * 0.7;
+    const lb = deep ? "床上浸水の浸水痕" : "床下浸水の浸水痕";
+    floodBand(lb + "(北面外壁)", "N", -(D1h + 0.17), -W1h, W1h, lvl);
+    floodBand(lb + "(東面外壁)", "E", W1h + 0.17, -D1h, D1h, lvl);
+    if (deep) {
+      addPatch("縁側(濡れ縁)の浸水", "engawaW", "内装", "ext",
+        V(oEn.at + (rng() - 0.5) * 4, yFloor + 0.035, D1h + 0.45), V(0, 1, 0), jaggedPatch(0.5, rng, dmgStainMat, 9));
+      addPatch("畳の浸水(入替え)", "tatami", "床", "int",
+        V(-1.7 + rng() * 2.4, fl + 0.006, 0.5 + rng() * 2.2), V(0, 1, 0), jaggedPatch(0.9, rng, dmgStainMat, 11));   // 次の間(家具のない室)
+      addPatch("京壁(繊維壁)の浸水痕", "kyokabe", "内装", "int",
+        V(-1.4 + rng() * 2.0, fl + (lvl - fl) / 2, WP.iZ0 + 0.005), V(0, 0, 1), jaggedPatch(0.55, rng, dmgStainMat, 9));
+    }
+    addPatch("土台・床組の含水", "floorWet", "軸組(構造材)", "frame",
+      V((rng() - 0.5) * 8, yFloor + 0.095, -(D1h + 0.09)), V(0, 0, -1), jaggedPatch(0.35, rng, dmgStainMat, 8));
+    if (rng() > 0.5) {
+      addPatch("基礎の汚損・洗掘", "flood", "基礎", "found",
+        V((rng() - 0.5) * 8, yFloor / 2, -(D1h + 0.17)), V(0, 0, -1), jaggedPatch(0.3, rng, dmgStainMat, 8));
+    }
+    if (rng() > 0.4) {
+      addPatch("室外機の冠水", "equip", "附帯設備", "ext",
+        V(rng() < 0.5 ? 1.4 : 2.8, 0.42, -(D1h + S.ovG + 0.5 + 0.17)), V(0, 0, -1), jaggedPatch(0.26, rng, dmgStainMat, 8));
+    }
+  }
+}
+
+/* キューブ型(緩勾配の片流れ・金属屋根・窯業系サイディング)の被害。寸法は CSPEC・CUBE_PLAN から buildCubeHouse と同じ式で求める */
+function damageCube({ sc, rng, addPatch, floodBand }) {
+  const S = CSPEC, CP = CUBE_PLAN;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const zF = S.D / 2, zR = -S.D / 2, xW = -S.W / 2, xE = S.W / 2;
+  const A = { x0: xW, x1: S.splitX, zF, zR, top: S.eaveA };
+  const B = { x0: S.splitX, x1: xE, zF: zF + S.bFront, zR, top: S.eaveB };
+  const balc = { u0: A.x0 + 0.55, u1: A.x0 + 4.75, y0: 3.95, y1: 5.85 };
+  const liv  = { u0: A.x0 + 0.75, u1: A.x0 + 4.15, y0: S.baseH, y1: 2.95 };
+  const ent  = { u0: B.x0 + 0.75, u1: B.x0 + 2.85, y0: 0.60, y1: 3.05 };
+  const oKatte = CP.openings.find((o) => o.member === "勝手口");
+  const pitchA = Math.atan(S.pitch);
+
+  // 屋根面(南へ下がる片流れ)上の点
+  const roofPoint = () => {
+    const Vv = rng() < 0.6 ? A : B, cz = (Vv.zF + Vv.zR) / 2, rise = (Vv.zF - Vv.zR) * S.pitch;
+    const x = Vv.x0 + 0.5 + rng() * (Vv.x1 - Vv.x0 - 1.0), z = Vv.zR + 0.5 + rng() * (Vv.zF - Vv.zR - 1.0);
+    return { pos: V(x, Vv.top + 0.20 + rise / 2 + 0.05 - (z - cz) * S.pitch, z), nrm: V(0, Math.cos(pitchA), Math.sin(pitchA)) };
+  };
+  // 笠木・見切り(屋根の端部)
+  const kasagiPoint = () => {
+    const k = (rng() * 4) | 0;
+    if (k === 0) return { pos: V(A.x0 + 0.4 + rng() * (A.x1 - A.x0 - 0.8), A.top + 0.085, A.zF + 0.055), nrm: V(0, 0, 1) };
+    if (k === 1) return { pos: V(B.x0 + 0.4 + rng() * (B.x1 - B.x0 - 0.8), B.top + 0.085, B.zF + 0.055), nrm: V(0, 0, 1) };
+    if (k === 2) return { pos: V(A.x0 - 0.055, A.top + 0.085, zR + 0.5 + rng() * (S.D - 1.0)), nrm: V(-1, 0, 0) };
+    return { pos: V(B.x1 + 0.055, B.top + 0.085, zR + 0.5 + rng() * (S.D - 1.0)), nrm: V(1, 0, 0) };
+  };
+  // 縦樋(4本の外周の樋)
+  const pipes = [[A.x0 - 0.09, A.zF - 0.30, -1, S.eaveA], [A.x0 - 0.09, zR + 0.30, -1, S.eaveA], [B.x1 + 0.09, B.zF - 0.35, 1, S.eaveB], [B.x1 + 0.09, zR + 0.30, 1, S.eaveB]];
+  const pipePoint = (i) => { const [x, z, sx, h] = pipes[i]; return { pos: V(x + sx * 0.04, h * (0.35 + rng() * 0.4), z), nrm: V(sx, 0, 0) }; };
+  // 外壁(light=淡色面、それ以外は濃色面)。開口部・凹み・庇を避ける
+  const wallFaces = [
+    { face: "S", c: A.zF + 0.02, u0: A.x0 + 0.3, u1: A.x1 - 0.3, y0: 3.30, y1: 3.60, light: true },
+    { face: "S", c: B.zF + 0.02, u0: B.x0 + 0.3, u1: B.x1 - 0.3, y0: 3.40, y1: B.top - 0.35, light: true },
+    { face: "W", c: A.x0 - 0.02, u0: zR + 0.5, u1: A.zF - 0.5, y0: 1.0, y1: A.top - 0.4, light: true },
+    { face: "N", c: zR - 0.02, u0: xW + 0.4, u1: xE - 0.4, y0: 0.9, y1: B.top - 0.4 },
+    { face: "E", c: B.x1 + 0.02, u0: zR + 0.5, u1: B.zF - 0.5, y0: 2.2, y1: B.top - 0.4 },
+  ];
+  const wallAvoid = (f) => CP.openings.filter((o) => o.face === f.face && !o.recess).map((o) => openingRect(o, CP))
+    .concat(f.face === "S" ? [balc, liv, ent] : [], f.face === "E" ? [{ u0: oKatte.at - 0.7, u1: oKatte.at + 0.7, y0: 2.6, y1: 2.85 }] : []);
+  // 窓ガラス(玄関ドア・勝手口以外)
+  const glassAt = () => {
+    const wins = CP.openings.filter((o) => o.kind !== "doorFrame");
+    const o = wins[(rng() * wins.length) | 0];
+    return glassPoint(o, CP, Math.abs(o.c), 0.0);
+  };
+  const hisashi = V(B.x1 + 0.26, 2.72 + 0.04, oKatte.at);
+
+  if (sc === "wind") {
+    const nP = 1 + ((rng() * 2) | 0);
+    for (let i = 0; i < nP; i++) {
+      const p = roofPoint();
+      addPatch("金属屋根の捲れ・剥がれ", "metalRoof", "屋根", "ext", p.pos, p.nrm, jaggedPatch(0.6 + rng() * 0.4, rng, dmgBareMat));
+    }
+    if (rng() > 0.4) {
+      const p = kasagiPoint();
+      addPatch("笠木・見切りの外れ", "parapet", "屋根", "ext", p.pos, p.nrm, jaggedPatch(0.28, rng, dmgBareMat, 6));
+    }
+    if (rng() > 0.5) {
+      const p = pipePoint((rng() * 4) | 0);
+      addPatch("縦樋の外れ・変形", "downpipe", "雨樋・附帯", "ext", p.pos, p.nrm, jaggedPatch(0.22, rng, dmgCoreMat, 6));
+    }
+    if (rng() > 0.65) addPatch("庇の変形・脱落", "hisashi", "雨樋・附帯", "ext", hisashi, V(0, 1, 0), jaggedPatch(0.3, rng, dmgBareMat, 6));
+    if (rng() > 0.5) {
+      const fence = rng() < 0.5;
+      addPatch(fence ? "目隠しフェンス(木目ルーバー)の外れ" : "バルコニー手すり(木目ルーバー)の外れ", "louver", "開口部", "ext",
+        fence ? V(-1.95 + (rng() - 0.5) * 2.6, 0.9 + rng() * 0.8, A.zF + 0.66) : V(-1.9 + (rng() - 0.5) * 2.8, 4.08 + 0.2 * ((rng() * 5) | 0), A.zF - 0.22),
+        V(0, 0, 1), jaggedPatch(0.3, rng, dmgHoleMat, 6));
+    }
+    if (rng() > 0.6) {
+      const p = glassAt();
+      addPatch("窓ガラスの破損", "glass", "開口部", "ext", p.pos, p.nrm, crackLines(0.5, rng, dmgGlassMat));
+    }
+    if (rng() > 0.6) {
+      const p = randomWallPoint(rng, wallFaces, wallAvoid);
+      addPatch("サイディングの割れ・欠け(飛来物)", "siding", "外壁", "ext", p.pos, p.nrm, jaggedPatch(0.32, rng, p.f.light ? dmgHoleMat : dmgCoreMat, 7));
+    }
+  }
+
+  if (sc === "hail") {
+    const nH = 2 + ((rng() * 2) | 0);
+    for (let i = 0; i < nH; i++) {
+      const p = roofPoint();
+      addPatch("雹による金属屋根の凹み", "hailRoof", "屋根", "ext", p.pos, p.nrm, dentGrid(0.7, rng, dmgDentLightMat, 8 + ((rng() * 6) | 0)));
+    }
+    const pg = glassAt();
+    addPatch("窓ガラスの破損", "glass", "開口部", "ext", pg.pos, pg.nrm, crackLines(0.5, rng, dmgGlassMat));
+    if (rng() > 0.4) {
+      const p = randomWallPoint(rng, wallFaces, wallAvoid);
+      addPatch("サイディングの打痕・欠け", "siding", "外壁", "ext", p.pos, p.nrm, dentGrid(0.6, rng, p.f.light ? dmgCrackMat : dmgDentLightMat, 7));
+    }
+    if (rng() > 0.5) addPatch("庇の凹み", "hisashi", "雨樋・附帯", "ext", hisashi, V(0, 1, 0), dentGrid(0.35, rng, dmgDentLightMat, 6));
+  }
+
+  if (sc === "snow") {
+    const p = roofPoint();
+    addPatch("積雪荷重による屋根面の変形", "snowRoof", "屋根", "ext", p.pos, p.nrm, jaggedPatch(0.8 + rng() * 0.4, rng, dmgBareMat, 11));
+    if (rng() > 0.4) {
+      addPatch("インナーバルコニー防水層の破断", "balcony", "外壁", "ext",
+        V(-1.9 + (rng() - 0.5) * 2.6, balc.y0 + 0.025, A.zF - 0.35 - rng() * 0.8), V(0, 1, 0), jaggedPatch(0.4, rng, dmgBareMat, 8));
+    }
+    const i0 = (rng() * 4) | 0;
+    [i0, (i0 + 2) % 4].forEach((i) => {
+      const pp = pipePoint(i);
+      addPatch("縦樋の変形・外れ(雪の重み)", "downpipe", "雨樋・附帯", "ext", pp.pos, pp.nrm, jaggedPatch(0.22, rng, dmgCoreMat, 6));
+    });
+    if (rng() > 0.5) addPatch("庇の変形(雪の重み)", "hisashi", "雨樋・附帯", "ext", hisashi, V(0, 1, 0), jaggedPatch(0.3, rng, dmgBareMat, 6));
+    if (rng() > 0.5) {
+      addPatch("天井(主寝室)の雨漏りシミ", "leak", "内装", "int",
+        V(-3.6 + rng() * 3.0, CP.ceilY(2) - 0.03, -0.1 + rng() * 1.6), V(0, -1, 0), jaggedPatch(0.5, rng, dmgStainMat, 10));
+    }
+  }
+
+  if (sc === "flood") {
+    const deep = rng() < 0.5;                       // 床上浸水 or 床下浸水
+    const fl = CP.floorY(1) + 0.03;                 // 1階の床仕上げ面
+    const lvl = deep ? fl + 0.2 + rng() * 0.6 : S.baseH * 0.6 + rng() * 0.12;
+    const lb = deep ? "床上浸水の浸水痕" : "床下浸水の浸水痕";
+    floodBand(lb + "(北面外壁)", "N", zR - 0.09, xW, xE, lvl);
+    floodBand(lb + "(西面外壁)", "W", A.x0 - 0.09, zR, A.zF, lvl);
+    if (deep) {
+      addPatch("床(フローリング)の浸水被害", "floorWet", "床", "int",
+        V(-3.6 + rng() * 2.6, fl + 0.006, 1.95 + rng() * 0.2), V(0, 1, 0), jaggedPatch(0.8, rng, dmgStainMat, 11));   // 掃出し窓の前(家具を避ける)
+      addPatch("内壁(クロス)の浸水痕", "flood", "内装", "int",
+        V(CP.xw + 0.005, fl + (lvl - fl) / 2, -2.4 + rng() * 1.0), V(1, 0, 0), jaggedPatch(0.55, rng, dmgStainMat, 9));
+    }
+    addPatch("土台・床組の含水", "floorWet", "軸組(構造材)", "frame",
+      V((rng() - 0.5) * 7, S.baseH + 0.08, zR - 0.03), V(0, 0, -1), jaggedPatch(0.32, rng, dmgStainMat, 8));
+    if (rng() > 0.5) {
+      addPatch("基礎の汚損・洗掘", "flood", "基礎", "found",
+        V((rng() - 0.5) * 7, S.baseH / 2, zR - 0.10), V(0, 0, -1), jaggedPatch(0.28, rng, dmgStainMat, 8));
+    }
+    if (rng() > 0.4) {
+      addPatch("室外機の冠水", "equip", "附帯設備", "ext", V(A.x0 - 0.60 - 0.20, 0.45, -1.60), V(-1, 0, 0), jaggedPatch(0.26, rng, dmgStainMat, 8));
+    }
+  }
 }
 
 function selectedTargets() {
@@ -5155,8 +5523,8 @@ function renderPanel() {
   });
   secModel.appendChild(rowMd);
   const modelNote = {
-    cube: "写真を基に再現した木造2階建・窯業系サイディング・片流れ屋根のモデルです。敷地(砂利・犬走り・乱形石アプローチ)、門柱、メッシュフェンス、隣家までそのまま再現しています。寸法は写真からの推定値です。室内は外観の窓・玄関・勝手口に合わせて設計した間取りです(実際の建物の間取りではありません)。<b>階数・屋根形状・屋根材/外壁材の切替と被害シミュレーションは、このモデルでは使用できません</b>(標準モデルでご利用ください)。",
-    wafu: "農家住宅を想定した和風住宅(木造2階建・入母屋屋根・瓦葺き)のモデルです。下屋、縁側(濡れ縁)、雨戸・戸袋、真壁の化粧柱、破風・懸魚、棟瓦・鬼瓦、切妻の玄関ポーチ、庭(飛石・松・石積み門柱)を再現しています。<b>階数・屋根形状・屋根材/外壁材の切替と被害シミュレーションは、このモデルでは使用できません</b>(標準モデルでご利用ください)。",
+    cube: "写真を基に再現した木造2階建・窯業系サイディング・片流れ屋根のモデルです。敷地(砂利・犬走り・乱形石アプローチ)、門柱、メッシュフェンス、隣家までそのまま再現しています。寸法は写真からの推定値です。室内は外観の窓・玄関・勝手口に合わせて設計した間取りです(実際の建物の間取りではありません)。<b>階数・屋根形状・屋根材/外壁材の切替は、このモデルでは使用できません</b>(標準モデルでご利用ください)。被害シミュレーションは使えます(金属屋根・笠木・サイディング・ルーバー・インナーバルコニーなど、このモデルの部位に合わせた被害が出ます)。",
+    wafu: "農家住宅を想定した和風住宅(木造2階建・入母屋屋根・瓦葺き)のモデルです。下屋、縁側(濡れ縁)、雨戸・戸袋、真壁の化粧柱、破風・懸魚、棟瓦・鬼瓦、切妻の玄関ポーチ、庭(飛石・松・石積み門柱)を再現しています。<b>階数・屋根形状・屋根材/外壁材の切替は、このモデルでは使用できません</b>(標準モデルでご利用ください)。被害シミュレーションは使えます(瓦・棟瓦・鬼瓦・下屋・縁側・畳・京壁など、このモデルの部位に合わせた被害が出ます)。",
     standard: "汎用の木造在来工法モデルです。階数・屋根形状・仕上材の切替と被害シミュレーションが使えます。",
   }[state.buildingModel];
   secModel.appendChild(el("div", "legend-cap", modelNote));
@@ -5354,8 +5722,9 @@ function renderPanel() {
     secW.appendChild(b);
   });
   panel.appendChild(secW);
+  }   // ← 屋根形状〜外壁材(標準モデルのみ)
 
-  // 損害評価の練習(被害シミュレーション)
+  // 損害評価の練習(被害シミュレーション)。被害の出方はモデルごとの部位(和風住宅は瓦・下屋・縁側、キューブ型は金属屋根・サイディング等)に合わせる
   const secDmg = el("div", "section", "<h2>損害評価の練習(被害シミュレーション)</h2>");
   const rowSc = el("div", "btn-row");
   [["none", "被害なし"], ["wind", "台風・強風"], ["hail", "雹(ひょう)"], ["snow", "大雪"], ["flood", "水災(浸水)"]].forEach(([k, lb]) => {
@@ -5381,7 +5750,6 @@ function renderPanel() {
     if (activeD) secDmg.appendChild(el("div", "note-box", `<div class="title">${activeD.name}</div>${activeD.note}`));
   }
   panel.appendChild(secDmg);
-  }   // ← 屋根形状〜被害シミュレーション(標準モデルのみ)
 
   // 寸法
   const secD = el("div", "section", "<h2>寸法の名称</h2>");
