@@ -1004,14 +1004,32 @@ function buildWafuHouse() {
   // 真壁の化粧柱: 1間半(1.5m)ごとを基本に、窓・建具の脇に柱を立て、開口に掛かる柱は除く
   const pillarXs = [];
   for (let x = -W1h; x <= W1h + 0.01; x += S.W1 / 8) pillarXs.push(+x.toFixed(3));
+  // 柱が寄り集まって見えないように間引く(隅柱は残す)
+  //  ・窓・建具の脇の柱から0.6m未満に残った基本割付の柱は除く
+  //  ・隅柱から0.45m未満の窓脇の柱は除く(隅柱が窓の脇を兼ねる)
+  //  ・隣り合う窓の間(0.6m未満)の2本は、窓の間の中央の1本にまとめる
+  const thinPosts = (posts, rects, edge, corner) => {
+    const side = rects.flatMap((r) => [r.u0 - edge, r.u1 + edge]);
+    const isSide = (u) => side.some((s) => Math.abs(s - u) < 1e-6);
+    const isCorner = (u) => Math.abs(u) >= corner - 0.01;
+    const ps = posts.filter((u) => isSide(u) || isCorner(u) || !posts.some((p) => isSide(p) && Math.abs(p - u) < 0.6))
+      .filter((u) => isCorner(u) || !isSide(u) || corner - Math.abs(u) >= 0.45)
+      .sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i < ps.length; i++) {
+      if (i + 1 < ps.length && isSide(ps[i]) && isSide(ps[i + 1]) && ps[i + 1] - ps[i] < 0.6) { out.push((ps[i] + ps[i + 1]) / 2); i++; }
+      else out.push(ps[i]);
+    }
+    return out;
+  };
   ["S", "N", "E", "W"].forEach((face) => {
     const sn = face === "S" || face === "N";
     const c = sn ? FACE[face].nz * D1h : FACE[face].nx * W1h;
     const base = { posts: sn ? pillarXs : [-D1h + 1.8, 0, D1h - 1.8], studs: [], braces: [] };
     const lay = frameLayout(base, sn ? S.W1 + 0.4 : S.D1 - 0.2, rectsW(face, 1), 0.09);
-    lay.posts.forEach((u) => {
-      const w = sn ? 0.155 : 0.16;
-      const hP = S.f1 - 0.1;   // 柱の頭は桁の中に納め、下屋の屋根面から出さない
+    thinPosts(lay.posts, rectsW(face, 1), 0.09, sn ? W1h : D1h).forEach((u) => {
+      const w = sn ? 0.155 : 0.15;   // 土台(0.16角)と外面を一致させない
+      const hP = S.f1 - 0.11;  // 柱の頭は桁の中に納め(桁の上面・外壁の上端とも一致させない)、下屋の屋根面から出さない
       T(box(w, hP, w, M2.hashira, sn ? u : c, yFloor + hP / 2, sn ? c : u), P.frame, "柱(化粧柱)");
     });
   });
@@ -1164,7 +1182,7 @@ function buildWafuHouse() {
       // 化粧柱(1.5mごと。窓に掛かる柱は除き、窓の脇に立てる)
       const base = [];
       for (let x = -W2h; x <= W2h + 0.01; x += S.W2 / 6) base.push(+x.toFixed(3));
-      frameLayout({ posts: base, studs: [], braces: [] }, S.W2, rectsW(face, 2), 0.085).posts.forEach((px) =>
+      thinPosts(frameLayout({ posts: base, studs: [], braces: [] }, S.W2, rectsW(face, 2), 0.085).posts, rectsW(face, 2), 0.085, W2h).forEach((px) =>
         T(box(0.14, h2, 0.14, M2.hashira, px, yG + h2 / 2, c), P.frame, "柱(化粧柱)"));
     });
     T(box(S.W2 + 0.1, 0.1, 0.09, M2.kigumi, 0, yG + h2 - 0.12, D2h + 0.048), P.frame, "鴨居・長押");   // 壁に少し食い込ませ、面の一致を避ける
