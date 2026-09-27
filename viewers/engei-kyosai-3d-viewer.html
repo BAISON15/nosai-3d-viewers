@@ -34,13 +34,15 @@
 </script>
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: var(--font-sans); }
   #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; background: #f1f5f9; }
 
-  header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
-  header .credit { font-size: 10.5px; color: #94a3b8; white-space: nowrap; margin-left: auto; }
-  header h1 { font-size: 13px; margin: 0; font-weight: 600; }
-  header p { font-size: 10.5px; margin: 2px 0 0; color: #94a3b8; }
+  /* 上部の見出し帯(NOSAI Design System: 濃色の帯+ティールの差し色・等幅の英字ラベル) */
+  header { background: #141819; color: #F6F8F9; padding: 10px 18px 9px; border-bottom: 2px solid var(--brand); display: flex; align-items: center; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
+  header .eyebrow-h { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .12em; color: #3DB0B2; margin: 0 0 2px; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -.01em; }
+  header p { font-size: 11px; margin: 3px 0 0; color: #98A4AB; }
+  header .credit { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em; color: #6A767D; white-space: nowrap; margin-left: auto; }
 
   main { flex: 1; display: flex; min-height: 0; min-width: 0; flex-direction: row; }
   @media (max-width: 860px) { main { flex-direction: column; } }
@@ -50,11 +52,18 @@
   #canvas-holder canvas { display: block; touch-action: none; }
 
   .label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; user-select: none; transform: translate(-50%, -100%); }
-  .label-chip { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.15); border: 1px solid #cbd5e1; background: rgba(255,255,255,.92); color: #334155; }
-  .label-chip.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
-  .label-chip.dim { background: rgba(15,23,42,.78); color: #fde68a; border: 1px dashed #f59e0b; }
-  .label-chip.dmg { background: #fee2e2; border-color: #f87171; color: #991b1b; }
-  .label-chip.dmg.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
+  /* モデル上のラベル(部位=橙の点、被害=コーラルの点。サイドバーの一覧と同じ色) */
+  .label-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 3px rgba(20,24,25,.14); border: 1px solid #E0E5E8; background: rgba(255,255,255,.95); color: #363F44; transition: background .2s var(--ease-out); }
+  .label-chip::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--highlight); }
+  .label-chip:hover { background: #fff; color: #141819; }
+  .label-chip.active { background: var(--highlight); border-color: #D98A1F; color: #141819; font-weight: 700; }
+  .label-chip.active::before { background: #141819; }
+  .label-chip.dim { background: rgba(20,24,25,.84); color: #F6F8F9; border: 1px dashed var(--highlight); }
+  .label-chip.dim::before { display: none; }
+  .label-chip.dmg { background: #FFF2EE; border-color: #FFC2B2; color: #8E3324; }
+  .label-chip.dmg::before { background: var(--coral); }
+  .label-chip.dmg.active { background: var(--coral); border-color: #E2563F; color: #fff; }
+  .label-chip.dmg.active::before { background: #fff; }
 
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
@@ -87,7 +96,7 @@
     --coral: #FF6F59; --coral-subtle: #FFF2EE; --coral-border: #FFC2B2; --coral-strong: #8E3324;
     --radius-sm: 6px; --radius-md: 10px; --radius-pill: 999px;
     --shadow-xs: 0 1px 2px rgba(20,24,25,.06); --shadow-sm: 0 1px 3px rgba(20,24,25,.08), 0 1px 2px rgba(20,24,25,.04);
-    --focus-ring: rgba(27,154,156,.45); --ease-out: cubic-bezier(.22,1,.36,1);
+    --focus-ring: rgba(27,154,156,.45); --ease-out: cubic-bezier(.22,1,.36,1); --highlight: #F2A33A;
     --font-sans: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   }
@@ -132,7 +141,7 @@
   /* 選択リスト(部位・被害) */
   .list { display: flex; flex-direction: column; gap: 2px; }
   .item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm); padding: 7px 8px; font-size: 12.5px; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: background .15s var(--ease-out); }
-  .item::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #F2A33A; }
+  .item::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--highlight); }
   .item.dmg::before { background: var(--coral); }
   .item:hover { background: var(--surface-sunken); }
   .item.active { background: var(--brand-subtle); border-color: var(--brand-border); color: var(--text-brand); font-weight: 700; }
@@ -182,7 +191,8 @@
 <div id="app">
   <header>
     <div>
-      <h1>園芸施設 3Dビューア — 園芸施設共済 評価研修用</h1>
+      <div class="eyebrow-h">3D TRAINING VIEWER · 園芸施設共済 評価研修用</div>
+      <h1>園芸施設 3Dビューア</h1>
       <p>園芸施設共済評価要領(平成30年5月2日 30経営第367号)の名称・区分を参考にした簡易学習モデル</p>
     </div>
     <div class="credit">Copyright &copy; 2026 BAISON</div>
@@ -1764,11 +1774,12 @@ function panelKit(onSelect) {
     return lg;
   };
   // 上部(対象の選択+タブ)
-  const head = ({ eyebrow, pick, summary, tabs, cur, onTab }) => {
+  const head = ({ eyebrow, pick, summary, extra, tabs, cur, onTab }) => {   // extra: 対象の下に常に出す操作(農機具の装置の状態など)
     const h = el("div", "p-head");
     h.appendChild(el("div", "eyebrow", eyebrow));
     h.appendChild(pick);
     if (summary) h.appendChild(el("p", "model-sum", summary));
+    if (extra) h.appendChild(extra);
     const row = el("div", "tabs");
     row.setAttribute("role", "tablist");
     tabs.forEach(([k, lb, badge], i) => {

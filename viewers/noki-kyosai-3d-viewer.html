@@ -34,20 +34,32 @@
 </script>
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: var(--font-sans); }
   #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; background: #f1f5f9; }
-  header { background: #0f172a; color: #e2e8f0; padding: 10px 16px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
-  header .credit { font-size: 10.5px; color: #94a3b8; white-space: nowrap; margin-left: auto; }
-  header h1 { font-size: 13px; margin: 0; font-weight: 600; }
-  header p { font-size: 10.5px; margin: 2px 0 0; color: #94a3b8; }
+  /* 上部の見出し帯(NOSAI Design System: 濃色の帯+ティールの差し色・等幅の英字ラベル) */
+  header { background: #141819; color: #F6F8F9; padding: 10px 18px 9px; border-bottom: 2px solid var(--brand); display: flex; align-items: center; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
+  header .eyebrow-h { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .12em; color: #3DB0B2; margin: 0 0 2px; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -.01em; }
+  header p { font-size: 11px; margin: 3px 0 0; color: #98A4AB; }
+  header .credit { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em; color: #6A767D; white-space: nowrap; margin-left: auto; }
   main { flex: 1; display: flex; min-height: 0; min-width: 0; flex-direction: row; }
   @media (max-width: 860px) { main { flex-direction: column; } }
   #viewport { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
   #canvas-holder { position: absolute; inset: 0; overflow: hidden; }
   #canvas-holder canvas { display: block; touch-action: none; }
   .label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; user-select: none; transform: translate(-50%, -100%); }
-  .label-chip { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.15); border: 1px solid #cbd5e1; background: rgba(255,255,255,.92); color: #334155; }
-  .label-chip.active { background: #f59e0b; border-color: #d97706; color: #0f172a; }
+  /* モデル上のラベル(部位=橙の点、被害=コーラルの点。サイドバーの一覧と同じ色) */
+  .label-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 3px rgba(20,24,25,.14); border: 1px solid #E0E5E8; background: rgba(255,255,255,.95); color: #363F44; transition: background .2s var(--ease-out); }
+  .label-chip::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--highlight); }
+  .label-chip:hover { background: #fff; color: #141819; }
+  .label-chip.active { background: var(--highlight); border-color: #D98A1F; color: #141819; font-weight: 700; }
+  .label-chip.active::before { background: #141819; }
+  .label-chip.dim { background: rgba(20,24,25,.84); color: #F6F8F9; border: 1px dashed var(--highlight); }
+  .label-chip.dim::before { display: none; }
+  .label-chip.dmg { background: #FFF2EE; border-color: #FFC2B2; color: #8E3324; }
+  .label-chip.dmg::before { background: var(--coral); }
+  .label-chip.dmg.active { background: var(--coral); border-color: #E2563F; color: #fff; }
+  .label-chip.dmg.active::before { background: #fff; }
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .use-box { position: absolute; bottom: 12px; right: 132px; max-width: 42%; background: rgba(255,255,255,.93); border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; font-size: 11.5px; line-height: 1.55; color: #334155; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .use-box b { display: block; font-size: 11px; color: #b45309; margin-bottom: 1px; }
@@ -77,7 +89,7 @@
     --coral: #FF6F59; --coral-subtle: #FFF2EE; --coral-border: #FFC2B2; --coral-strong: #8E3324;
     --radius-sm: 6px; --radius-md: 10px; --radius-pill: 999px;
     --shadow-xs: 0 1px 2px rgba(20,24,25,.06); --shadow-sm: 0 1px 3px rgba(20,24,25,.08), 0 1px 2px rgba(20,24,25,.04);
-    --focus-ring: rgba(27,154,156,.45); --ease-out: cubic-bezier(.22,1,.36,1);
+    --focus-ring: rgba(27,154,156,.45); --ease-out: cubic-bezier(.22,1,.36,1); --highlight: #F2A33A;
     --font-sans: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   }
@@ -122,7 +134,7 @@
   /* 選択リスト(部位・被害) */
   .list { display: flex; flex-direction: column; gap: 2px; }
   .item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm); padding: 7px 8px; font-size: 12.5px; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: background .15s var(--ease-out); }
-  .item::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #F2A33A; }
+  .item::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--highlight); }
   .item.dmg::before { background: var(--coral); }
   .item:hover { background: var(--surface-sunken); }
   .item.active { background: var(--brand-subtle); border-color: var(--brand-border); color: var(--text-brand); font-weight: 700; }
@@ -166,13 +178,23 @@
   .chip.active { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
   .about { font-size: 11px; color: var(--text-tertiary); line-height: 1.75; }
   .about p { margin: 6px 0 0; }
+  /* 装置の状態(機種の選択のすぐ下に常に表示) */
+  .state-box { margin-top: 10px; padding: 8px 10px 4px; background: var(--brand-subtle); border: 1px solid var(--brand-border); border-radius: var(--radius-md); }
+  .state-box .eyebrow { margin: 0 0 4px; color: var(--text-brand); }
+  .state-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .state-row .lb { flex: none; width: 84px; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+  .state-row .seg { flex: 1; background: rgba(255,255,255,.7); }
+  .state-link { flex: 1; min-width: 0; white-space: nowrap; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--border-subtle); background: var(--surface-card); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12.5px; font-weight: 700; color: var(--text-primary); cursor: pointer; text-align: left; }
+  .state-link span { flex: none; font-size: 11px; font-weight: 500; color: var(--text-brand); }
+  .state-link:hover { border-color: var(--brand-border); }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <div>
-      <h1>農機具 3Dビューア — 農機具共済 評価研修用</h1>
+      <div class="eyebrow-h">3D TRAINING VIEWER · 農機具共済 評価研修用</div>
+      <h1>農機具 3Dビューア</h1>
       <p>トラクタ・田植機・コンバイン(自脱型/普通型)・乗用管理機。附属装置(作業機)15種の着脱に対応</p>
     </div>
     <div class="credit">Copyright &copy; 2026 BAISON</div>
@@ -508,11 +530,11 @@ const ATT = {
   chuko:       { label: "中耕ロータ",        camR: 8.5, use: "畑の作物の列と列の間を浅く耕し、除草・土寄せや土の通気改善を行います。" },
   stubble:     { label: "スタブルカルチ",    camR: 8.5, use: "収穫後の刈り株が残る圃場を爪で砕土し、残さを土と混ぜます。プラウより速く広く作業できます。" },
   subsoiler:   { label: "サブソイラー",      camR: 8,   use: "地中深くの硬い土の層を爪で切り裂き、排水性と通気性を改善します(心土破砕)。" },
-  sprayer:     { label: "ブームスプレーヤ",  camR: 10,  use: "タンクの農薬や液肥を、左右に広げたブームのノズルから広い範囲に均一に散布します。" },
+  sprayer:     { label: "ブームスプレーヤ",  camR: 10,  use: "タンクの農薬や液肥を、左右に広げたブームのノズルから広い範囲に均一に散布します。移動時はブームを前方へ折りたたんで格納します。" },
 };
 const attMemberName = (k) => ATT[k].label + "(附属装置)";
 
-function buildAttachment(g, key) {
+function buildAttachment(g, key, opt = {}) {   // opt.boom: ブームスプレーヤのブーム(extended=展開 / folded=格納)
   const AM = attMemberName(key);
   if (key !== "manure") hitchMast(g, AM);
 
@@ -1223,21 +1245,43 @@ function buildAttachment(g, key) {
     for (let z = -0.5; z <= 0.51; z += 0.25) pushNoz(z);
     [1, -1].forEach((s) => {
       g.add(rbox(0.1, 0.22, 0.12, 0.02, M.imRed, BX, BY, s * 0.7, AM));            // ヒンジ
-      g.add(cylZ(0.03, 2.6, M.inox, BX, BY + 0.08, s * 2.0, AM));                  // 上弦材
-      g.add(cylZ(0.022, 2.6, M.inox, BX, BY - 0.08, s * 2.0, AM));                 // 下弦材
-      for (let i = 0; i < 9; i++) {
-        const z0 = 0.72 + i * 0.29, z1 = z0 + 0.29;
-        g.add(beam(v(BX, BY + (i % 2 ? 0.08 : -0.08), s * z0), v(BX, BY + (i % 2 ? -0.08 : 0.08), s * z1), 0.012, M.inox, AM)); // 斜材
+      if (opt.boom !== "folded") {
+        // 作業時: 左右に展開(トラス構造のウイング)
+        g.add(cylZ(0.03, 2.6, M.inox, BX, BY + 0.08, s * 2.0, AM));                // 上弦材
+        g.add(cylZ(0.022, 2.6, M.inox, BX, BY - 0.08, s * 2.0, AM));               // 下弦材
+        for (let i = 0; i < 9; i++) {
+          const z0 = 0.72 + i * 0.29, z1 = z0 + 0.29;
+          g.add(beam(v(BX, BY + (i % 2 ? 0.08 : -0.08), s * z0), v(BX, BY + (i % 2 ? -0.08 : 0.08), s * z1), 0.012, M.inox, AM)); // 斜材
+        }
+        g.add(cylZ(0.01, 2.6, M.black, BX + 0.05, BY - 0.05, s * 2.0, AM));        // 送液ホース
+        g.add(beam(v(BX, 1.2, s * 0.36), v(BX, BY + 0.1, s * 2.4), 0.009, M.gloss, AM)); // 吊りワイヤ
+        for (let z = 0.8; z <= 3.25; z += 0.3) pushNoz(s * z);
+      } else {
+        // 格納(移動時): ヒンジのアームでウイングを外へ振り出し、後輪の外側を前方へ沿わせて輸送レストに載せる
+        const WZ = s * 1.32, x0 = BX + 0.05, x1 = BX + 2.55, xc = (x0 + x1) / 2, L = x1 - x0;
+        g.add(bar(v(BX, BY + 0.04, s * 0.74), v(BX, BY + 0.04, WZ), 0.08, 0.08, M.imRed, AM));   // 振り出しアーム
+        g.add(cylX(0.03, L, M.inox, xc, BY + 0.08, WZ, AM));                        // 上弦材
+        g.add(cylX(0.022, L, M.inox, xc, BY - 0.08, WZ, AM));                       // 下弦材
+        for (let i = 0; i < 9; i++) {
+          const a = x0 + i * (L / 9), b = a + L / 9;
+          g.add(beam(v(a, BY + (i % 2 ? 0.08 : -0.08), WZ), v(b, BY + (i % 2 ? -0.08 : 0.08), WZ), 0.012, M.inox, AM)); // 斜材
+        }
+        g.add(cylX(0.01, L, M.black, xc, BY - 0.05, WZ - s * 0.05, AM));            // 送液ホース
+        // 輸送レスト(架台から張り出した受け金具)
+        g.add(bar(v(-2.3, 0.62, s * 0.46), v(-2.3, BY - 0.1, WZ), 0.05, 0.05, M.gloss, AM));
+        g.add(rbox(0.12, 0.05, 0.16, 0.01, M.black, -2.3, BY - 0.12, WZ, AM));
+        for (let x = x0 + 0.1; x <= x1 - 0.05; x += 0.3) {
+          const st = new THREE.CylinderGeometry(0.012, 0.012, 0.09, 8); st.translate(x, BY - 0.13, WZ);
+          const cp = new THREE.CylinderGeometry(0.028, 0.012, 0.05, 8); cp.translate(x, BY - 0.19, WZ);
+          nozzles.push(st, cp);
+        }
       }
-      g.add(cylZ(0.01, 2.6, M.black, BX + 0.05, BY - 0.05, s * 2.0, AM));          // 送液ホース
-      g.add(beam(v(BX, 1.2, s * 0.36), v(BX, BY + 0.1, s * 2.4), 0.009, M.gloss, AM)); // 吊りワイヤ
-      for (let z = 0.8; z <= 3.25; z += 0.3) pushNoz(s * z);
     });
     g.add(tag(new THREE.Mesh(mergeGeos(nozzles), M.gloss), AM));                    // ノズル
   }
 }
 
-function buildTractor(att) {
+function buildTractor(att, opt = {}) {
   const g = new THREE.Group();
   const BODY = "車体・シャーシ", ENG = "エンジン・ボンネット", CAB = "キャビン(ガラス・外装)", WHL = "走行部(タイヤ・ホイール)", HIT = "3点リンク・PTO";
 
@@ -1392,7 +1436,7 @@ function buildTractor(att) {
   g.add(box(0.5, 0.06, 0.14, M.steelD, -1.78, 0.42, 0, HIT));                      // ドローバー
   g.add(rbox(0.16, 0.03, 0.26, 0.01, M.steel, -1.7, 0.82, 0, HIT));                // PTOシールド
 
-  if (att !== "none") buildAttachment(g, att);
+  if (att !== "none") buildAttachment(g, att, opt);
 
   const attCaveat = "附属装置(作業機)の加入区分は組合により異なります。本体と作業機(ロータリー・ハロー等)を別々に加入させる組合と、ロータリー等を本体の附属装置としてセットで加入できる組合があるため、装着状態と加入内容の確認が重要です。";
   const members = [
@@ -1930,7 +1974,7 @@ function buildDetailedMembers() {
    機種カタログ・状態
 ============================================================ */
 const MACHINES = {
-  tractor:  { label: "トラクタ", sub: "乗用型トラクター", build: () => buildTractor(state.tractorAtt) },
+  tractor:  { label: "トラクタ", sub: "乗用型トラクター", build: () => buildTractor(state.tractorAtt, { boom: state.sprBoom }) },
   taue:     { label: "田植機", sub: "乗用型田植機", build: () => buildTaue({ fert: state.taueFert, spray: state.taueSpray }) },
   combine:  { label: "コンバイン(自脱型)", sub: "自脱型コンバイン", build: () => buildCombineJidatsu({ cutter: state.combCutter, auger: state.combAuger }) },
   combine2: { label: "コンバイン(普通型)", sub: "普通型(汎用)コンバイン", build: () => buildCombineFutsu({ auger: state.comb2Auger }) },
@@ -1946,6 +1990,7 @@ const state = {
   combAuger: "stored",
   comb2Auger: "stored",
   kanBoom: "extended",
+  sprBoom: "extended",   // トラクタ装着のブームスプレーヤのブーム
   selectedMember: null,
   detailParts: false,
   memberColorMode: false,
@@ -2304,11 +2349,12 @@ function panelKit(onSelect) {
     return lg;
   };
   // 上部(対象の選択+タブ)
-  const head = ({ eyebrow, pick, summary, tabs, cur, onTab }) => {
+  const head = ({ eyebrow, pick, summary, extra, tabs, cur, onTab }) => {   // extra: 対象の下に常に出す操作(農機具の装置の状態など)
     const h = el("div", "p-head");
     h.appendChild(el("div", "eyebrow", eyebrow));
     h.appendChild(pick);
     if (summary) h.appendChild(el("p", "model-sum", summary));
+    if (extra) h.appendChild(extra);
     const row = el("div", "tabs");
     row.setAttribute("role", "tablist");
     tabs.forEach(([k, lb, badge], i) => {
@@ -2333,7 +2379,7 @@ function panelKit(onSelect) {
 
 /* ============================================================
    右サイドバー
-   上から「機種」→「タブ(部位 / 附属装置 / 表示)」→「タブの中身」の順(建物ビューアと同じ構成)
+   上から「機種」→「装置の状態」→「タブ(部位 / 附属装置(トラクタのみ) / 表示)」→「タブの中身」の順(建物ビューアと同じ構成)
 ============================================================ */
 const MACHINE_SHORT = { tractor: ["トラクタ", "乗用型"], taue: ["田植機", "乗用型"], combine: ["コンバイン", "自脱型"], combine2: ["コンバイン", "普通型"], kanriki: ["管理機", "乗用"] };
 
@@ -2344,12 +2390,50 @@ function selectMember(key) {
   renderLabels(); renderPanel(); applyHighlight();
 }
 
+/* 機種ごとの補足(「部位」タブの説明に添える) */
+const MACHINE_NOTE = {
+  tractor: "3点リンク(マニュアスプレッダーはドローバー)に装着する作業機を「附属装置」タブで切り替えます。駆動式の作業機にはPTOシャフトが接続されます。",
+  taue: "施肥機・薬剤散布装置は、上の「装置の状態」で装着・取り外しを切り替えます(同時に装着できます)。",
+  combine: "排わらカッターの装着とオーガの格納/展開を、上の「装置の状態」で切り替えます。",
+  combine2: "普通型(汎用)コンバインは麦・大豆・そば等にも対応するリール式ヘッダーを備えます。",
+  kanriki: "一体型のため散布装置(ブーム・タンク)は機体の一部です。移動時はブームを格納します。",
+};
+
+/* 装置の状態(ブーム・オーガ・装着の有無)。機種の選択のすぐ下に常に出し、部位を見ながら切り替えられるようにする */
+function machineStateBox(K) {
+  const box = el("div", "state-box");
+  box.appendChild(el("div", "eyebrow", "State · 装置の状態"));
+  const row = (label, ctl) => { const r = el("div", "state-row"); r.appendChild(el("span", "lb", label)); r.appendChild(ctl); box.appendChild(r); };
+  const boomSeg = (cur, set) => K.seg([["extended", "展開"], ["folded", "格納"]], cur, (k) => { set(k); rebuild(false); }, 2);
+  const augerSeg = (cur, set) => K.seg([["stored", "格納"], ["extended", "展開"]], cur, (k) => { set(k); rebuild(false); }, 2);
+  const onOff = (cur, set) => K.seg([[true, "装着"], [false, "なし"]], cur, (v) => { set(v); rebuild(false); }, 2);
+  if (state.machine === "tractor") {
+    const cur = el("button", "state-link", `${state.tractorAtt === "none" ? "なし" : ATT[state.tractorAtt].label}<span>変更</span>`);
+    cur.addEventListener("click", () => { state.tab = "att"; renderPanel(); });
+    row("附属装置", cur);
+    if (state.tractorAtt === "sprayer") row("ブーム", boomSeg(state.sprBoom, (k) => { state.sprBoom = k; }));
+  } else if (state.machine === "taue") {
+    row("施肥機", onOff(state.taueFert, (v) => { state.taueFert = v; }));
+    row("薬剤散布", onOff(state.taueSpray, (v) => { state.taueSpray = v; }));
+  } else if (state.machine === "combine") {
+    row("オーガ", augerSeg(state.combAuger, (k) => { state.combAuger = k; }));
+    row("排わらカッター", onOff(state.combCutter, (v) => { state.combCutter = v; }));
+  } else if (state.machine === "combine2") {
+    row("オーガ", augerSeg(state.comb2Auger, (k) => { state.comb2Auger = k; }));
+  } else {
+    row("ブーム", boomSeg(state.kanBoom, (k) => { state.kanBoom = k; }));
+  }
+  return box;
+}
+
 function renderPanel() {
   updateUseBox();
   const scrollY = panel.scrollTop, prevTab = panel.dataset.tab;
   panel.innerHTML = "";
   const K = panelKit(selectMember);
   const d = MACHINES[state.machine];
+  const isTractor = state.machine === "tractor";
+  if (state.tab === "att" && !isTractor) state.tab = "parts";   // 「附属装置」タブはトラクタだけ
 
   panel.appendChild(K.head({
     eyebrow: "Machine · 機種",
@@ -2358,13 +2442,14 @@ function renderPanel() {
       state.machine = k; state.selectedMember = null; rebuild(true);
     }, 3),
     summary: `${d.label} — ${d.sub}`,
-    tabs: [["parts", "部位"], ["att", "附属装置・状態"], ["view", "表示"]],
+    extra: machineStateBox(K),
+    tabs: isTractor ? [["parts", "部位"], ["att", "附属装置"], ["view", "表示"]] : [["parts", "部位"], ["view", "表示"]],
     cur: state.tab, onTab: (k) => { state.tab = k; renderPanel(); },
   }));
   const body = el("div", "p-body");
   panel.appendChild(body);
 
-  /* ---- 01 部位 ---- */
+  /* ---- 部位 ---- */
   if (state.tab === "parts") {
     const sec = K.section("部位と評価の着眼点", `${currentDef.members.length}件`);
     const active = currentDef.members.find((m) => m.key === state.selectedMember);
@@ -2374,39 +2459,21 @@ function renderPanel() {
     list.style.marginTop = "10px";
     sec.appendChild(list);
     sec.appendChild(K.toggles(K.toggle("選んだ部位以外を薄く表示", state.focusDim, (v) => { state.focusDim = v; applyHighlight(); renderPanel(); })));
-    sec.appendChild(K.help("選んだ部位はモデル上で橙色に点滅します。「部材ごと」にすると、モデル上の部材名ごとに分けて1つずつ選べます。"));
+    sec.appendChild(K.help(`選んだ部位はモデル上で橙色に点滅します。「部材ごと」にすると、モデル上の部材名ごとに分けて1つずつ選べます。<br>${MACHINE_NOTE[state.machine]}`));
     body.appendChild(sec);
   }
 
-  /* ---- 02 附属装置・状態 ---- */
+  /* ---- 附属装置(トラクタのみ) ---- */
   if (state.tab === "att") {
-    const sec = K.section(state.machine === "tractor" ? "作業機(附属装置)" : "装置・状態");
-    if (state.machine === "tractor") {
-      sec.appendChild(K.seg([["none", "なし"]].concat(Object.keys(ATT).map((k) => [k, ATT[k].label])), state.tractorAtt,
-        (k) => { state.tractorAtt = k; rebuild(true); }, 2));
-      sec.appendChild(K.cap("選んだ作業機の用途は、画面の下部(視点をリセットの左)に表示されます。"));
-      sec.appendChild(K.help("3点リンク(マニュアスプレッダーはドローバー)に装着する作業機を切り替えます。駆動式の作業機にはPTOシャフトが接続されます。"));
-    } else if (state.machine === "taue") {
-      sec.appendChild(K.toggle("施肥機(側条施肥)", state.taueFert, (v) => { state.taueFert = v; rebuild(false); }));
-      sec.appendChild(K.toggle("薬剤散布装置", state.taueSpray, (v) => { state.taueSpray = v; rebuild(false); }));
-      sec.appendChild(K.cap("装着・取り外しを切り替えます(同時に装着できます)。"));
-    } else if (state.machine === "combine") {
-      sec.appendChild(K.toggle("排わらカッター", state.combCutter, (v) => { state.combCutter = v; rebuild(false); }));
-      sec.appendChild(el("div", "sub-h", "オーガ"));
-      sec.appendChild(K.seg([["stored", "格納"], ["extended", "展開"]], state.combAuger, (k) => { state.combAuger = k; rebuild(false); }, 2));
-    } else if (state.machine === "combine2") {
-      sec.appendChild(el("div", "sub-h", "オーガ"));
-      sec.appendChild(K.seg([["stored", "格納"], ["extended", "展開"]], state.comb2Auger, (k) => { state.comb2Auger = k; rebuild(false); }, 2));
-      sec.appendChild(K.help("普通型(汎用)コンバインは麦・大豆・そば等にも対応するリール式ヘッダーを備えます。"));
-    } else {
-      sec.appendChild(el("div", "sub-h", "ブーム"));
-      sec.appendChild(K.seg([["extended", "展開"], ["folded", "格納"]], state.kanBoom, (k) => { state.kanBoom = k; rebuild(false); }, 2));
-      sec.appendChild(K.help("一体型のため散布装置(ブーム・タンク)は機体の一部です。"));
-    }
+    const sec = K.section("附属装置(作業機)", `${Object.keys(ATT).length}種`);
+    sec.appendChild(K.seg([["none", "なし"]].concat(Object.keys(ATT).map((k) => [k, ATT[k].label])), state.tractorAtt,
+      (k) => { state.tractorAtt = k; rebuild(true); }, 2));
+    sec.appendChild(K.cap("選んだ作業機の用途は、画面の下部(視点をリセットの左)に表示されます。ブームスプレーヤのブームは、上の「装置の状態」で展開/格納を切り替えられます。"));
+    sec.appendChild(K.help(MACHINE_NOTE.tractor));
     body.appendChild(sec);
   }
 
-  /* ---- 03 表示 ---- */
+  /* ---- 表示 ---- */
   if (state.tab === "view") {
     const sec = K.section("表示");
     sec.appendChild(K.toggle("部材ごとに色分け", state.memberColorMode, (v) => { state.memberColorMode = v; applyHighlight(); renderPanel(); }));
