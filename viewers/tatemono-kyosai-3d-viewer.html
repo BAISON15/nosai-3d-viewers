@@ -818,9 +818,48 @@ function buildUnitBath(add, member, o) {
     [B(0.03, 0.05, 0.05, fu(0.04), yF + 0.72, vf + 0.17), UB_MAT.metal],
     [B(0.16, 0.025, 0.62, fu(0.08), yF + 0.60, vf), UB_MAT.counter],        // カウンター
     [B(0.008, 0.62, 0.38, fu(0.004), yF + 1.30, vf), UB_MAT.mirror],        // 鏡
-    [B(0.03, 0.85, 0.03, fu(0.035), yF + 1.35, vb), UB_MAT.metal],          // シャワーのスライドバー
-    [B(0.09, 0.03, 0.14, fu(0.09), yF + 1.78, vb), UB_MAT.metal],           // シャワーヘッド
     [B(0.035, 0.60, 0.035, fu(0.04), yF + 0.95, tv + 0.10), UB_MAT.metal],  // 浴槽脇の手すり
+  ]), member);
+
+  // シャワー(スライドバー・フック・ハンドシャワー・ホース)。水栓の脇の壁に付け、ヘッドは斜め下の洗い場へ向ける
+  const P3 = (u, y, v) => axis === "x" ? new THREE.Vector3(v0 + sign * v, y, u0 + u) : new THREE.Vector3(u0 + u, y, v0 + sign * v);
+  const inU = o.faucetSide === 0 ? 1 : -1;                                    // 壁から室内へ向かう u の向き
+  const uDir = (axis === "x" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0)).multiplyScalar(inU);
+  const yHead = yF + 1.72;
+  const along = (geo, from, to) => {                                           // Y軸向きの形を from → to に向けて置く
+    const d = new THREE.Vector3().subVectors(to, from);
+    geo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize()));
+    geo.translate((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2);
+    return geo;
+  };
+  const headAt = P3(fu(0.13), yHead + 0.03, vb), gripEnd = P3(fu(0.055), yHead - 0.13, vb);
+  const faceDir = uDir.clone().multiplyScalar(0.55).add(new THREE.Vector3(0, -0.85, 0)).normalize();   // 散水板の向き(斜め下の洗い場へ)
+  const head = new THREE.CylinderGeometry(0.058, 0.05, 0.028, 24);
+  head.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), faceDir.clone().negate()));
+  head.translate(headAt.x, headAt.y, headAt.z);
+  const plate = new THREE.CylinderGeometry(0.046, 0.046, 0.004, 24);       // 散水板
+  plate.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), faceDir.clone().negate()));
+  const pc = headAt.clone().addScaledVector(faceDir, 0.016);
+  plate.translate(pc.x, pc.y, pc.z);
+  // ホース: 水栓のシャワー側の端から、カウンター(壁から0.16m)の前へ出してから垂らし、たるませてグリップへ
+  const sv = Math.sign(vf - vb) || 1;
+  const hose = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    P3(fu(0.07), yF + 0.70, vf - sv * 0.17),
+    P3(fu(0.20), yF + 0.66, vf - sv * 0.22),
+    P3(fu(0.21), yF + 0.40, (vf + vb) / 2),
+    P3(fu(0.16), yF + 0.28, vb - sv * 0.02),
+    P3(fu(0.10), yF + 0.80, vb - sv * 0.03),
+    gripEnd,
+  ]), 48, 0.009, 8, false);
+  add(mergeGeoms([
+    [B(0.028, 0.85, 0.028, fu(0.035), yF + 1.30, vb), UB_MAT.metal],                          // スライドバー
+    [B(0.05, 0.02, 0.05, fu(0.035), yF + 0.875, vb), UB_MAT.metal],                           // スライドバーの受け(下)
+    [B(0.05, 0.02, 0.05, fu(0.035), yF + 1.725, vb), UB_MAT.metal],                           // スライドバーの受け(上)
+    [B(0.05, 0.06, 0.05, fu(0.05), yHead - 0.05, vb), UB_MAT.metal],                          // フック(スライダー)
+    [along(new THREE.CylinderGeometry(0.016, 0.013, 1, 12).scale(1, headAt.distanceTo(gripEnd), 1), gripEnd, headAt), UB_MAT.metal],   // グリップ
+    [head, UB_MAT.metal],                                                                       // シャワーヘッド
+    [plate, UB_MAT.drain],
+    [hose, UB_MAT.metal],                                                                       // シャワーホース
   ]), member);
 }
 function beamBetween(p1, p2, r, mat) {
@@ -883,6 +922,25 @@ const WSPEC = {
   hHip: 0.90,               // 入母屋の隅棟の立ち上がり
 };
 
+/* 便器(タンク付き・奥行0.73m)。タンクの背を壁に付けて置く。
+   (bx, bz) は背の壁の面上の点(便器の幅の中心)、face は便器が向く方角(S=+z / N=-z / E=+x / W=-x) */
+function placeToilet(put, mat, member, bx, bz, face, fy) {
+  const [dx, dz] = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[face];
+  const B = (w, h, dep, off, y) => dx ? box(dep, h, w, mat, bx + dx * off, y, bz) : box(w, h, dep, mat, bx, y, bz + dz * off);
+  put(B(0.36, 0.52, 0.18, 0.09, fy + 0.36), member);    // タンク
+  put(B(0.38, 0.42, 0.55, 0.455, fy + 0.21), member);   // 便器
+  put(B(0.44, 0.10, 0.38, 0.50, fy + 0.45), member);    // 便座・ふた
+}
+
+/* 矩形 [x0, x1, z0, z1] から cut(同じ形式。null なら何もしない)を除いた矩形の集まり。天井の階段の開口などに使う */
+function rectsMinus(rect, cut) {
+  if (!cut) return [rect];
+  const [x0, x1, z0, z1] = rect;
+  const c0 = Math.max(x0, cut[0]), c1 = Math.min(x1, cut[1]), d0 = Math.max(z0, cut[2]), d1 = Math.min(z1, cut[3]);
+  if (c1 <= c0 || d1 <= d0) return [rect];
+  return [[x0, x1, z0, d0], [x0, x1, d1, z1], [x0, c0, d0, d1], [c1, x1, d0, d1]].filter(([a, b, e, f]) => b - a > 1e-3 && f - e > 1e-3);
+}
+
 /* 矩形の室内側の面から外壁の室内側の面(perimeter)を作る。out は屋外側の向き */
 function rectPerimeter(b) {
   return [
@@ -908,7 +966,7 @@ const WAFU_PLAN = (() => {
   const G = {
     zEn: 3.35, zMid: -0.30,                 // 広縁境 / 南列・北列の境
     xA: -2.27, xB: 1.37, xC: 3.02, xD: 4.45,
-    zW: -2.80, zW2: -1.50, zT: -3.20, zH: 2.30,
+    zW: -2.80, zW2: -1.50, zT: -3.05, zH: 2.30,   // zT: 便所 ⇔ 廊下(便所の奥行は内法1.365m)
     domaX0: 3.35, domaX1: 5.25,
     zHall: -2.00, xR: -0.50, xS: 2.95,      // 2階
   };
@@ -1401,10 +1459,13 @@ function buildWafuHouse() {
         [x0, x1].forEach((x) => IW(box(0.14, 0.16, z1 - z0, MW.sao, x, fY - 0.03, (z0 + z1) / 2), "上がり框"));
       } else slab(x0, x1, z0, z1, r.light ? MW.ita : MW.yuka, r.member || "床(板張り)");
     });
-    /* ---------------- 天井 ---------------- */
-    IW(box(iX1 - iX0, 0.04, iZ1 - iZ0, MW.tenjo, (iX0 + iX1) / 2, cH, (iZ0 + iZ1) / 2), "天井(竿縁天井)");
+    /* ---------------- 天井(階段の上は2階の吹抜けへ抜けるよう開口を空ける) ---------------- */
+    const ceilHole = [WP.G.xC, WP.G.xD, WP.stair.holeZ0, WP.stair.holeZ1];
+    rectsMinus([iX0, iX1, iZ0, iZ1], ceilHole).forEach(([x0, x1, z0, z1]) =>
+      IW(box(x1 - x0, 0.04, z1 - z0, MW.tenjo, (x0 + x1) / 2, cH, (z0 + z1) / 2), "天井(竿縁天井)"));
     for (let x = iX0 + 0.65; x < iX1; x += 0.65)
-      IW(box(0.05, 0.06, iZ1 - iZ0, MW.sao, x, cH - 0.05, (iZ0 + iZ1) / 2), "天井(竿縁天井)");
+      rectsMinus([x - 0.025, x + 0.025, iZ0, iZ1], ceilHole).forEach(([x0, x1, z0, z1]) =>
+        IW(box(x1 - x0, 0.06, z1 - z0, MW.sao, (x0 + x1) / 2, cH - 0.05, (z0 + z1) / 2), "天井(竿縁天井)"));
     /* ---------------- 外壁の室内側の仕上げ(京壁) ----------------
        間仕切り・床・天井・畳寄せの端を受け、外壁との間の隙間をふさぐ。「内部(外装を透過)」表示では外壁と一緒に透過させる(layer=ext)。
        開口部(縁側の建具・玄関・窓)は外壁と同じ位置に穴を空ける */
@@ -1486,10 +1547,7 @@ function buildWafuHouse() {
       IW(box(0.79, 0.05, 0.49, MW.counter, vx + 0.02, fY + 0.84, vz + 0.01), "洗面化粧台");
       IW(box(0.70, 0.72, 0.06, MW.kanagu, vx, fY + 1.34, zW + 0.055), "洗面化粧台");
       IW(box(0.60, 0.92, 0.55, MW.cab, xB + 0.025 + 0.30, fY + 0.46, zW2 - 0.025 - 0.275), "洗濯機置場");
-      const txc = (xC + xD) / 2, tzc = (iZ0 + zT) / 2;
-      IW(box(0.38, 0.42, 0.62, MW.toki, txc, fY + 0.21, tzc), "便器");
-      IW(box(0.36, 0.52, 0.20, MW.toki, txc, fY + 0.36, tzc - 0.30), "便器");
-      IW(box(0.44, 0.10, 0.38, MW.toki, txc, fY + 0.45, tzc + 0.05), "便器");
+      placeToilet(IW, MW.toki, "便器", (xC + xD) / 2, iZ0 + 0.01, "S", fY);   // 北の外壁を背に、入口(南)向き
     }
     /* ---------------- 玄関の造作 ---------------- */
     IW(box(0.42, 1.20, 0.95, MW.cab, domaX1 - 0.24, fY + 0.18, (zEn + iZ1) / 2), "玄関収納");
@@ -1532,8 +1590,7 @@ function buildWafuHouse() {
     IW(box(0.80, 2.00, 1.75, MW.ita, jX0 + 0.42, f2 + 1.055, 0.0), "押入");
     doorSetW(f2, 0.08, "x", jX0 + 0.82, -0.86, 0.86, "fusuma", "押入", { noFrame: true, sillH: 0, yTop: f2 + 2.02, v: 0.03 });   // 押入の襖
     IW(box(1.50, 2.00, 0.62, MW.cab, 2.10, f2 + 1.055, zHall + 0.335), "押入");
-    // 手すり(吹抜けまわり)
-    IW(box(jX1 - xS, 0.85, 0.06, MW.sao, (xS + jX1) / 2, f2 + 0.45, stZ1), "階段");
+    // 手すり(吹抜けの西の縁。南の縁は納戸の壁、北は階段の上り口なので付けない)
     IW(box(0.06, 0.85, stZ0 - stZ1, MW.sao, xS + 0.04, f2 + 0.45, (stZ0 + stZ1) / 2), "階段");
     // 階段(踏板・蹴込)。1階ホール側(z=1.60)から北へ上る
     {
@@ -1543,7 +1600,12 @@ function buildWafuHouse() {
         IW(box(1.05, 0.05, run2 + 0.03, MW.ita, sxc, fY + 0.06 + rise2 * (i + 1) - 0.02, zc), "階段");
         IW(box(1.05, rise2 - 0.05, 0.03, MW.cab, sxc, fY + 0.06 + rise2 * (i + 1) - rise2 / 2, zc + run2 / 2), "階段");
       }
-      IW(box(0.06, 0.06, stZ0 - stZ1 + 0.3, MW.sao, xC + 0.14, fY + 1.95, (stZ0 + stZ1) / 2), "階段");
+      // 手すり: 東の間仕切り(xD)側に、踏板の上0.80mの高さで勾配に沿って付ける(下の東納戸の引戸 z 0.9〜1.7 を避けて4段目から)
+      const hx = xD - 0.035 - 0.06, treadTop = (i) => fY + 0.06 + rise2 * (i + 1) + 0.005;
+      const i0 = 4, i1 = nStep - 1;
+      const hp = (i, dz) => new THREE.Vector3(hx, treadTop(i) + 0.80, stZ0 - run2 * i + dz);
+      IW(beamBetween(hp(i0, run2 / 2), hp(i1, -run2 / 2), 0.02, MW.sao), "階段");
+      for (let i = i0 + 1; i < i1; i += 4) IW(box(0.07, 0.03, 0.03, MW.sao, hx + 0.035, treadTop(i) + 0.77, stZ0 - run2 * i), "階段");   // 受け金具
     }
   }
 
@@ -1900,13 +1962,14 @@ function buildCubeInterior(g) {
   };
   P.rooms.forEach((room) => roomRects(room).forEach((rect) => {
     const r = { ...room, rect };
-    if (r.finish === "吹抜け") return;
     const [x0, x1, z0, z1] = r.rect, w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    // 吹抜けは床を張らず、2階の天井だけ張る(階段を見上げたときに屋根の裏が見えないように)
+    if (r.finish === "吹抜け") { IN(box(w, 0.04, d, M.tenjo, cx, P.ceilY(r.floor), cz), "天井"); return; }
     const y = P.floorY(r.floor), th = r.floor === 1 ? 0.06 : 0.08;
     if (r.finish === "タイル") IN(box(w - 0.024, th, d - 0.024, M.tile, cx, y - 0.004, cz), "床(タイル)", "床");
     else if (r.finish === "土間") IN(box(w, 0.05, d, M.doma, cx, domaTop - 0.025, cz), r.id === "doma" ? "玄関土間" : "土間収納", "床");
     else IN(box(w, th, d, flooringMaterial(w, d), cx, y, cz), r.floor === 1 ? "床(フローリング)" : "床(2階フローリング)", "床");
-    // 天井(階段の上と吹抜けは張らない)
+    // 天井(1階の階段の上は、2階の吹抜けへ抜けるよう張らない)
     if (!r.noCeil) IN(box(w, 0.04, d, M.tenjo, cx, P.ceilY(r.floor), cz), "天井");
   }));
   // 上がり框(ホール ⇔ 玄関土間)
@@ -1972,17 +2035,9 @@ function buildCubeInterior(g) {
     axis: "x", sign: 1, v0: 3.035, Lv: P.xe - 0.008 - 3.035, u0: P.zn, Lu: (-1.935) - P.zn,
     fy: P.floorY(1), top: P.ceilY(1) - 0.02, door: [-2.90 - P.zn, -2.20 - P.zn], doorTop: P.floorY(1) + 2.02,
   });
-  // 便器(1階は東の壁を背に西向き、2階は北の壁を背に南向き)
-  {
-    const tx = P.xe - 0.10, tz = -1.325;
-    IN(box(0.20, 0.52, 0.36, M.toki, tx, t1 + 0.36, tz), "便器");
-    IN(box(0.62, 0.42, 0.38, M.toki, tx - 0.41, t1 + 0.21, tz), "便器");
-    IN(box(0.38, 0.10, 0.44, M.toki, tx - 0.46, t1 + 0.45, tz), "便器");
-    const ux = 3.90, uz = P.zn + 0.10;
-    IN(box(0.36, 0.52, 0.20, M.toki, ux, t2 + 0.36, uz), "便器");
-    IN(box(0.38, 0.42, 0.62, M.toki, ux, t2 + 0.21, uz + 0.41), "便器");
-    IN(box(0.44, 0.10, 0.38, M.toki, ux, t2 + 0.45, uz + 0.46), "便器");
-  }
+  // 便器。1階のトイレは幅0.88m×奥行1.15mなので、奥行の長い向き(北の間仕切りを背に南向き)に置く。2階は北の外壁を背に南向き
+  placeToilet(IN, M.toki, "便器", (3.55 + 0.035 + P.xe) / 2, -1.90 + 0.04, "S", t1);
+  placeToilet(IN, M.toki, "便器", 3.90, P.zn + 0.01, "S", t2);
   // 土間収納の棚(ホール側の壁。勝手口への通路を空ける)
   IN(box(0.35, 1.80, 1.00, M.cabinet, 3.55 + 0.035 + 0.175, domaTop + 0.90, 1.45), "玄関収納");
   /* 家具類 */
@@ -2936,9 +2991,15 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     g.add(tag(box(W, 0.24, 0.12, MAT.woodD, 0, y2, -D / 2), "軸組(構造材)", "胴差し", "frame"));
     g.add(tag(box(0.12, 0.24, D, MAT.woodD,  W / 2, y2, 0), "軸組(構造材)", "胴差し", "frame"));
     g.add(tag(box(0.12, 0.24, D, MAT.woodD, -W / 2, y2, 0), "軸組(構造材)", "胴差し", "frame"));
+    // 床梁は階段の開口(吹抜け)で切り、開口の両端に受け梁を渡す(階段を上る人の頭上・踏板を梁が貫かないように)
+    const ST = STD_PLAN.stair, hz0 = ST.holeZ0 - 0.1, hz1 = ST.holeZ1 + 0.1;
     for (let bx = -(W / 2 - 0.7); bx <= W / 2 - 0.69; bx += (W - 1.4) / 5) {
-      g.add(tag(box(0.1, 0.2, D - 0.2, MAT.woodD, +bx.toFixed(3), y2, 0), "軸組(構造材)", "床梁(2階床組)", "frame"));
+      const x = +bx.toFixed(3);
+      const segs = x > ST.x0 - 0.05 && x < ST.x1 + 0.05 ? [[-(D / 2 - 0.1), hz0], [hz1, D / 2 - 0.1]] : [[-(D / 2 - 0.1), D / 2 - 0.1]];
+      segs.forEach(([a, b]) => g.add(tag(box(0.1, 0.2, b - a, MAT.woodD, x, y2, (a + b) / 2), "軸組(構造材)", "床梁(2階床組)", "frame")));
     }
+    [hz0 - 0.05, hz1 + 0.05].forEach((z) =>
+      g.add(tag(box(ST.x1 - ST.x0 + 0.1, 0.2, 0.1, MAT.woodD, (ST.x0 + ST.x1) / 2, y2, z), "軸組(構造材)", "床梁(2階床組)", "frame")));   // 受け梁
   }
 
   /* ---- 小屋組(屋根形状別・簡略) ---- */
@@ -3330,8 +3391,10 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     }
   });
 
-  /* 天井 */
-  IN(box(iX1 - iX0, 0.04, iZ1 - iZ0, MI.tenjo, (iX0 + iX1) / 2, c1, (iZ0 + iZ1) / 2), "天井");
+  /* 天井(2階建ては階段の上に吹抜けへ抜ける開口を空ける) */
+  const ceilHole = n === 2 ? [STD_PLAN.stair.x0, STD_PLAN.stair.x1, STD_PLAN.stair.holeZ0, STD_PLAN.stair.holeZ1] : null;
+  rectsMinus([iX0, iX1, iZ0, iZ1], ceilHole).forEach(([x0, x1, z0, z1]) =>
+    IN(box(x1 - x0, 0.04, z1 - z0, MI.tenjo, (x0 + x1) / 2, c1, (z0 + z1) / 2), "天井"));
   /* 外壁の室内側の仕上げ(クロス)
      間仕切り・床・天井・幅木の端(境界線 iX0〜iX1 / iZ0〜iZ1)を受け、外壁との間に隙間を残さない。
      室内側の面は境界線より8mm内側(ユニットバスの壁パネルと面を重ねない)。開口部は外壁と同じ位置に穴を空ける。
@@ -3412,10 +3475,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   }
   // 便器
   {
-    const txc = (xToi + xCor) / 2, tzc = (zWat + zMid) / 2;
-    IN(box(0.38, 0.42, 0.62, MI.toki, txc, f1 + 0.21, tzc), "便器");
-    IN(box(0.36, 0.52, 0.20, MI.toki, txc, f1 + 0.36, tzc - 0.32), "便器");
-    IN(box(0.44, 0.10, 0.38, MI.toki, txc, f1 + 0.45, tzc + 0.05), "便器");
+    placeToilet(IN, MI.toki, "便器", xCor - 0.04, (zWat + zMid) / 2, "W", f1);   // 東の間仕切りを背に、入口の戸(西)と向き合う(奥行1.12m より幅1.20m の向きが広い)
   }
   // 玄関収納(シューズボックス)。玄関戸(z 1.10〜2.10)の正面を避け、土間の奥の壁に付ける
   IN(box(0.80, 1.15, 0.34, MI.cabinet, (domaX0 + iX1) / 2 + 0.05, f1 + 0.55, domaZ1 - 0.19), "玄関収納");
@@ -5215,27 +5275,75 @@ function updateLabelPositions() {
 /* ============================================================
    歩行モード(ウォークスルー)
 ============================================================ */
+/* 足元の床(地面・床・階段の踏板・2階の床)に沿って歩く。視点の高さ = 足元の床 + eyeH(床からの目線の高さ) */
+const WALK_STEP = 0.65;          // 一度に上がれる段差(地面から1階の床へ上がれる高さ。2階の床へは階段を使う)
 const walkState = {
   pos: new THREE.Vector3(0, 1.6, 9),
-  yaw: 0, pitch: -0.03, eye: 1.6,
+  yaw: 0, pitch: -0.03,
+  feet: 0,                       // 足元の床の高さ
+  eyeH: 1.6,                     // 床からの目線の高さ(Q/E で調整)
   keys: {}, touch: {},
+  get eye() { return this.feet + this.eyeH; },
 };
 const walkUI = document.getElementById("walk-ui");
 const walkHud = document.getElementById("walk-hud");
 let walkColliders = [];
+let walkFloors = [];             // 足を載せられる面の候補 { mesh, box }
+const walkRay = new THREE.Raycaster();
 
 function buildWalkColliders() {
   walkColliders = [];
+  walkFloors = [];
   if (!modelGroup) return;
   modelGroup.updateMatrixWorld(true);
   modelGroup.traverse((m) => {
-    if (!m.isMesh || !m.userData.member) return;
-    const mem = m.userData.member;
-    if (mem !== "外壁" && mem !== "外壁(妻壁)" && mem !== "布基礎" && mem !== "布基礎(中通り)") return;
-    const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
-    g.computeBoundingBox();
-    walkColliders.push(g.boundingBox.expandByScalar(0.28));
+    if (!m.isMesh) return;
+    const mem = m.userData.member || "";
+    if (mem === "外壁" || mem === "外壁(妻壁)" || mem === "布基礎" || mem === "布基礎(中通り)") {
+      const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+      g.computeBoundingBox();
+      walkColliders.push(g.boundingBox.expandByScalar(0.28));
+    }
+    // 家具類・浴槽・天井には載らない(天井は階段を上る途中で頭上をすり抜ける)
+    if (/^家具類|浴槽|天井|^DMG/.test(mem)) return;
+    walkFloors.push({ mesh: m, box: new THREE.Box3().setFromObject(m) });
   });
+  if (ground.visible) { ground.updateMatrixWorld(true); walkFloors.push({ mesh: ground, box: new THREE.Box3().setFromObject(ground) }); }
+}
+/* (x, z) で高さ fromY から真下にある最初の面の高さ(なければ地面 0)。
+   床板どうしの細い隙間に落ちないよう、足の大きさほどの範囲(中心と前後左右 0.12m)で最も高い面をとる */
+function floorAt(x, z, fromY) {
+  let y = floorAt1(x, z, fromY);
+  for (const [dx, dz] of [[0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]]) y = Math.max(y, floorAt1(x + dx, z + dz, fromY));
+  return y;
+}
+function floorAt1(x, z, fromY) {
+  const cand = [];
+  for (const f of walkFloors) {
+    const b = f.box;
+    if (x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z && b.min.y <= fromY) cand.push(f.mesh);
+  }
+  walkRay.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0, -1, 0));
+  walkRay.far = fromY + 1;
+  const h = cand.length ? walkRay.intersectObjects(cand, false) : [];
+  return h.length ? h[0].point.y : 0;
+}
+/* (x, z) の真上から見た床の高さの一覧(高い順)。「1階の目線」「2階の目線」で床を選ぶのに使う */
+function floorsAt(x, z) {
+  const ys = [];
+  let from = 30;
+  for (let i = 0; i < 12; i++) {
+    const y = floorAt(x, z, from);
+    if (!ys.length || ys[ys.length - 1] - y > 0.3) ys.push(y);
+    if (y <= 0.001) break;
+    from = y - 0.02;
+  }
+  return ys;
+}
+function walkLevel() {           // 足元が何階か(1 / 2)
+  const P = currentPlan();
+  if (!P || planStories() < 2) return 1;
+  return walkState.feet > (P.floorY(1) + P.floorY(2)) / 2 ? 2 : 1;
 }
 function walkBlocked(x, z, y) {
   if (state.walkPass) return false;
@@ -5250,22 +5358,44 @@ function setWalk(on) {
   document.getElementById("walk-toggle").classList.toggle("on", on);
   if (on) {
     buildWalkColliders();
-    // 建物の南側手前から開始
-    walkState.pos.set(0, walkState.eye, 9);
-    walkState.yaw = 0; walkState.pitch = -0.03;
+    walkToStart();
   } else if (document.pointerLockElement === dom) {
     document.exitPointerLock();
   }
   updateWalkHud();
   renderPanel();
 }
+/* 建物の南側手前(地面)から開始 */
+function walkToStart() {
+  walkState.pos.set(0, 0, 9);
+  walkState.feet = floorAt(0, 9, WALK_STEP);
+  walkState.eyeH = 1.6;
+  walkState.yaw = 0; walkState.pitch = -0.03;
+  updateWalkHud();
+}
+/* その場で1階・2階の床へ移る(真上から見た床のうち、その階の床の高さに最も近いもの) */
+function walkToLevel(level) {
+  const P = currentPlan();
+  const want = P ? P.floorY(level) : 0;
+  const ys = floorsAt(walkState.pos.x, walkState.pos.z);
+  const best = ys.reduce((a, y) => (a === null || Math.abs(y - want) < Math.abs(a - want) ? y : a), null);
+  if (best === null || Math.abs(best - want) > 0.5) {
+    walkHud.innerHTML = `ここには${level}階の床がありません。建物の中へ入るか、階段を上ってください`;
+    return false;
+  }
+  walkState.feet = best;
+  walkState.eyeH = 1.6;
+  updateWalkHud();
+  return true;
+}
 function updateWalkHud() {
   if (!state.walk) return;
   const locked = document.pointerLockElement === dom;
-  const floor = walkState.eye > 3.0 ? "2階の目線" : (walkState.eye > 2.2 ? "中間" : "1階の目線");
+  const where = walkState.eyeH > 3.0 ? "見下ろし" : `${walkLevel()}階`;
+  const info = `${where}(床からの目線 ${walkState.eyeH.toFixed(1)}m)`;
   walkHud.innerHTML = locked
-    ? `歩行中 — W A S D 移動 / Shift 早歩き / Q E 高さ / Esc 解除 ・ ${floor}(視点 ${walkState.eye.toFixed(1)}m)`
-    : `画面をクリックすると視点操作が始まります ・ ${floor}(視点 ${walkState.eye.toFixed(1)}m)`;
+    ? `歩行中 — W A S D 移動 / Shift 早歩き / Q E 目線の高さ / Esc 解除 ・ ${info}`
+    : `画面をクリックすると視点操作が始まります ・ ${info}`;
 }
 function stepWalk(dt) {
   const k = walkState.keys, t = walkState.touch;
@@ -5274,8 +5404,9 @@ function stepWalk(dt) {
   const sp = (fast ? 3.4 : 1.5) * dt;
   let f = (k.KeyW || k.ArrowUp || t.f || t.ql || t.qr ? 1 : 0) - (k.KeyS || k.ArrowDown || t.b ? 1 : 0);
   let sd = (k.KeyD || k.ArrowRight || t.r || t.qr ? 1 : 0) - (k.KeyA || k.ArrowLeft || t.l || t.ql ? 1 : 0);
-  if (k.KeyQ || t.dn) walkState.eye = Math.max(0.4, walkState.eye - 1.2 * dt);
-  if (k.KeyE || t.up) walkState.eye = Math.min(9.0, walkState.eye + 1.2 * dt);
+  const eyeH0 = walkState.eyeH;
+  if (k.KeyQ || t.dn) walkState.eyeH = Math.max(0.4, walkState.eyeH - 1.2 * dt);
+  if (k.KeyE || t.up) walkState.eyeH = Math.min(8.0, walkState.eyeH + 1.2 * dt);
   if (f || sd) {
     const dir = new THREE.Vector3(-Math.sin(walkState.yaw), 0, -Math.cos(walkState.yaw));
     const rgt = new THREE.Vector3(Math.cos(walkState.yaw), 0, -Math.sin(walkState.yaw));
@@ -5285,6 +5416,13 @@ function stepWalk(dt) {
     if (!walkBlocked(nx, walkState.pos.z, y)) walkState.pos.x = Math.max(-30, Math.min(30, nx));
     if (!walkBlocked(walkState.pos.x, nz, y)) walkState.pos.z = Math.max(-30, Math.min(30, nz));
   }
+  // 足元の床に合わせて上り下りする(階段は踏板ごとに上がる。段差は滑らかに追従)
+  const target = floorAt(walkState.pos.x, walkState.pos.z, walkState.feet + WALK_STEP);
+  const lv0 = walkLevel();
+  if (target > walkState.feet) walkState.feet = Math.min(target, walkState.feet + 4.0 * dt);
+  else walkState.feet = Math.max(target, walkState.feet - 6.0 * dt);
+  if (walkLevel() !== lv0) { updateWalkHud(); renderPanel(); }
+  else if (walkState.eyeH !== eyeH0) updateWalkHud();
   camera.position.set(walkState.pos.x, walkState.eye, walkState.pos.z);
 }
 
@@ -5827,17 +5965,22 @@ function renderPanel() {
     const secV = section("視点");
     secV.appendChild(seg([[false, "全体を見る"], [true, "歩行モード"]], state.walk, (v) => { if (state.walk !== v) setWalk(v); }, 2));
     if (state.walk) {
-      const eyes = [["1階の目線", 1.6], ["2階の目線", 1.6 + 2.75], ["見下ろし", 6.5]].filter(([lb]) => lb !== "2階の目線" || planStories() >= 2);
-      const curE = eyes.find(([, h]) => Math.abs(walkState.eye - h) < 0.05);
-      const s = seg(eyes.map(([lb, h]) => [h, lb]), curE ? curE[1] : undefined, (h) => { walkState.eye = h; updateWalkHud(); renderPanel(); }, eyes.length);
+      // 1階・2階: その場でその階の床へ移る(階段を上り下りしても自動で切り替わる)。見下ろし: 床から6.5mの高さ
+      const eyes = [["f1", "1階の目線"], ["f2", "2階の目線"], ["high", "見下ろし"]].filter(([k]) => k !== "f2" || planStories() >= 2);
+      const curE = walkState.eyeH > 3.0 ? "high" : `f${walkLevel()}`;
+      const s = seg(eyes.map(([k, lb]) => [k, lb]), curE, (k) => {
+        if (k === "high") { walkState.eyeH = 6.5; updateWalkHud(); }
+        else if (!walkToLevel(k === "f2" ? 2 : 1)) return;
+        renderPanel();
+      }, eyes.length);
       s.style.marginTop = "8px";
       secV.appendChild(s);
       const t = el("div", "");
       t.style.marginTop = "6px";
       t.appendChild(toggle("壁をすり抜ける(内部も歩ける)", state.walkPass, (v) => { state.walkPass = v; if (!v) buildWalkColliders(); renderPanel(); }));
       secV.appendChild(t);
-      secV.appendChild(button("開始位置に戻る", () => { walkState.pos.set(0, walkState.eye, 9); walkState.yaw = 0; walkState.pitch = -0.03; }));
-      secV.appendChild(help("PCは画面をクリックして視点操作を開始します(W A S D 移動 / Shift 早歩き / Q E 高さ / Esc 解除)。スマホ・タブレットは画面ドラッグで見回し、左下の十字ボタンで移動します。<b>F</b>キーでいつでも切り替えられます。", "操作方法"));
+      secV.appendChild(button("開始位置に戻る", () => { walkToStart(); renderPanel(); }));
+      secV.appendChild(help("床・階段に沿って歩きます。階段を上ると2階へ上がれます(「1階の目線」「2階の目線」を押すと、その場で真上・真下の階の床へ移ります)。<br>PCは画面をクリックして視点操作を開始します(W A S D 移動 / Shift 早歩き / Q E 目線の高さ / Esc 解除)。スマホ・タブレットは画面ドラッグで見回し、左下の十字ボタンで移動します。<b>F</b>キーでいつでも切り替えられます。", "操作方法"));
     }
     const env = el("div", "");
     env.style.marginTop = "8px";
