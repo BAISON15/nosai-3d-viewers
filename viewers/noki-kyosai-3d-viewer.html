@@ -22,6 +22,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>農機具 3Dビューア(農機具共済 評価研修用)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
 <script type="importmap">
 {
   "imports": {
@@ -50,7 +53,7 @@
   .use-box b { display: block; font-size: 11px; color: #b45309; margin-bottom: 1px; }
   @media (max-width: 860px) { .use-box { left: 12px; right: 12px; bottom: 58px; max-width: none; } }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
-  aside { flex: none; width: clamp(260px, 30vw, 330px); min-height: 0; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
+  aside { flex: none; width: clamp(290px, 30vw, 350px); min-height: 0; border-left: 1px solid #E0E5E8; overflow-y: auto; scrollbar-gutter: stable; }
   @media (max-width: 860px) {
     #viewport { flex: none; height: 56%; min-height: 220px; }
     aside { flex: 1 1 auto; width: auto; border-left: none; border-top: 1px solid #cbd5e1; }
@@ -62,22 +65,107 @@
     .use-box { left: auto; right: 12px; bottom: 50px; max-width: 60%; }
   }
   @media (max-width: 560px) { .hint { bottom: auto; top: 8px; left: 8px; max-width: calc(100% - 16px); } }
-  .section { margin-bottom: 16px; }
-  .section h2 { font-size: 11px; font-weight: 600; color: #64748b; margin: 0 0 8px; }
-  .btn { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; margin-bottom: 6px; transition: background .15s; }
-  .btn:hover { background: #f8fafc; }
-  .btn.active { border-color: #f59e0b; background: #fffbeb; color: #0f172a; }
-  .btn small { display: block; color: #94a3b8; font-size: 10px; margin-top: 1px; }
-  .btn.active small { color: #b45309; }
-  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
-  .btn-row .btn { flex: 1 1 45%; text-align: center; min-width: 96px; margin-bottom: 0; padding: 5px 6px; font-size: 11px; }
-  .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-bottom: 3px; }
-  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); flex: none; }
-  .legend-cap { font-size: 10px; color: #94a3b8; margin-top: 6px; line-height: 1.5; }
-  .note-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; color: #475569; line-height: 1.7; margin-top: 4px; }
-  .note-box .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
-  .disclaimer { font-size: 10px; color: #94a3b8; line-height: 1.6; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+  /* ============================================================
+     右サイドバー(NOSAI Design System のトークンに準拠)
+     1) 対象(建物モデル・型式・機種) 2) タブ 3) 各タブの中身 の3段構成
+  ============================================================ */
+  :root {
+    --brand: #1B9A9C; --brand-hover: #157E80; --brand-subtle: #ECF8F8; --brand-subtle-2: #D2EFEF; --brand-border: #A6DEDF; --text-brand: #136466;
+    --text-primary: #141819; --text-secondary: #4C575D; --text-tertiary: #6A767D; --text-disabled: #98A4AB;
+    --surface-page: #F6F8F9; --surface-card: #FFFFFF; --surface-sunken: #EEF1F3;
+    --border-subtle: #E0E5E8; --border-default: #C9D1D6;
+    --coral: #FF6F59; --coral-subtle: #FFF2EE; --coral-border: #FFC2B2; --coral-strong: #8E3324;
+    --radius-sm: 6px; --radius-md: 10px; --radius-pill: 999px;
+    --shadow-xs: 0 1px 2px rgba(20,24,25,.06); --shadow-sm: 0 1px 3px rgba(20,24,25,.08), 0 1px 2px rgba(20,24,25,.04);
+    --focus-ring: rgba(27,154,156,.45); --ease-out: cubic-bezier(.22,1,.36,1);
+    --font-sans: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  aside { font-family: var(--font-sans); color: var(--text-primary); }
+  aside { background: var(--surface-page); }
+  aside button { font-family: inherit; }
+  aside :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+
+  /* 上部(建物モデル+タブ)。スクロールしても固定 */
+  .p-head { position: sticky; top: 0; z-index: 2; background: var(--surface-card); border-bottom: 1px solid var(--border-subtle); padding: 14px 16px 0; }
+  .eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); margin: 0 0 6px; }
+  .model-sum { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin: 8px 0 0; }
+  .tabs { display: flex; margin: 12px -4px 0; }
+  .tab { flex: 1 1 auto; white-space: nowrap; background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 4px 9px; cursor: pointer; color: var(--text-tertiary); font-size: 12.5px; font-weight: 700; line-height: 1.3; transition: color .2s var(--ease-out), border-color .2s var(--ease-out); }
+  .tab .no { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: .12em; color: var(--text-disabled); }
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active { color: var(--text-brand); border-bottom-color: var(--brand); }
+  .tab.active .no { color: var(--brand); }
+  .tab .badge { display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 3px; border-radius: var(--radius-pill); background: var(--coral); color: #fff; font-family: var(--font-mono); font-size: 9.5px; line-height: 16px; vertical-align: 1px; }
+
+  .p-body { padding: 4px 16px 8px; }
+  .p-foot { padding: 4px 16px 20px; }
+
+  /* セクション */
+  .section { padding: 14px 0; border-bottom: 1px solid var(--border-subtle); }
+  .section:last-child { border-bottom: none; }
+  .section > h2 { font-size: 13.5px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px; display: flex; align-items: baseline; gap: 8px; }
+  .section > h2 .meta { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; color: var(--text-tertiary); letter-spacing: .04em; }
+  .sub-h { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin: 12px 0 6px; }
+
+  /* セグメント(択一) */
+  .seg { display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 3px; padding: 3px; background: var(--surface-sunken); border-radius: var(--radius-md); }
+  .seg button { border: none; background: transparent; border-radius: 7px; padding: 7px 4px; font-size: 12px; font-weight: 500; color: var(--text-secondary); cursor: pointer; line-height: 1.3; transition: background .2s var(--ease-out), color .2s var(--ease-out); }
+  .seg button:hover { color: var(--text-primary); background: rgba(255,255,255,.55); }
+  .seg button.active { background: var(--surface-card); color: var(--text-brand); font-weight: 700; box-shadow: var(--shadow-sm); }
+  .seg button small { display: block; font-size: 10px; font-weight: 400; color: var(--text-tertiary); }
+
+  /* ボタン */
+  .btn { display: block; width: 100%; text-align: center; padding: 8px 12px; border-radius: var(--radius-md); font-family: inherit; font-size: 12.5px; font-weight: 700; border: 1.5px solid var(--brand-border); background: var(--surface-card); color: var(--text-brand); cursor: pointer; margin-top: 8px; transition: background .2s var(--ease-out); }
+  .btn:hover { background: var(--brand-subtle); }
+
+  /* 選択リスト(部位・被害) */
+  .list { display: flex; flex-direction: column; gap: 2px; }
+  .item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm); padding: 7px 8px; font-size: 12.5px; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: background .15s var(--ease-out); }
+  .item::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #F2A33A; }
+  .item.dmg::before { background: var(--coral); }
+  .item:hover { background: var(--surface-sunken); }
+  .item.active { background: var(--brand-subtle); border-color: var(--brand-border); color: var(--text-brand); font-weight: 700; }
+  .item.dmg.active { background: var(--coral-subtle); border-color: var(--coral-border); color: var(--coral-strong); }
+  .item .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(20,24,25,.15); flex: none; }
+  .item.plain::before { display: none; }
+  .group-h { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .08em; color: var(--text-tertiary); margin: 10px 0 2px 8px; }
+
+  /* スイッチ(オン/オフ) */
+  .tgl { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: none; border: none; padding: 7px 0; cursor: pointer; text-align: left; font-size: 12.5px; color: var(--text-primary); }
+  .tgl .sw { flex: none; position: relative; width: 34px; height: 20px; border-radius: var(--radius-pill); background: var(--border-default); transition: background .2s var(--ease-out); }
+  .tgl .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-xs); transition: transform .2s var(--ease-out); }
+  .tgl[aria-checked="true"] .sw { background: var(--brand); }
+  .tgl[aria-checked="true"] .sw::after { transform: translateX(14px); }
+
+  /* 着眼点カード */
+  .card { background: var(--surface-card); border: 1px solid var(--border-subtle); border-left: 3px solid var(--brand); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 12px 14px; margin: 0 0 12px; font-size: 12.5px; line-height: 1.75; color: var(--text-secondary); white-space: pre-line; }
+  .card.dmg { border-left-color: var(--coral); }
+  .card .title { display: block; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; white-space: normal; }
+  .card .close { float: right; border: none; background: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; padding: 0 0 4px 8px; }
+  .empty { font-size: 12px; color: var(--text-tertiary); background: var(--surface-card); border: 1px dashed var(--border-default); border-radius: var(--radius-md); padding: 10px 12px; line-height: 1.6; margin: 0 0 12px; }
+
+  /* 補足(折りたたみ) */
+  .legend-cap { font-size: 11.5px; color: var(--text-tertiary); margin-top: 8px; line-height: 1.65; }
+  details.help { margin-top: 8px; }
+  details.help > summary { cursor: pointer; list-style: none; font-size: 11.5px; font-weight: 500; color: var(--text-brand); }
+  details.help > summary::-webkit-details-marker { display: none; }
+  details.help > summary::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 1px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease-out); }
+  details.help[open] > summary::before { transform: rotate(45deg); }
+  details.help > div { font-size: 11.5px; color: var(--text-secondary); line-height: 1.75; margin-top: 6px; padding: 8px 10px; background: var(--surface-sunken); border-radius: var(--radius-sm); }
+
+  .legend { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 10px; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-secondary); padding: 2px 0; }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(20,24,25,.15); flex: none; }
+  .legend-item .ct { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--brand); }
+  .slider-val { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--text-primary); min-width: 84px; text-align: right; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { border: 1px solid var(--border-default); background: var(--surface-card); border-radius: var(--radius-pill); padding: 4px 11px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+  .chip.active { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+  .about { font-size: 11px; color: var(--text-tertiary); line-height: 1.75; }
+  .about p { margin: 6px 0 0; }
 </style>
 </head>
 <body>
@@ -1862,6 +1950,7 @@ const state = {
   detailParts: false,
   memberColorMode: false,
   focusDim: true,
+  tab: "parts",         // サイドバーで開いているタブ(parts / att / view)
 };
 
 /* ============================================================
@@ -2027,7 +2116,7 @@ function renderLabels() {
     const div = document.createElement("div");
     div.className = "label";
     div.innerHTML = `<div class="label-chip${state.selectedMember === mk.key ? " active" : ""}">${mk.name}</div>`;
-    div.addEventListener("click", () => { state.selectedMember = state.selectedMember === mk.key ? null : mk.key; renderLabels(); renderPanel(); applyHighlight(); });
+    div.addEventListener("click", () => selectMember(mk.key));
     labelsHolder.appendChild(div);
     labelEntries.push({ occluded: false, el: div, pos: new THREE.Vector3(mk.pos[0], mk.pos[1], mk.pos[2]) });
   });
@@ -2124,7 +2213,7 @@ dom.addEventListener("click", (e) => {
   const mouse = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(markerMeshes);
-  if (hits.length > 0) { const hk = hits[0].object.userData.key; state.selectedMember = state.selectedMember === hk ? null : hk; renderLabels(); renderPanel(); applyHighlight(); }
+  if (hits.length > 0) selectMember(hits[0].object.userData.key);
 });
 // ウィンドウだけでなくヘッダーの折り返しやパネル幅の変化にも追従する
 function fitRenderer() {
@@ -2159,114 +2248,183 @@ function updateUseBox() {
   ub.hidden = !a;
   if (a) ub.innerHTML = `<b>${a.label}の用途</b>${a.use}`;
 }
+/* サイドバーの部品(3つのビューアで共通の見た目)。renderPanel の中で毎回作る */
+function panelKit(onSelect) {
+  const section = (title, meta) => el("div", "section", `<h2>${title}${meta ? `<span class="meta">${meta}</span>` : ""}</h2>`);
+  // 択一のセグメント。items: [[値, ラベル, 補足?]]
+  const seg = (items, cur, onPick, cols) => {
+    const box = el("div", "seg");
+    box.style.setProperty("--cols", cols || items.length);
+    items.forEach(([v, lb, sub]) => {
+      const b = el("button", cur === v ? "active" : "", lb + (sub ? `<small>${sub}</small>` : ""));
+      b.setAttribute("aria-pressed", cur === v ? "true" : "false");
+      b.addEventListener("click", () => onPick(v));
+      box.appendChild(b);
+    });
+    return box;
+  };
+  // オン/オフのスイッチ
+  const toggle = (label, on, onChange) => {
+    const b = el("button", "tgl", `<span>${label}</span><span class="sw"></span>`);
+    b.setAttribute("role", "switch");
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    b.addEventListener("click", () => onChange(!on));
+    return b;
+  };
+  const toggles = (...list) => { const d = el("div", ""); d.style.marginTop = "6px"; list.forEach((t) => t && d.appendChild(t)); return d; };
+  const help = (html, label) => el("details", "help", `<summary>${label || "説明"}</summary><div>${html}</div>`);
+  const cap = (html) => el("div", "legend-cap", html);
+  const button = (label, onClick) => { const b = el("button", "btn", label); b.addEventListener("click", onClick); return b; };
+  const item = (m, extraCls) => {
+    const b = el("button", "item" + (extraCls ? " " + extraCls : "") + (state.selectedMember === m.key ? " active" : ""), m.name);
+    b.addEventListener("click", () => onSelect(m.key));
+    return b;
+  };
+  const noteCard = (m, cls) => {
+    const c = el("div", "card" + (cls ? " " + cls : ""), `<button class="close" aria-label="選択を解除">解除</button><span class="title">${m.name}</span>${m.note}`);
+    c.querySelector(".close").addEventListener("click", () => onSelect(m.key));
+    return c;
+  };
+  const empty = (html) => el("div", "empty", html);
+  // 部位の一覧(まとめて/部材ごと)。detailed のときは区分(part)ごとに見出しを付ける
+  const memberList = (members, detailed, extraCls) => {
+    const list = el("div", "list");
+    if (detailed) {
+      const groups = new Map();
+      members.forEach((m) => { const g = m.part || "その他"; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(m); });
+      groups.forEach((arr, g) => { list.appendChild(el("div", "group-h", g)); arr.forEach((m) => list.appendChild(item(m, extraCls))); });
+    } else {
+      members.forEach((m) => list.appendChild(item(m, extraCls)));
+    }
+    return list;
+  };
+  const legend = (rows) => {
+    const lg = el("div", "legend");
+    rows.forEach(([color, name, ct]) => lg.appendChild(el("div", "legend-item", `<span class="sw" style="background:${color}"></span>${name}${ct != null ? `<span class="ct">×${ct}</span>` : ""}`)));
+    return lg;
+  };
+  // 上部(対象の選択+タブ)
+  const head = ({ eyebrow, pick, summary, tabs, cur, onTab }) => {
+    const h = el("div", "p-head");
+    h.appendChild(el("div", "eyebrow", eyebrow));
+    h.appendChild(pick);
+    if (summary) h.appendChild(el("p", "model-sum", summary));
+    const row = el("div", "tabs");
+    row.setAttribute("role", "tablist");
+    tabs.forEach(([k, lb, badge], i) => {
+      const t = el("button", "tab" + (cur === k ? " active" : ""), `<span class="no">0${i + 1}</span>${lb}${badge ? `<span class="badge">${badge}</span>` : ""}`);
+      t.setAttribute("role", "tab");
+      t.setAttribute("aria-selected", cur === k ? "true" : "false");
+      t.addEventListener("click", () => onTab(k));
+      row.appendChild(t);
+    });
+    h.appendChild(row);
+    return h;
+  };
+  // 下部(この教材について)
+  const foot = (html, label) => {
+    const f = el("div", "p-foot");
+    f.appendChild(help(html, label || "この教材について(免責)"));
+    f.querySelector("details > div").classList.add("about");
+    return f;
+  };
+  return { section, seg, toggle, toggles, help, cap, button, item, noteCard, empty, memberList, legend, head, foot };
+}
+
+/* ============================================================
+   右サイドバー
+   上から「機種」→「タブ(部位 / 附属装置 / 表示)」→「タブの中身」の順(建物ビューアと同じ構成)
+============================================================ */
+const MACHINE_SHORT = { tractor: ["トラクタ", "乗用型"], taue: ["田植機", "乗用型"], combine: ["コンバイン", "自脱型"], combine2: ["コンバイン", "普通型"], kanriki: ["管理機", "乗用"] };
+
+/* 部位を選ぶ(もう一度選ぶと解除)。モデル上のラベル・点から選んだときも「部位」タブを開く */
+function selectMember(key) {
+  state.selectedMember = state.selectedMember === key ? null : key;
+  if (state.selectedMember) state.tab = "parts";
+  renderLabels(); renderPanel(); applyHighlight();
+}
+
 function renderPanel() {
   updateUseBox();
+  const scrollY = panel.scrollTop, prevTab = panel.dataset.tab;
   panel.innerHTML = "";
+  const K = panelKit(selectMember);
+  const d = MACHINES[state.machine];
 
-  const secM = el("div", "section", "<h2>機種</h2>");
-  Object.keys(MACHINES).forEach((k) => {
-    const d = MACHINES[k];
-    const b = el("button", "btn" + (state.machine === k ? " active" : ""), `${d.label}<small>${d.sub}</small>`);
-    b.addEventListener("click", () => { state.machine = k; state.selectedMember = null; rebuild(true); });
-    secM.appendChild(b);
-  });
-  panel.appendChild(secM);
+  panel.appendChild(K.head({
+    eyebrow: "Machine · 機種",
+    pick: K.seg(Object.keys(MACHINES).map((k) => [k, MACHINE_SHORT[k][0], MACHINE_SHORT[k][1]]), state.machine, (k) => {
+      if (state.machine === k) return;
+      state.machine = k; state.selectedMember = null; rebuild(true);
+    }, 3),
+    summary: `${d.label} — ${d.sub}`,
+    tabs: [["parts", "部位"], ["att", "附属装置・状態"], ["view", "表示"]],
+    cur: state.tab, onTab: (k) => { state.tab = k; renderPanel(); },
+  }));
+  const body = el("div", "p-body");
+  panel.appendChild(body);
 
-  const secA = el("div", "section", "<h2>附属装置・状態</h2>");
-  if (state.machine === "tractor") {
-    const row = el("div", "btn-row");
-    const items = [["none", "なし"]].concat(Object.keys(ATT).map((k) => [k, ATT[k].label]));
-    items.forEach(([k, lb]) => {
-      const b = el("button", "btn" + (state.tractorAtt === k ? " active" : ""), lb);
-      b.addEventListener("click", () => { state.tractorAtt = k; rebuild(true); });
-      row.appendChild(b);
-    });
-    secA.appendChild(row);
-    secA.appendChild(el("div", "legend-cap", "3点リンク(マニュアスプレッダーはドローバー)に装着する作業機を切り替えます。駆動式の作業機にはPTOシャフトが接続されます。"));
-  } else if (state.machine === "taue") {
-    [["taueFert", "施肥機(側条施肥)"], ["taueSpray", "薬剤散布装置"]].forEach(([k, lb]) => {
-      const b = el("button", "btn" + (state[k] ? " active" : ""), (state[k] ? "☑ " : "☐ ") + lb);
-      b.addEventListener("click", () => { state[k] = !state[k]; rebuild(false); });
-      secA.appendChild(b);
-    });
-    secA.appendChild(el("div", "legend-cap", "タップで装着/取り外しを切り替えます(複数同時装着可)。"));
-  } else if (state.machine === "combine") {
-    const bc = el("button", "btn" + (state.combCutter ? " active" : ""), (state.combCutter ? "☑ " : "☐ ") + "排わらカッター");
-    bc.addEventListener("click", () => { state.combCutter = !state.combCutter; rebuild(false); });
-    secA.appendChild(bc);
-    const rowAu = el("div", "btn-row");
-    [["stored", "オーガ格納"], ["extended", "オーガ展開"]].forEach(([k, lb]) => {
-      const b = el("button", "btn" + (state.combAuger === k ? " active" : ""), lb);
-      b.addEventListener("click", () => { state.combAuger = k; rebuild(false); });
-      rowAu.appendChild(b);
-    });
-    secA.appendChild(rowAu);
-  } else if (state.machine === "combine2") {
-    const rowAu = el("div", "btn-row");
-    [["stored", "オーガ格納"], ["extended", "オーガ展開"]].forEach(([k, lb]) => {
-      const b = el("button", "btn" + (state.comb2Auger === k ? " active" : ""), lb);
-      b.addEventListener("click", () => { state.comb2Auger = k; rebuild(false); });
-      rowAu.appendChild(b);
-    });
-    secA.appendChild(rowAu);
-    secA.appendChild(el("div", "legend-cap", "普通型(汎用)コンバインは麦・大豆・そば等にも対応するリール式ヘッダーを備えます。"));
-  } else {
-    const rowB = el("div", "btn-row");
-    [["extended", "ブーム展開"], ["folded", "ブーム格納"]].forEach(([k, lb]) => {
-      const b = el("button", "btn" + (state.kanBoom === k ? " active" : ""), lb);
-      b.addEventListener("click", () => { state.kanBoom = k; rebuild(false); });
-      rowB.appendChild(b);
-    });
-    secA.appendChild(rowB);
-    secA.appendChild(el("div", "legend-cap", "一体型のため散布装置(ブーム・タンク)は機体の一部です。"));
+  /* ---- 01 部位 ---- */
+  if (state.tab === "parts") {
+    const sec = K.section("部位と評価の着眼点", `${currentDef.members.length}件`);
+    const active = currentDef.members.find((m) => m.key === state.selectedMember);
+    sec.appendChild(active ? K.noteCard(active) : K.empty("部位を選ぶと、評価の着眼点がここに表示されます。モデル上の橙色の点・ラベルからも選べます。"));
+    sec.appendChild(K.seg([[false, "まとめて"], [true, "部材ごと"]], state.detailParts, (v) => { state.detailParts = v; state.selectedMember = null; rebuild(false); }, 2));
+    const list = K.memberList(currentDef.members, false);
+    list.style.marginTop = "10px";
+    sec.appendChild(list);
+    sec.appendChild(K.toggles(K.toggle("選んだ部位以外を薄く表示", state.focusDim, (v) => { state.focusDim = v; applyHighlight(); renderPanel(); })));
+    sec.appendChild(K.help("選んだ部位はモデル上で橙色に点滅します。「部材ごと」にすると、モデル上の部材名ごとに分けて1つずつ選べます。"));
+    body.appendChild(sec);
   }
-  panel.appendChild(secA);
 
-  // 部材の分け方
-  const secGran = el("div", "section", "<h2>部材の分け方</h2>");
-  const rowGran = el("div", "btn-row");
-  [[false, "まとめて"], [true, "個別(部材ごと)"]].forEach(([v, lb]) => {
-    const b = el("button", "btn" + (state.detailParts === v ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.detailParts = v; state.selectedMember = null; rebuild(false); });
-    rowGran.appendChild(b);
-  });
-  secGran.appendChild(rowGran);
-  const bFD = el("button", "btn" + (state.focusDim ? " active" : ""), (state.focusDim ? "☑ " : "☐ ") + "選択した部材以外を淡色化");
-  bFD.style.marginTop = "6px";
-  bFD.addEventListener("click", () => { state.focusDim = !state.focusDim; applyHighlight(); renderPanel(); });
-  secGran.appendChild(bFD);
-  const bMC = el("button", "btn" + (state.memberColorMode ? " active" : ""), (state.memberColorMode ? "☑ " : "☐ ") + "部材ごとに色分け");
-  bMC.style.marginTop = "6px";
-  bMC.addEventListener("click", () => { state.memberColorMode = !state.memberColorMode; applyHighlight(); renderPanel(); });
-  secGran.appendChild(bMC);
-  if (state.memberColorMode) {
-    const lg = el("div", "legend");
-    memberLegendItems().forEach(([nm, ct]) => {
-      lg.appendChild(el("div", "legend-item",
-        `<span class="sw" style="background:${memberColorHex(nm)}"></span>${nm}<span style="color:#94a3b8;margin-left:auto">×${ct}</span>`));
-    });
-    secGran.appendChild(lg);
+  /* ---- 02 附属装置・状態 ---- */
+  if (state.tab === "att") {
+    const sec = K.section(state.machine === "tractor" ? "作業機(附属装置)" : "装置・状態");
+    if (state.machine === "tractor") {
+      sec.appendChild(K.seg([["none", "なし"]].concat(Object.keys(ATT).map((k) => [k, ATT[k].label])), state.tractorAtt,
+        (k) => { state.tractorAtt = k; rebuild(true); }, 2));
+      sec.appendChild(K.cap("選んだ作業機の用途は、画面の下部(視点をリセットの左)に表示されます。"));
+      sec.appendChild(K.help("3点リンク(マニュアスプレッダーはドローバー)に装着する作業機を切り替えます。駆動式の作業機にはPTOシャフトが接続されます。"));
+    } else if (state.machine === "taue") {
+      sec.appendChild(K.toggle("施肥機(側条施肥)", state.taueFert, (v) => { state.taueFert = v; rebuild(false); }));
+      sec.appendChild(K.toggle("薬剤散布装置", state.taueSpray, (v) => { state.taueSpray = v; rebuild(false); }));
+      sec.appendChild(K.cap("装着・取り外しを切り替えます(同時に装着できます)。"));
+    } else if (state.machine === "combine") {
+      sec.appendChild(K.toggle("排わらカッター", state.combCutter, (v) => { state.combCutter = v; rebuild(false); }));
+      sec.appendChild(el("div", "sub-h", "オーガ"));
+      sec.appendChild(K.seg([["stored", "格納"], ["extended", "展開"]], state.combAuger, (k) => { state.combAuger = k; rebuild(false); }, 2));
+    } else if (state.machine === "combine2") {
+      sec.appendChild(el("div", "sub-h", "オーガ"));
+      sec.appendChild(K.seg([["stored", "格納"], ["extended", "展開"]], state.comb2Auger, (k) => { state.comb2Auger = k; rebuild(false); }, 2));
+      sec.appendChild(K.help("普通型(汎用)コンバインは麦・大豆・そば等にも対応するリール式ヘッダーを備えます。"));
+    } else {
+      sec.appendChild(el("div", "sub-h", "ブーム"));
+      sec.appendChild(K.seg([["extended", "展開"], ["folded", "格納"]], state.kanBoom, (k) => { state.kanBoom = k; rebuild(false); }, 2));
+      sec.appendChild(K.help("一体型のため散布装置(ブーム・タンク)は機体の一部です。"));
+    }
+    body.appendChild(sec);
   }
-  secGran.appendChild(el("div", "legend-cap", state.detailParts
-    ? "モデル上の部材名ごとに分けて表示しています(柱・梁・筋かい等を個別に選択できます)。"
-    : "関連する部材をまとめた区分で表示しています。「個別」にすると柱・梁・筋かいなどを1つずつ選択できます。"));
-  panel.appendChild(secGran);
 
-  const secP = el("div", "section", "<h2>部位と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部位はモデル上でオレンジ色に点滅表示されます</div>");
-  currentDef.members.forEach((mk) => {
-    const b = el("button", "btn" + (state.selectedMember === mk.key ? " active" : ""), mk.name);
-    b.addEventListener("click", () => { state.selectedMember = state.selectedMember === mk.key ? null : mk.key; renderLabels(); renderPanel(); applyHighlight(); });
-    secP.appendChild(b);
-  });
-  const active = currentDef.members.find((m) => m.key === state.selectedMember);
-  if (active) secP.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));
-  panel.appendChild(secP);
+  /* ---- 03 表示 ---- */
+  if (state.tab === "view") {
+    const sec = K.section("表示");
+    sec.appendChild(K.toggle("部材ごとに色分け", state.memberColorMode, (v) => { state.memberColorMode = v; applyHighlight(); renderPanel(); }));
+    if (state.memberColorMode) {
+      sec.appendChild(K.legend(memberLegendItems().map(([nm, ct]) => [memberColorHex(nm), nm, ct])));
+      sec.appendChild(K.help("部材の種類ごとに色を変えています。形の似た部材の違いを見分ける練習に使えます。"));
+    }
+    body.appendChild(sec);
+  }
 
-  panel.appendChild(el("div", "section note-box",
-    `<div class="title">農機具共済の基本(公開情報に基づく一般的な枠組み)</div>トラクター・田植機・コンバイン等の農機具を対象に、火災等・自然災害(地震を除く)・衝突・接触・墜落・転覆などの事故(格納中・稼働中を問わず)による損害を補償します。共済金は新調達価額を基準に修理費を補填する新価ベースが一般的で、事故から1年以内に復旧しない場合は時価ベース等の扱いになります。中古取得の農機具は付保割合条件付実損てん補特約を付帯して加入します。<b>附属装置(ロータリー・ハロー・結束機等)の加入区分は組合により異なる</b>ため、装着状態と加入内容の確認が評価実務で重要です。摩滅・腐食・サビ等の自然消耗による損害は対象外とされます。加入限度額・免責・特約の細部は各組合の約款によります。`));
+  panel.appendChild(K.foot(
+    `<b>農機具共済の基本(公開情報に基づく一般的な枠組み)</b><p>トラクター・田植機・コンバイン等の農機具を対象に、火災等・自然災害(地震を除く)・衝突・接触・墜落・転覆などの事故(格納中・稼働中を問わず)による損害を補償します。共済金は新調達価額を基準に修理費を補填する新価ベースが一般的で、事故から1年以内に復旧しない場合は時価ベース等の扱いになります。中古取得の農機具は付保割合条件付実損てん補特約を付帯して加入します。<b>附属装置(ロータリー・ハロー・結束機等)の加入区分は組合により異なる</b>ため、装着状態と加入内容の確認が評価実務で重要です。摩滅・腐食・サビ等の自然消耗による損害は対象外とされます。加入限度額・免責・特約の細部は各組合の約款によります。</p>` +
+    `<p>本モデルは研修用の簡略化イメージです。機体・作業機の形状/寸法/構造は実機と一致せず、共済の解説は各NOSAIの公開情報に基づく一般的な枠組みであり、正式な約款・損害評価基準を再現したものではありません。実際の引受・損害評価は各農業共済組合等の約款・基準に基づいて行ってください。</p>`,
+    "この教材について(農機具共済の基本・免責)"));
 
-  panel.appendChild(el("div", "disclaimer",
-    "本モデルは研修用の簡略化イメージです。機体・作業機の形状/寸法/構造は実機と一致せず、共済の解説は各NOSAIの公開情報に基づく一般的な枠組みであり、正式な約款・損害評価基準を再現したものではありません。実際の引受・損害評価は各農業共済組合等の約款・基準に基づいて行ってください。"));
+  // 同じタブの再描画ではスクロール位置を保ち、タブを切り替えたら先頭へ
+  panel.dataset.tab = state.tab;
+  panel.scrollTop = prevTab === state.tab ? scrollY : 0;
 }
 
 /* ============================================================

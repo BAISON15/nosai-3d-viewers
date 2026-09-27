@@ -22,6 +22,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>園芸施設 3Dビューア(園芸施設共済 評価研修用)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
 <script type="importmap">
 {
   "imports": {
@@ -56,7 +59,7 @@
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
 
-  aside { flex: none; width: clamp(260px, 30vw, 320px); min-height: 0; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
+  aside { flex: none; width: clamp(290px, 30vw, 350px); min-height: 0; border-left: 1px solid #E0E5E8; overflow-y: auto; scrollbar-gutter: stable; }
   @media (max-width: 860px) {
     #viewport { flex: none; height: 56%; min-height: 220px; }
     aside { flex: 1 1 auto; width: auto; border-left: none; border-top: 1px solid #cbd5e1; }
@@ -68,27 +71,111 @@
   }
   @media (max-width: 560px) { .hint { bottom: auto; top: 8px; left: 8px; max-width: calc(100% - 16px); } }
 
-  .section { margin-bottom: 16px; }
-  .section h2 { font-size: 11px; font-weight: 600; color: #64748b; margin: 0 0 8px; }
-  .btn { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; margin-bottom: 6px; transition: background .15s; }
-  .btn:hover { background: #f8fafc; }
-  .btn.active { border-color: #f59e0b; background: #fffbeb; color: #0f172a; }
-  .btn small { display: block; color: #94a3b8; font-size: 10px; margin-top: 1px; }
-  .btn.active small { color: #b45309; }
-  .btn-row { display: flex; gap: 6px; }
-  .btn-row .btn { flex: 1; text-align: center; }
 
-  .type-note { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #64748b; line-height: 1.6; margin-top: 2px; }
 
-  .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-bottom: 3px; }
-  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); flex: none; }
-  .legend-cap { font-size: 10px; color: #94a3b8; margin-top: 4px; line-height: 1.5; }
 
-  .note-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; color: #475569; line-height: 1.7; margin-top: 4px; }
-  .note-box .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
 
-  .disclaimer { font-size: 10px; color: #94a3b8; line-height: 1.6; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+  /* ============================================================
+     右サイドバー(NOSAI Design System のトークンに準拠)
+     1) 対象(建物モデル・型式・機種) 2) タブ 3) 各タブの中身 の3段構成
+  ============================================================ */
+  :root {
+    --brand: #1B9A9C; --brand-hover: #157E80; --brand-subtle: #ECF8F8; --brand-subtle-2: #D2EFEF; --brand-border: #A6DEDF; --text-brand: #136466;
+    --text-primary: #141819; --text-secondary: #4C575D; --text-tertiary: #6A767D; --text-disabled: #98A4AB;
+    --surface-page: #F6F8F9; --surface-card: #FFFFFF; --surface-sunken: #EEF1F3;
+    --border-subtle: #E0E5E8; --border-default: #C9D1D6;
+    --coral: #FF6F59; --coral-subtle: #FFF2EE; --coral-border: #FFC2B2; --coral-strong: #8E3324;
+    --radius-sm: 6px; --radius-md: 10px; --radius-pill: 999px;
+    --shadow-xs: 0 1px 2px rgba(20,24,25,.06); --shadow-sm: 0 1px 3px rgba(20,24,25,.08), 0 1px 2px rgba(20,24,25,.04);
+    --focus-ring: rgba(27,154,156,.45); --ease-out: cubic-bezier(.22,1,.36,1);
+    --font-sans: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  aside { font-family: var(--font-sans); color: var(--text-primary); }
+  aside { background: var(--surface-page); }
+  aside button { font-family: inherit; }
+  aside :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+
+  /* 上部(建物モデル+タブ)。スクロールしても固定 */
+  .p-head { position: sticky; top: 0; z-index: 2; background: var(--surface-card); border-bottom: 1px solid var(--border-subtle); padding: 14px 16px 0; }
+  .eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); margin: 0 0 6px; }
+  .model-sum { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin: 8px 0 0; }
+  .tabs { display: flex; margin: 12px -4px 0; }
+  .tab { flex: 1 1 auto; white-space: nowrap; background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 4px 9px; cursor: pointer; color: var(--text-tertiary); font-size: 12.5px; font-weight: 700; line-height: 1.3; transition: color .2s var(--ease-out), border-color .2s var(--ease-out); }
+  .tab .no { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: .12em; color: var(--text-disabled); }
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active { color: var(--text-brand); border-bottom-color: var(--brand); }
+  .tab.active .no { color: var(--brand); }
+  .tab .badge { display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 3px; border-radius: var(--radius-pill); background: var(--coral); color: #fff; font-family: var(--font-mono); font-size: 9.5px; line-height: 16px; vertical-align: 1px; }
+
+  .p-body { padding: 4px 16px 8px; }
+  .p-foot { padding: 4px 16px 20px; }
+
+  /* セクション */
+  .section { padding: 14px 0; border-bottom: 1px solid var(--border-subtle); }
+  .section:last-child { border-bottom: none; }
+  .section > h2 { font-size: 13.5px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px; display: flex; align-items: baseline; gap: 8px; }
+  .section > h2 .meta { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; color: var(--text-tertiary); letter-spacing: .04em; }
+  .sub-h { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin: 12px 0 6px; }
+
+  /* セグメント(択一) */
+  .seg { display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 3px; padding: 3px; background: var(--surface-sunken); border-radius: var(--radius-md); }
+  .seg button { border: none; background: transparent; border-radius: 7px; padding: 7px 4px; font-size: 12px; font-weight: 500; color: var(--text-secondary); cursor: pointer; line-height: 1.3; transition: background .2s var(--ease-out), color .2s var(--ease-out); }
+  .seg button:hover { color: var(--text-primary); background: rgba(255,255,255,.55); }
+  .seg button.active { background: var(--surface-card); color: var(--text-brand); font-weight: 700; box-shadow: var(--shadow-sm); }
+  .seg button small { display: block; font-size: 10px; font-weight: 400; color: var(--text-tertiary); }
+
+  /* ボタン */
+  .btn { display: block; width: 100%; text-align: center; padding: 8px 12px; border-radius: var(--radius-md); font-family: inherit; font-size: 12.5px; font-weight: 700; border: 1.5px solid var(--brand-border); background: var(--surface-card); color: var(--text-brand); cursor: pointer; margin-top: 8px; transition: background .2s var(--ease-out); }
+  .btn:hover { background: var(--brand-subtle); }
+
+  /* 選択リスト(部位・被害) */
+  .list { display: flex; flex-direction: column; gap: 2px; }
+  .item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm); padding: 7px 8px; font-size: 12.5px; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: background .15s var(--ease-out); }
+  .item::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #F2A33A; }
+  .item.dmg::before { background: var(--coral); }
+  .item:hover { background: var(--surface-sunken); }
+  .item.active { background: var(--brand-subtle); border-color: var(--brand-border); color: var(--text-brand); font-weight: 700; }
+  .item.dmg.active { background: var(--coral-subtle); border-color: var(--coral-border); color: var(--coral-strong); }
+  .item .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(20,24,25,.15); flex: none; }
+  .item.plain::before { display: none; }
+  .group-h { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .08em; color: var(--text-tertiary); margin: 10px 0 2px 8px; }
+
+  /* スイッチ(オン/オフ) */
+  .tgl { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: none; border: none; padding: 7px 0; cursor: pointer; text-align: left; font-size: 12.5px; color: var(--text-primary); }
+  .tgl .sw { flex: none; position: relative; width: 34px; height: 20px; border-radius: var(--radius-pill); background: var(--border-default); transition: background .2s var(--ease-out); }
+  .tgl .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-xs); transition: transform .2s var(--ease-out); }
+  .tgl[aria-checked="true"] .sw { background: var(--brand); }
+  .tgl[aria-checked="true"] .sw::after { transform: translateX(14px); }
+
+  /* 着眼点カード */
+  .card { background: var(--surface-card); border: 1px solid var(--border-subtle); border-left: 3px solid var(--brand); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 12px 14px; margin: 0 0 12px; font-size: 12.5px; line-height: 1.75; color: var(--text-secondary); white-space: pre-line; }
+  .card.dmg { border-left-color: var(--coral); }
+  .card .title { display: block; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; white-space: normal; }
+  .card .close { float: right; border: none; background: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; padding: 0 0 4px 8px; }
+  .empty { font-size: 12px; color: var(--text-tertiary); background: var(--surface-card); border: 1px dashed var(--border-default); border-radius: var(--radius-md); padding: 10px 12px; line-height: 1.6; margin: 0 0 12px; }
+
+  /* 補足(折りたたみ) */
+  .legend-cap { font-size: 11.5px; color: var(--text-tertiary); margin-top: 8px; line-height: 1.65; }
+  details.help { margin-top: 8px; }
+  details.help > summary { cursor: pointer; list-style: none; font-size: 11.5px; font-weight: 500; color: var(--text-brand); }
+  details.help > summary::-webkit-details-marker { display: none; }
+  details.help > summary::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 1px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease-out); }
+  details.help[open] > summary::before { transform: rotate(45deg); }
+  details.help > div { font-size: 11.5px; color: var(--text-secondary); line-height: 1.75; margin-top: 6px; padding: 8px 10px; background: var(--surface-sunken); border-radius: var(--radius-sm); }
+
+  .legend { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 10px; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-secondary); padding: 2px 0; }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(20,24,25,.15); flex: none; }
+  .legend-item .ct { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--brand); }
+  .slider-val { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--text-primary); min-width: 84px; text-align: right; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { border: 1px solid var(--border-default); background: var(--surface-card); border-radius: var(--radius-pill); padding: 4px 11px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+  .chip.active { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+  .about { font-size: 11px; color: var(--text-tertiary); line-height: 1.75; }
+  .about p { margin: 6px 0 0; }
 </style>
 </head>
 <body>
@@ -861,6 +948,7 @@ const state = {
   dmgScenario: "none",   // none | typhoon | snow
   dmgSeed: 1,
   selectedDim: null,
+  tab: "parts",         // サイドバーで開いているタブ(parts / damage / view / spec)
 };
 
 const holder = document.getElementById("canvas-holder");
@@ -1460,7 +1548,7 @@ function renderLabels() {
     const div = document.createElement("div");
     div.className = "label";
     div.innerHTML = `<div class="label-chip${m.isDamage ? " dmg" : ""}${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
-    div.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
+    div.addEventListener("click", () => selectMember(m.key));
     labelsHolder.appendChild(div);
     labelEntries.push({ occluded: false, el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
   });
@@ -1588,8 +1676,7 @@ dom.addEventListener("click", (e) => {
   const hits = raycaster.intersectObjects(markerMeshes);
   if (hits.length > 0) {
     const hk = hits[0].object.userData.key;
-    state.selectedMember = state.selectedMember === hk ? null : hk;
-    renderLabels(); renderPanel(); applyMode();
+    selectMember(hk);
   }
 });
 
@@ -1621,199 +1708,240 @@ function el(tag, cls, html) {
   return e;
 }
 
-function renderPanel() {
-  panel.innerHTML = "";
-  const t = TYPES[state.typeKey];
+/* サイドバーの部品(3つのビューアで共通の見た目)。renderPanel の中で毎回作る */
+function panelKit(onSelect) {
+  const section = (title, meta) => el("div", "section", `<h2>${title}${meta ? `<span class="meta">${meta}</span>` : ""}</h2>`);
+  // 択一のセグメント。items: [[値, ラベル, 補足?]]
+  const seg = (items, cur, onPick, cols) => {
+    const box = el("div", "seg");
+    box.style.setProperty("--cols", cols || items.length);
+    items.forEach(([v, lb, sub]) => {
+      const b = el("button", cur === v ? "active" : "", lb + (sub ? `<small>${sub}</small>` : ""));
+      b.setAttribute("aria-pressed", cur === v ? "true" : "false");
+      b.addEventListener("click", () => onPick(v));
+      box.appendChild(b);
+    });
+    return box;
+  };
+  // オン/オフのスイッチ
+  const toggle = (label, on, onChange) => {
+    const b = el("button", "tgl", `<span>${label}</span><span class="sw"></span>`);
+    b.setAttribute("role", "switch");
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    b.addEventListener("click", () => onChange(!on));
+    return b;
+  };
+  const toggles = (...list) => { const d = el("div", ""); d.style.marginTop = "6px"; list.forEach((t) => t && d.appendChild(t)); return d; };
+  const help = (html, label) => el("details", "help", `<summary>${label || "説明"}</summary><div>${html}</div>`);
+  const cap = (html) => el("div", "legend-cap", html);
+  const button = (label, onClick) => { const b = el("button", "btn", label); b.addEventListener("click", onClick); return b; };
+  const item = (m, extraCls) => {
+    const b = el("button", "item" + (extraCls ? " " + extraCls : "") + (state.selectedMember === m.key ? " active" : ""), m.name);
+    b.addEventListener("click", () => onSelect(m.key));
+    return b;
+  };
+  const noteCard = (m, cls) => {
+    const c = el("div", "card" + (cls ? " " + cls : ""), `<button class="close" aria-label="選択を解除">解除</button><span class="title">${m.name}</span>${m.note}`);
+    c.querySelector(".close").addEventListener("click", () => onSelect(m.key));
+    return c;
+  };
+  const empty = (html) => el("div", "empty", html);
+  // 部位の一覧(まとめて/部材ごと)。detailed のときは区分(part)ごとに見出しを付ける
+  const memberList = (members, detailed, extraCls) => {
+    const list = el("div", "list");
+    if (detailed) {
+      const groups = new Map();
+      members.forEach((m) => { const g = m.part || "その他"; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(m); });
+      groups.forEach((arr, g) => { list.appendChild(el("div", "group-h", g)); arr.forEach((m) => list.appendChild(item(m, extraCls))); });
+    } else {
+      members.forEach((m) => list.appendChild(item(m, extraCls)));
+    }
+    return list;
+  };
+  const legend = (rows) => {
+    const lg = el("div", "legend");
+    rows.forEach(([color, name, ct]) => lg.appendChild(el("div", "legend-item", `<span class="sw" style="background:${color}"></span>${name}${ct != null ? `<span class="ct">×${ct}</span>` : ""}`)));
+    return lg;
+  };
+  // 上部(対象の選択+タブ)
+  const head = ({ eyebrow, pick, summary, tabs, cur, onTab }) => {
+    const h = el("div", "p-head");
+    h.appendChild(el("div", "eyebrow", eyebrow));
+    h.appendChild(pick);
+    if (summary) h.appendChild(el("p", "model-sum", summary));
+    const row = el("div", "tabs");
+    row.setAttribute("role", "tablist");
+    tabs.forEach(([k, lb, badge], i) => {
+      const t = el("button", "tab" + (cur === k ? " active" : ""), `<span class="no">0${i + 1}</span>${lb}${badge ? `<span class="badge">${badge}</span>` : ""}`);
+      t.setAttribute("role", "tab");
+      t.setAttribute("aria-selected", cur === k ? "true" : "false");
+      t.addEventListener("click", () => onTab(k));
+      row.appendChild(t);
+    });
+    h.appendChild(row);
+    return h;
+  };
+  // 下部(この教材について)
+  const foot = (html, label) => {
+    const f = el("div", "p-foot");
+    f.appendChild(help(html, label || "この教材について(免責)"));
+    f.querySelector("details > div").classList.add("about");
+    return f;
+  };
+  return { section, seg, toggle, toggles, help, cap, button, item, noteCard, empty, memberList, legend, head, foot };
+}
 
-  // 型式選択
-  const secType = el("div", "section", "<h2>型式(区分)の選択</h2>");
-  Object.keys(TYPES).forEach((key) => {
-    const d = TYPES[key];
-    const b = el("button", "btn" + (state.typeKey === key ? " active" : ""),
-      `${d.label}<small>${d.sub}</small>`);
-    b.addEventListener("click", () => {
+/* ============================================================
+   右サイドバー
+   上から「型式」→「タブ(部位 / 損害評価 / 表示 / 仕様)」→「タブの中身」の順(建物ビューアと同じ構成)
+============================================================ */
+const TYPE_SHORT = { pipe: ["Ⅱ類", "パイプ"], steel: ["Ⅳ類", "鉄骨"], glass: ["ガラス室", "Ⅱ類"], amayoke: ["Ⅵ類", "雨よけ"], net: ["Ⅶ類", "ネット"] };
+
+/* 部材・被害を選ぶ(もう一度選ぶと解除)。モデル上のラベル・点から選んだときも、該当するタブを開く */
+function selectMember(key) {
+  state.selectedMember = state.selectedMember === key ? null : key;
+  const m = state.selectedMember && currentDef.members.find((x) => x.key === key);
+  if (m) state.tab = m.isDamage ? "damage" : "parts";
+  renderLabels(); renderPanel(); applyMode();
+}
+
+function renderPanel() {
+  const scrollY = panel.scrollTop, prevTab = panel.dataset.tab;
+  panel.innerHTML = "";
+  const K = panelKit(selectMember);
+  const t = TYPES[state.typeKey];
+  const dmgs = currentDef.members.filter((m) => m.isDamage);
+
+  panel.appendChild(K.head({
+    eyebrow: "Facility type · 型式(区分)",
+    pick: K.seg(Object.keys(TYPES).map((k) => [k, TYPE_SHORT[k][0], TYPE_SHORT[k][1]]), state.typeKey, (key) => {
+      if (state.typeKey === key) return;
       state.typeKey = key;
       state.coverKey = TYPES[key].defaultCover;
       state.cropKey = TYPES[key].defaultCrop;
       state.selectedMember = null;
       rebuild(true);
-    });
-    secType.appendChild(b);
-  });
-  secType.appendChild(el("div", "type-note", t.info));
-  panel.appendChild(secType);
+    }, 3),
+    summary: `${t.label} — ${t.sub}`,
+    tabs: [["parts", "部位"], ["damage", "損害評価", dmgs.length || ""], ["view", "表示"], ["spec", "仕様"]],
+    cur: state.tab, onTab: (k) => { state.tab = k; renderPanel(); },
+  }));
+  const body = el("div", "p-body");
+  panel.appendChild(body);
 
-  // 棟数(連棟対応型式のみ)
-  if (t.spansSelectable) {
-    const secSp = el("div", "section", "<h2>棟数(単棟/連棟)</h2>");
-    const rowSp = el("div", "btn-row");
-    [[1, "単棟"], [2, "2連棟"], [3, "3連棟"]].forEach(([v, lb]) => {
-      const b = el("button", "btn" + (state.spans === v ? " active" : ""), lb);
-      b.addEventListener("click", () => { state.spans = v; rebuild(true); });
-      rowSp.appendChild(b);
-    });
-    secSp.appendChild(rowSp);
-    secSp.appendChild(el("div", "legend-cap", "要領第3-1(2)ウ: 別表1に単棟として掲げる型式を2連棟とする場合は標準価額を5%、3連棟以上は7.5%減額できます(2連棟型式を3連棟以上とする場合は2.5%)。連棟の谷樋・接続側面の部材は屋根面A面に含めます(第4-1(1)エ・オ)。"));
-    panel.appendChild(secSp);
+  /* ---- 01 部位 ---- */
+  if (state.tab === "parts") {
+    const plain = currentDef.members.filter((m) => !m.isDamage);
+    const sec = K.section("部材と評価の着眼点", `${plain.length}件`);
+    const active = plain.find((m) => m.key === state.selectedMember);
+    sec.appendChild(active ? K.noteCard(active) : K.empty("部材を選ぶと、評価の着眼点がここに表示されます。モデル上の橙色の点・ラベルからも選べます。"));
+    sec.appendChild(K.seg([[false, "まとめて"], [true, "部材ごと"]], state.detailParts, (v) => { state.detailParts = v; state.selectedMember = null; rebuild(false); }, 2));
+    const list = K.memberList(plain, state.detailParts);
+    list.style.marginTop = "10px";
+    sec.appendChild(list);
+    sec.appendChild(K.toggles(K.toggle("選んだ部材以外を薄く表示", state.focusDim, (v) => { state.focusDim = v; applyMode(); renderPanel(); })));
+    sec.appendChild(K.help("選んだ部材はモデル上で橙色に点滅します。「部材ごと」にすると、アーチ・母屋・胴ぶち・筋かいなどを1つずつ選べ、区分ごとの使用数も表示されます。"));
+    body.appendChild(sec);
   }
 
-  // 表示モード
-  const secMode = el("div", "section", "<h2>表示モード</h2>");
-  const row = el("div", "btn-row");
-  [["normal","標準"],["parts","構造部分 色分け"],["members","部材ごとに色分け"],["frame","骨組みのみ"]].forEach(([k, lb]) => {
-    const b = el("button", "btn" + (state.mode === k ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.mode = k; applyMode(); renderPanel(); });
-    row.appendChild(b);
-  });
-  secMode.appendChild(row);
-  if (state.mode === "members") {
-    const lg = el("div", "legend");
-    memberLegendItems().forEach(([nm, ct]) => {
-      lg.appendChild(el("div", "legend-item",
-        `<span class="sw" style="background:${memberColorHex(nm)}"></span>${nm}<span style="color:#94a3b8;margin-left:auto">×${ct}</span>`));
-    });
-    lg.appendChild(el("div", "legend-cap", "部材の種類ごとに色を変えています。アーチ・母屋・胴ぶち・筋かいなど、形の似た部材の違いを見分ける練習に使えます。"));
-    secMode.appendChild(lg);
+  /* ---- 02 損害評価 ---- */
+  if (state.tab === "damage") {
+    const sec = K.section("被害シミュレーション", state.dmgScenario !== "none" ? `${dmgs.length}か所` : "");
+    sec.appendChild(K.seg([["none", "なし"], ["typhoon", "台風", "風害"], ["snow", "大雪", "雪害"]], state.dmgScenario,
+      (k) => { state.dmgScenario = k; state.selectedMember = null; rebuild(false); }, 3));
+    if (state.dmgScenario === "none") {
+      sec.appendChild(K.cap("災害を選ぶと、モデル上に被害が発生します。被害箇所を1つずつ確認し、評価の着眼点を読んで練習します。"));
+    } else {
+      const activeD = dmgs.find((m) => m.key === state.selectedMember);
+      const wrap = el("div", "");
+      wrap.style.marginTop = "12px";
+      wrap.appendChild(activeD ? K.noteCard(activeD, "dmg") : K.empty("被害箇所を選ぶと、評価の着眼点がここに表示されます。モデル上の赤い点からも選べます。"));
+      wrap.appendChild(K.memberList(dmgs, false, "dmg"));
+      sec.appendChild(wrap);
+      sec.appendChild(K.button("別の被害パターンを生成", () => { state.dmgSeed++; state.selectedMember = null; rebuild(false); }));
+      sec.appendChild(K.help("被害は研修用に自動で作った架空のもので、実際の被害の分布や損害割合を示すものではありません。"));
+    }
+    body.appendChild(sec);
+
+    const secB = K.section("損害評価の基本", "第4");
+    secB.appendChild(K.cap("被害態様は5種類、損傷程度は甚・中・軽の3区分です。"));
+    secB.appendChild(K.help("部材の被害態様は ①ちぎれ・のび・亀裂 ②腰折れ ③まがり・ねじれ ④回転・移動 ⑤引抜け・はく落 の5種類。損傷程度は甚・中・軽の3区分で、甚=取替、中=取替又は補修、軽=補修として評価します。補修割合の係数は0.7(ガラスのみ0.5)です。", "詳しく見る"));
+    body.appendChild(secB);
   }
-  if (state.mode === "parts") {
-    const lg = el("div", "legend");
-    currentDef.parts.forEach((p) => {
-      lg.appendChild(el("div", "legend-item",
-        `<span class="sw" style="background:${PART_COLORS[p]}"></span>${p}`));
-    });
-    lg.appendChild(el("div", "legend-cap",
-      state.typeKey === "net"
+
+  /* ---- 03 表示 ---- */
+  if (state.tab === "view") {
+    const secM = K.section("表示モード");
+    secM.appendChild(K.seg([["normal", "標準"], ["parts", "構造部分を色分け"]], state.mode, (k) => { state.mode = k; applyMode(); renderPanel(); }, 2));
+    const s2 = K.seg([["members", "部材を色分け"], ["frame", "骨組みのみ"]], state.mode, (k) => { state.mode = k; applyMode(); renderPanel(); }, 2);
+    s2.style.marginTop = "4px";
+    secM.appendChild(s2);
+    if (state.mode === "members") {
+      secM.appendChild(K.legend(memberLegendItems().map(([nm, ct]) => [memberColorHex(nm), nm, ct])));
+      secM.appendChild(K.help("部材の種類ごとに色を変えています。アーチ・母屋・胴ぶち・筋かいなど、形の似た部材の違いを見分ける練習に使えます。"));
+    }
+    if (state.mode === "parts") {
+      secM.appendChild(K.legend(currentDef.parts.map((p) => [PART_COLORS[p], p])));
+      secM.appendChild(K.help(state.typeKey === "net"
         ? "Ⅶ類は周囲面・天井面・基礎の3区分で評価します(第4-1(1)ア)。"
-        : "要領では妻面・側面・屋根面・基礎の4区分。各面はA面・B面に分け、棟木・中柱を含む側がA面です(第4-1(1))。※Ⅱ類は側面・屋根面が一体の「側屋根面」として扱われます(別表3・4)。"));
-    secMode.appendChild(lg);
-  }
-  panel.appendChild(secMode);
+        : "要領では妻面・側面・屋根面・基礎の4区分。各面はA面・B面に分け、棟木・中柱を含む側がA面です(第4-1(1))。Ⅱ類は側面・屋根面が一体の「側屋根面」として扱われます(別表3・4)。"));
+    }
+    body.appendChild(secM);
 
-  // 被覆材
-  const secCover = el("div", "section", "<h2>被覆材(別表2の代表例)</h2>");
-  t.covers.forEach((ck) => {
-    const b = el("button", "btn" + (state.coverKey === ck ? " active" : ""), COVERS[ck].label);
-    b.addEventListener("click", () => { state.coverKey = ck; rebuild(false); });
-    secCover.appendChild(b);
-  });
-  panel.appendChild(secCover);
-
-  // 施設内農作物
-  const secCrop = el("div", "section", "<h2>施設内農作物</h2>");
-  const tg = el("button", "btn" + (state.showCrops ? " active" : ""), state.showCrops ? "☑ 施設内の作物を表示" : "☐ 施設内の作物を表示");
-  tg.addEventListener("click", () => { state.showCrops = !state.showCrops; rebuild(false); });
-  secCrop.appendChild(tg);
-  if (state.showCrops) {
-    const rowC = el("div", "btn-row");
-    Object.entries(CROPS).forEach(([k, c]) => {
-      const b = el("button", "btn" + (state.cropKey === k ? " active" : ""), c.label);
-      b.addEventListener("click", () => { state.cropKey = k; rebuild(false); });
-      rowC.appendChild(b);
-    });
-    secCrop.appendChild(rowC);
-  }
-  secCrop.appendChild(el("div", "legend-cap", "施設内農作物は、特定園芸施設にあわせて選択して加入する共済目的です。表示すると区分「施設内農作物」として施設本体と分けて色分け・ハイライトできます。作物は型式ごとの代表例を初期表示しています。"));
-  panel.appendChild(secCrop);
-
-  // 損害評価の練習(被害シミュレーション)
-  const secDmg = el("div", "section", "<h2>損害評価の練習(被害シミュレーション)</h2>");
-  const rowSc = el("div", "btn-row");
-  [["none", "被害なし"], ["typhoon", "台風(風害)"], ["snow", "大雪(雪害)"]].forEach(([k, lb]) => {
-    const b = el("button", "btn" + (state.dmgScenario === k ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.dmgScenario = k; state.selectedMember = null; rebuild(false); });
-    rowSc.appendChild(b);
-  });
-  secDmg.appendChild(rowSc);
-  if (state.dmgScenario !== "none") {
-    const br = el("button", "btn", "🔄 別の被害パターンを生成");
-    br.addEventListener("click", () => { state.dmgSeed++; state.selectedMember = null; rebuild(false); });
-    br.style.marginTop = "6px";
-    secDmg.appendChild(br);
-    const dmgs = currentDef.members.filter((m) => m.isDamage);
-    secDmg.appendChild(el("div", "legend-cap", `被害箇所は赤色マーカーで表示されます(全${dmgs.length}箇所)。各ボタンを押すと該当部がハイライトされ、評価の着眼点が表示されます。`));
-    dmgs.forEach((m) => {
-      const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
-      b.style.borderColor = state.selectedMember === m.key ? "#f59e0b" : "#fca5a5";
-      b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
-      secDmg.appendChild(b);
-    });
-    const activeD = dmgs.find((m) => m.key === state.selectedMember);
-    if (activeD) secDmg.appendChild(el("div", "note-box", `<div class="title">${activeD.name}</div>${activeD.note}`));
-  }
-  panel.appendChild(secDmg);
-
-  // 寸法名称
-  const secDim = el("div", "section", "<h2>外面・寸法の名称(第2)</h2>");
-  const bd = el("button", "btn" + (state.showDims ? " active" : ""),
-    state.showDims ? "寸法名称を非表示にする" : "寸法線と名称を表示する(間口・奥行・軒高・棟高)");
-  bd.addEventListener("click", () => { state.showDims = !state.showDims; if (!state.showDims) state.selectedDim = null; renderLabels(); renderPanel(); applyMode(); });
-  secDim.appendChild(bd);
-  if (state.showDims) {
-    const rowD = el("div", "btn-row");
-    currentDef.dims.forEach((d) => {
-      const b = el("button", "btn" + (state.selectedDim === d.name ? " active" : ""), d.name);
-      b.addEventListener("click", () => {
-        state.selectedDim = state.selectedDim === d.name ? null : d.name;
-        renderLabels(); renderPanel();
+    const secD = K.section("外面・寸法の名称", "第2");
+    secD.appendChild(K.toggle("寸法線と名称を表示", state.showDims, (v) => { state.showDims = v; if (!v) state.selectedDim = null; renderLabels(); renderPanel(); applyMode(); }));
+    if (state.showDims) {
+      const chips = el("div", "chips");
+      currentDef.dims.forEach((d) => {
+        const c = el("button", "chip" + (state.selectedDim === d.name ? " active" : ""), d.name);
+        c.addEventListener("click", () => { state.selectedDim = state.selectedDim === d.name ? null : d.name; renderLabels(); renderPanel(); });
+        chips.appendChild(c);
       });
-      rowD.appendChild(b);
+      secD.appendChild(chips);
+      secD.appendChild(K.cap("名称を押すと、その寸法線が橙色に点滅します。"));
+    }
+    body.appendChild(secD);
+  }
+
+  /* ---- 04 仕様: 棟数・被覆材・施設内農作物 ---- */
+  if (state.tab === "spec") {
+    if (t.spansSelectable) {
+      const secSp = K.section("棟数", "単棟/連棟");
+      secSp.appendChild(K.seg([[1, "単棟"], [2, "2連棟"], [3, "3連棟"]], state.spans, (v) => { state.spans = v; rebuild(true); }, 3));
+      secSp.appendChild(K.help("要領第3-1(2)ウ: 別表1に単棟として掲げる型式を2連棟とする場合は標準価額を5%、3連棟以上は7.5%減額できます(2連棟型式を3連棟以上とする場合は2.5%)。連棟の谷樋・接続側面の部材は屋根面A面に含めます(第4-1(1)エ・オ)。"));
+      body.appendChild(secSp);
+    }
+    const secC = K.section("被覆材", "別表2の代表例");
+    const list = el("div", "list");
+    t.covers.forEach((ck) => {
+      const b = el("button", "item plain" + (state.coverKey === ck ? " active" : ""), COVERS[ck].label);
+      b.addEventListener("click", () => { state.coverKey = ck; rebuild(false); });
+      list.appendChild(b);
     });
-    secDim.appendChild(rowD);
-    secDim.appendChild(el("div", "legend-cap", "寸法名を押すと該当する寸法線がオレンジ色に点滅します(もう一度押すと解除)。"));
+    secC.appendChild(list);
+    body.appendChild(secC);
+
+    const secCr = K.section("施設内農作物");
+    secCr.appendChild(K.toggle("施設内の作物を表示", state.showCrops, (v) => { state.showCrops = v; rebuild(false); }));
+    if (state.showCrops) {
+      const s = K.seg(Object.entries(CROPS).map(([k, c]) => [k, c.label.replace(/\(.*\)/, ""), (c.label.match(/\((.*)\)/) || [])[1]]), state.cropKey,
+        (k) => { state.cropKey = k; rebuild(false); }, 4);
+      s.style.marginTop = "6px";
+      secCr.appendChild(s);
+    }
+    secCr.appendChild(K.help("施設内農作物は、特定園芸施設にあわせて選択して加入する共済目的です。表示すると区分「施設内農作物」として施設本体と分けて色分け・ハイライトできます。作物は型式ごとの代表例を初期表示しています。"));
+    body.appendChild(secCr);
+
+    const secI = K.section("この型式について");
+    secI.appendChild(K.help(t.info, "型式の説明"));
+    body.appendChild(secI);
   }
-  panel.appendChild(secDim);
 
-  // 部材と着眼点
-  // 部材の分け方
-  const secGran = el("div", "section", "<h2>部材の分け方</h2>");
-  const rowGran = el("div", "btn-row");
-  [[false, "まとめて"], [true, "個別(部材ごと)"]].forEach(([v, lb]) => {
-    const b = el("button", "btn" + (state.detailParts === v ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.detailParts = v; state.selectedMember = null; rebuild(false); });
-    rowGran.appendChild(b);
-  });
-  secGran.appendChild(rowGran);
-  const bFD = el("button", "btn" + (state.focusDim ? " active" : ""), (state.focusDim ? "☑ " : "☐ ") + "選択した部材以外を淡色化");
-  bFD.style.marginTop = "6px";
-  bFD.addEventListener("click", () => { state.focusDim = !state.focusDim; applyMode(); renderPanel(); });
-  secGran.appendChild(bFD);
-  secGran.appendChild(el("div", "legend-cap", state.detailParts
-    ? "モデル上の部材名ごとに分けて表示しています(柱・梁・筋かい等を個別に選択できます)。"
-    : "関連する部材をまとめた区分で表示しています。「個別」にすると柱・梁・筋かいなどを1つずつ選択できます。"));
-  panel.appendChild(secGran);
+  panel.appendChild(K.foot("本モデルは園芸施設共済評価要領(30経営第367号)の名称・区分・別表を参考にした研修用の簡略化イメージです。形状・寸法・部材数は実際の標準型式と一致せず(奥行等は表示用に短縮)、実際の型式判定・引受評価・損害評価は要領本文および別表1〜7に基づいて行ってください。"));
 
-  const secMem = el("div", "section", "<h2>部材と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部材はモデル上でオレンジ色に点滅表示されます</div>");
-  const plain = currentDef.members.filter((m) => !m.isDamage);
-  const mkBtn = (m) => {
-    const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
-    b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
-    return b;
-  };
-  if (state.detailParts) {
-    const groups = new Map();
-    plain.forEach((m) => { const g = m.part || "その他"; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(m); });
-    [...groups.entries()].forEach(([g, arr]) => {
-      const h = el("div", "legend-cap", `<b style="color:#475569">${g}</b>`);
-      h.style.margin = "8px 0 3px";
-      secMem.appendChild(h);
-      arr.forEach((m) => secMem.appendChild(mkBtn(m)));
-    });
-  } else {
-    plain.forEach((m) => secMem.appendChild(mkBtn(m)));
-  }
-  const active = currentDef.members.find((m) => m.key === state.selectedMember && !m.isDamage);
-  if (active) {
-    secMem.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));
-  }
-  panel.appendChild(secMem);
-
-  // 共通の評価メモ
-  panel.appendChild(el("div", "section note-box",
-    `<div class="title">損害評価の基本(第4)</div>部材の被害態様は ①ちぎれ・のび・亀裂 ②腰折れ ③まがり・ねじれ ④回転・移動 ⑤引抜け・はく落 の5種類。損傷程度は甚・中・軽の3区分で、甚=取替、中=取替又は補修、軽=補修として評価します。補修割合の係数は0.7(ガラスのみ0.5)です。`));
-
-  // 免責
-  panel.appendChild(el("div", "disclaimer",
-    "本モデルは園芸施設共済評価要領(30経営第367号)の名称・区分・別表を参考にした研修用の簡略化イメージです。形状・寸法・部材数は実際の標準型式と一致せず(奥行等は表示用に短縮)、実際の型式判定・引受評価・損害評価は要領本文および別表1〜7に基づいて行ってください。"));
+  // 同じタブの再描画ではスクロール位置を保ち、タブを切り替えたら先頭へ
+  panel.dataset.tab = state.tab;
+  panel.scrollTop = prevTab === state.tab ? scrollY : 0;
 }
 
 /* ============================================================

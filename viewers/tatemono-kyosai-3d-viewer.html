@@ -22,6 +22,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>一般住宅 3Dビューア(建物共済 損害評価研修用)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
 <script type="importmap">
 {
   "imports": {
@@ -66,7 +69,7 @@
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
 
-  aside { flex: none; width: clamp(260px, 30vw, 320px); min-height: 0; border-left: 1px solid #cbd5e1; background: #fff; padding: 14px; overflow-y: auto; }
+  aside { flex: none; width: clamp(290px, 30vw, 350px); min-height: 0; border-left: 1px solid #E0E5E8; overflow-y: auto; scrollbar-gutter: stable; }
   @media (max-width: 860px) {
     #viewport { flex: none; height: 56%; min-height: 220px; }
     aside { flex: 1 1 auto; width: auto; border-left: none; border-top: 1px solid #cbd5e1; }
@@ -78,21 +81,105 @@
   }
   @media (max-width: 560px) { .hint { bottom: auto; top: 8px; left: 8px; max-width: calc(100% - 16px); } }
 
-  .section { margin-bottom: 16px; }
-  .section h2 { font-size: 11px; font-weight: 600; color: #64748b; margin: 0 0 8px; }
-  .btn { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; margin-bottom: 6px; transition: background .15s; }
-  .btn:hover { background: #f8fafc; }
-  .btn.active { border-color: #f59e0b; background: #fffbeb; color: #0f172a; }
-  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
-  .btn-row .btn { flex: 1; text-align: center; min-width: 70px; }
-  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); vertical-align: -2px; margin-right: 6px; }
+  /* ============================================================
+     右サイドバー(NOSAI Design System のトークンに準拠)
+     1) 建物モデル 2) タブ(部位 / 損害評価 / 表示 / 仕様・間取り) 3) 各タブの中身 の3段構成
+  ============================================================ */
+  :root {
+    --brand: #1B9A9C; --brand-hover: #157E80; --brand-subtle: #ECF8F8; --brand-subtle-2: #D2EFEF; --brand-border: #A6DEDF; --text-brand: #136466;
+    --text-primary: #141819; --text-secondary: #4C575D; --text-tertiary: #6A767D; --text-disabled: #98A4AB;
+    --surface-page: #F6F8F9; --surface-card: #FFFFFF; --surface-sunken: #EEF1F3;
+    --border-subtle: #E0E5E8; --border-default: #C9D1D6;
+    --coral: #FF6F59; --coral-subtle: #FFF2EE; --coral-border: #FFC2B2; --coral-strong: #8E3324;
+    --radius-sm: 6px; --radius-md: 10px; --radius-pill: 999px;
+    --shadow-xs: 0 1px 2px rgba(20,24,25,.06); --shadow-sm: 0 1px 3px rgba(20,24,25,.08), 0 1px 2px rgba(20,24,25,.04);
+    --focus-ring: rgba(27,154,156,.45); --ease-out: cubic-bezier(.22,1,.36,1);
+    --font-sans: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  aside, .plan-overlay { font-family: var(--font-sans); color: var(--text-primary); }
+  aside { background: var(--surface-page); }
+  aside button { font-family: inherit; }
+  aside :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
-  .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-bottom: 3px; }
-  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); flex: none; }
-  .slider-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-  .slider-row input[type=range] { flex: 1; accent-color: #f59e0b; }
-  .slider-val { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; color: #1e293b; min-width: 86px; text-align: right; }
+  /* 上部(建物モデル+タブ)。スクロールしても固定 */
+  .p-head { position: sticky; top: 0; z-index: 2; background: var(--surface-card); border-bottom: 1px solid var(--border-subtle); padding: 14px 16px 0; }
+  .eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); margin: 0 0 6px; }
+  .model-sum { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin: 8px 0 0; }
+  .tabs { display: flex; margin: 12px -4px 0; }
+  .tab { flex: 1 1 auto; white-space: nowrap; background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 4px 9px; cursor: pointer; color: var(--text-tertiary); font-size: 12.5px; font-weight: 700; line-height: 1.3; transition: color .2s var(--ease-out), border-color .2s var(--ease-out); }
+  .tab .no { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: .12em; color: var(--text-disabled); }
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active { color: var(--text-brand); border-bottom-color: var(--brand); }
+  .tab.active .no { color: var(--brand); }
+  .tab .badge { display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 3px; border-radius: var(--radius-pill); background: var(--coral); color: #fff; font-family: var(--font-mono); font-size: 9.5px; line-height: 16px; vertical-align: 1px; }
+
+  .p-body { padding: 4px 16px 8px; }
+  .p-foot { padding: 4px 16px 20px; }
+
+  /* セクション */
+  .section { padding: 14px 0; border-bottom: 1px solid var(--border-subtle); }
+  .section:last-child { border-bottom: none; }
+  .section > h2 { font-size: 13.5px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px; display: flex; align-items: baseline; gap: 8px; }
+  .section > h2 .meta { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; color: var(--text-tertiary); letter-spacing: .04em; }
+  .sub-h { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin: 12px 0 6px; }
+
+  /* セグメント(択一) */
+  .seg { display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 3px; padding: 3px; background: var(--surface-sunken); border-radius: var(--radius-md); }
+  .seg button { border: none; background: transparent; border-radius: 7px; padding: 7px 4px; font-size: 12px; font-weight: 500; color: var(--text-secondary); cursor: pointer; line-height: 1.3; transition: background .2s var(--ease-out), color .2s var(--ease-out); }
+  .seg button:hover { color: var(--text-primary); background: rgba(255,255,255,.55); }
+  .seg button.active { background: var(--surface-card); color: var(--text-brand); font-weight: 700; box-shadow: var(--shadow-sm); }
+  .seg button small { display: block; font-size: 10px; font-weight: 400; color: var(--text-tertiary); }
+
+  /* ボタン */
+  .btn { display: block; width: 100%; text-align: center; padding: 8px 12px; border-radius: var(--radius-md); font-family: inherit; font-size: 12.5px; font-weight: 700; border: 1.5px solid var(--brand-border); background: var(--surface-card); color: var(--text-brand); cursor: pointer; margin-top: 8px; transition: background .2s var(--ease-out); }
+  .btn:hover { background: var(--brand-subtle); }
+
+  /* 選択リスト(部位・被害) */
+  .list { display: flex; flex-direction: column; gap: 2px; }
+  .item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm); padding: 7px 8px; font-size: 12.5px; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: background .15s var(--ease-out); }
+  .item::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #F2A33A; }
+  .item.dmg::before { background: var(--coral); }
+  .item:hover { background: var(--surface-sunken); }
+  .item.active { background: var(--brand-subtle); border-color: var(--brand-border); color: var(--text-brand); font-weight: 700; }
+  .item.dmg.active { background: var(--coral-subtle); border-color: var(--coral-border); color: var(--coral-strong); }
+  .item .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(20,24,25,.15); flex: none; }
+  .item.plain::before { display: none; }
+  .group-h { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .08em; color: var(--text-tertiary); margin: 10px 0 2px 8px; }
+
+  /* スイッチ(オン/オフ) */
+  .tgl { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: none; border: none; padding: 7px 0; cursor: pointer; text-align: left; font-size: 12.5px; color: var(--text-primary); }
+  .tgl .sw { flex: none; position: relative; width: 34px; height: 20px; border-radius: var(--radius-pill); background: var(--border-default); transition: background .2s var(--ease-out); }
+  .tgl .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-xs); transition: transform .2s var(--ease-out); }
+  .tgl[aria-checked="true"] .sw { background: var(--brand); }
+  .tgl[aria-checked="true"] .sw::after { transform: translateX(14px); }
+
+  /* 着眼点カード */
+  .card { background: var(--surface-card); border: 1px solid var(--border-subtle); border-left: 3px solid var(--brand); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 12px 14px; margin: 0 0 12px; font-size: 12.5px; line-height: 1.75; color: var(--text-secondary); white-space: pre-line; }
+  .card.dmg { border-left-color: var(--coral); }
+  .card .title { display: block; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; white-space: normal; }
+  .card .close { float: right; border: none; background: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; padding: 0 0 4px 8px; }
+  .empty { font-size: 12px; color: var(--text-tertiary); background: var(--surface-card); border: 1px dashed var(--border-default); border-radius: var(--radius-md); padding: 10px 12px; line-height: 1.6; margin: 0 0 12px; }
+
+  /* 補足(折りたたみ) */
+  .legend-cap { font-size: 11.5px; color: var(--text-tertiary); margin-top: 8px; line-height: 1.65; }
+  details.help { margin-top: 8px; }
+  details.help > summary { cursor: pointer; list-style: none; font-size: 11.5px; font-weight: 500; color: var(--text-brand); }
+  details.help > summary::-webkit-details-marker { display: none; }
+  details.help > summary::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 1px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease-out); }
+  details.help[open] > summary::before { transform: rotate(45deg); }
+  details.help > div { font-size: 11.5px; color: var(--text-secondary); line-height: 1.75; margin-top: 6px; padding: 8px 10px; background: var(--surface-sunken); border-radius: var(--radius-sm); }
+
+  .legend { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 10px; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-secondary); padding: 2px 0; }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(20,24,25,.15); flex: none; }
+  .legend-item .ct { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--brand); }
+  .slider-val { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--text-primary); min-width: 84px; text-align: right; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { border: 1px solid var(--border-default); background: var(--surface-card); border-radius: var(--radius-pill); padding: 4px 11px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+  .chip.active { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
   #xhair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; z-index: 9; pointer-events: none; display: none; }
   #xhair::before, #xhair::after { content: ""; position: absolute; background: #fff; opacity: .85; box-shadow: 0 0 3px rgba(0,0,0,.9); }
   #xhair::before { left: 10px; top: 0; width: 2px; height: 22px; }
@@ -102,31 +189,24 @@
   #meas-hud .mh { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 22px; line-height: 1.2; }
   #meas-hud .mh small { font-size: 12px; color: #94a3b8; }
   #meas-hud .mt { font-size: 11px; color: #cbd5e1; margin-top: 3px; }
-  .legend-cap { font-size: 10px; color: #94a3b8; margin-top: 4px; line-height: 1.5; }
-  details.plan-sec > summary { cursor: pointer; list-style: none; margin-bottom: 8px; }
-  details.plan-sec > summary::-webkit-details-marker { display: none; }
-  details.plan-sec > summary h2 { display: inline; margin: 0; }
-  details.plan-sec > summary::before { content: "▸ "; font-size: 10px; color: #64748b; }
-  details.plan-sec[open] > summary::before { content: "▾ "; }
-  .plan-svg { border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin: 6px 0; }
-  .plan-tbl { width: 100%; border-collapse: collapse; font-size: 10.5px; color: #334155; margin: 4px 0 8px; }
-  .plan-tbl th { font-weight: 600; color: #64748b; text-align: left; padding: 3px 4px; border-bottom: 1px solid #cbd5e1; }
-  .plan-tbl td { padding: 3px 4px; border-bottom: 1px solid #eef2f6; vertical-align: top; }
-  .plan-tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .plan-tbl .sub { display: block; font-size: 9px; color: #94a3b8; }
-  .plan-tbl tr.hl td { background: #fef3c7; }
-  .plan-tbl tfoot td { font-weight: 600; border-top: 1px solid #cbd5e1; border-bottom: none; }
-  .plan-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
-  .plan-overlay-box { background: #fff; border-radius: 10px; padding: 14px 16px; width: min(1150px, 100%); max-height: 92vh; overflow: auto; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
-  .plan-overlay-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; color: #0f172a; }
-  .plan-overlay-head span { font-size: 11px; color: #64748b; flex: 1; }
+  .plan-svg { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; margin: 10px 0 8px; }
+  .plan-tbl { width: 100%; border-collapse: collapse; font-size: 11px; color: var(--text-secondary); margin: 4px 0 8px; background: var(--surface-card); }
+  .plan-tbl th { font-weight: 700; color: var(--text-tertiary); text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border-default); font-size: 10.5px; }
+  .plan-tbl td { padding: 5px 6px; border-bottom: 1px solid var(--surface-sunken); vertical-align: top; }
+  .plan-tbl .n { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .plan-tbl .sub { display: block; font-size: 9.5px; color: var(--text-tertiary); }
+  .plan-tbl tr.hl td { background: var(--brand-subtle-2); }
+  .plan-tbl tfoot td { font-weight: 700; color: var(--text-primary); border-top: 1px solid var(--border-default); border-bottom: none; }
+  .plan-overlay { position: fixed; inset: 0; background: rgba(20,24,25,.55); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .plan-overlay-box { background: var(--surface-page); border-radius: var(--radius-md); padding: 16px 18px; width: min(1150px, 100%); max-height: 92vh; overflow: auto; box-shadow: 0 24px 56px rgba(20,24,25,.16); }
+  .plan-overlay-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 14px; color: var(--text-primary); }
+  .plan-overlay-head span { font-size: 11.5px; color: var(--text-tertiary); flex: 1; }
+  .plan-overlay-head .btn { width: auto; margin: 0; padding: 6px 14px; }
   .plan-overlay-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
-  .plan-col h3 { font-size: 12px; margin: 0 0 4px; color: #334155; }
+  .plan-col h3 { font-size: 13px; margin: 0 0 4px; color: var(--text-primary); }
+  .about { font-size: 11px; color: var(--text-tertiary); line-height: 1.75; }
+  .about p { margin: 6px 0 0; }
 
-  .note-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; color: #475569; line-height: 1.7; margin-top: 4px; }
-  .note-box .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
-
-  .disclaimer { font-size: 10px; color: #94a3b8; line-height: 1.6; border-top: 1px solid #e2e8f0; padding-top: 10px; }
 </style>
 </head>
 <body>
@@ -3458,7 +3538,7 @@ const state = {
   dmgScenario: "none",   // none | wind | hail | snow | flood
   dmgSeed: 1,
   planFloor: 1,       // 平面図で表示する階
-  planOpen: false,    // 平面図・面積表の欄を開いているか
+  tab: "parts",       // サイドバーで開いているタブ(parts / damage / view / spec)
 };
 
 const holder = document.getElementById("canvas-holder");
@@ -4769,7 +4849,7 @@ function renderLabels() {
     const div = document.createElement("div");
     div.className = "label";
     div.innerHTML = `<div class="label-chip${m.isDamage ? " dmg" : ""}${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
-    div.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
+    div.addEventListener("click", () => selectMember(m.key));
     labelsHolder.appendChild(div);
     labelEntries.push({ occluded: false, el: div, pos: new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2]) });
   });
@@ -5253,8 +5333,7 @@ dom.addEventListener("click", (e) => {
   const hits = raycaster.intersectObjects(markerMeshes);
   if (hits.length > 0) {
     const hk = hits[0].object.userData.key;
-    state.selectedMember = state.selectedMember === hk ? null : hk;
-    renderLabels(); renderPanel(); applyMode();
+    selectMember(hk);
   }
 });
 
@@ -5538,94 +5617,162 @@ function el(t, cls, html) {
   return e;
 }
 
+/* ============================================================
+   右サイドバー
+   上から「建物モデル」→「タブ(部位 / 損害評価 / 表示 / 仕様・間取り)」→「タブの中身」の順。
+   長い説明は「説明」の折りたたみにまとめ、画面に常に出る文字は短くする
+============================================================ */
+const MODEL_INFO = {
+  standard: { label: "標準", sub: "木造在来", sum: "汎用の木造在来工法モデル。階数・屋根・仕上材を切り替えられます。",
+    detail: "汎用の木造在来工法モデルです。「仕様・間取り」タブで階数・屋根形状・屋根材・外壁材を切り替えられます。" },
+  wafu: { label: "和風住宅", sub: "入母屋", sum: "農家住宅を想定した、入母屋・瓦葺きの木造2階建て。",
+    detail: "下屋、縁側(濡れ縁)、雨戸・戸袋、真壁の化粧柱、破風・懸魚、棟瓦・鬼瓦、切妻の玄関ポーチ、庭(飛石・松・石積み門柱)を再現しています。被害シミュレーションでは瓦・棟瓦・鬼瓦・下屋・縁側・畳・京壁など、このモデルの部位に合わせた被害が出ます。" },
+  cube: { label: "キューブ型", sub: "写真再現", sum: "写真を基に再現した、片流れ・サイディングの木造2階建て。",
+    detail: "敷地(砂利・犬走り・乱形石アプローチ)、門柱、メッシュフェンス、隣家まで再現しています。寸法は写真からの推定値で、室内は外観の窓・玄関・勝手口に合わせて設計した間取りです(実際の建物の間取りではありません)。被害シミュレーションでは金属屋根・笠木・サイディング・ルーバー・インナーバルコニーなど、このモデルの部位に合わせた被害が出ます。" },
+};
+const PANEL_TABS = [["parts", "部位"], ["damage", "損害評価"], ["view", "表示"], ["spec", "仕様・間取り"]];
+
+/* 部位・被害を選ぶ(もう一度選ぶと解除)。モデル上のラベル・点から選んだときも、該当するタブを開く */
+function selectMember(key) {
+  state.selectedMember = state.selectedMember === key ? null : key;
+  const m = state.selectedMember && currentDef.members.find((x) => x.key === key);
+  if (m) state.tab = m.isDamage ? "damage" : "parts";
+  renderLabels(); renderPanel(); applyMode();
+}
+
 function renderPanel() {
+  const scrollY = panel.scrollTop, prevTab = panel.dataset.tab;
   panel.innerHTML = "";
 
-  // 階数
-  // 建物モデル
-  // ライティング
-  const secLight = el("div", "section", "<h2>ライティング</h2>");
-  const rowLt = el("div", "btn-row");
-  Object.entries(LIGHT_PRESETS).forEach(([k, p]) => {
-    const b = el("button", "btn" + (state.light === k ? " active" : ""), p.label);
-    b.addEventListener("click", () => { state.light = k; applyLighting(); renderPanel(); });
-    rowLt.appendChild(b);
-  });
-  secLight.appendChild(rowLt);
-  secLight.appendChild(el("div", "legend-cap", "「昼」「夕方」はトーンマッピング・空の環境光(映り込み)・太陽の影を加えた写実表示です。夕方は室内に明かりが灯ります。<b>L</b>キーで切替。「従来」は影のない均一な照明で、部材の確認に向きます。"));
-  panel.appendChild(secLight);
-
-  const secModel = el("div", "section", "<h2>建物モデル</h2>");
-  const rowMd = el("div", "btn-row");
-  [["standard", "標準(木造在来)"], ["wafu", "和風住宅(入母屋)"], ["cube", "キューブ型(写真再現)"]].forEach(([k, lb]) => {
-    const b = el("button", "btn" + (state.buildingModel === k ? " active" : ""), lb);
-    b.addEventListener("click", () => {
-      if (state.buildingModel === k) return;
-      state.buildingModel = k; state.selectedMember = null; state.selectedDim = null;
-      rebuild(true);
+  /* ---- 部品 ---- */
+  const section = (title, meta) => {
+    const s = el("div", "section", `<h2>${title}${meta ? `<span class="meta">${meta}</span>` : ""}</h2>`);
+    return s;
+  };
+  // 択一のセグメント。items: [[値, ラベル, 補足?]]
+  const seg = (items, cur, onPick, cols) => {
+    const box = el("div", "seg");
+    box.style.setProperty("--cols", cols || items.length);
+    items.forEach(([v, lb, sub]) => {
+      const b = el("button", cur === v ? "active" : "", lb + (sub ? `<small>${sub}</small>` : ""));
+      b.setAttribute("aria-pressed", cur === v ? "true" : "false");
+      b.addEventListener("click", () => onPick(v));
+      box.appendChild(b);
     });
-    rowMd.appendChild(b);
-  });
-  secModel.appendChild(rowMd);
-  const modelNote = {
-    cube: "写真を基に再現した木造2階建・窯業系サイディング・片流れ屋根のモデルです。敷地(砂利・犬走り・乱形石アプローチ)、門柱、メッシュフェンス、隣家までそのまま再現しています。寸法は写真からの推定値です。室内は外観の窓・玄関・勝手口に合わせて設計した間取りです(実際の建物の間取りではありません)。<b>階数・屋根形状・屋根材/外壁材の切替は、このモデルでは使用できません</b>(標準モデルでご利用ください)。被害シミュレーションは使えます(金属屋根・笠木・サイディング・ルーバー・インナーバルコニーなど、このモデルの部位に合わせた被害が出ます)。",
-    wafu: "農家住宅を想定した和風住宅(木造2階建・入母屋屋根・瓦葺き)のモデルです。下屋、縁側(濡れ縁)、雨戸・戸袋、真壁の化粧柱、破風・懸魚、棟瓦・鬼瓦、切妻の玄関ポーチ、庭(飛石・松・石積み門柱)を再現しています。<b>階数・屋根形状・屋根材/外壁材の切替は、このモデルでは使用できません</b>(標準モデルでご利用ください)。被害シミュレーションは使えます(瓦・棟瓦・鬼瓦・下屋・縁側・畳・京壁など、このモデルの部位に合わせた被害が出ます)。",
-    standard: "汎用の木造在来工法モデルです。階数・屋根形状・仕上材の切替と被害シミュレーションが使えます。",
-  }[state.buildingModel];
-  secModel.appendChild(el("div", "legend-cap", modelNote));
-  panel.appendChild(secModel);
+    return box;
+  };
+  // オン/オフのスイッチ
+  const toggle = (label, on, onChange) => {
+    const b = el("button", "tgl", `<span>${label}</span><span class="sw"></span>`);
+    b.setAttribute("role", "switch");
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    b.addEventListener("click", () => onChange(!on));
+    return b;
+  };
+  // 折りたたみの説明
+  const help = (html, label) => {
+    const d = el("details", "help", `<summary>${label || "説明"}</summary><div>${html}</div>`);
+    return d;
+  };
+  const cap = (html) => el("div", "legend-cap", html);
+  const button = (label, onClick) => { const b = el("button", "btn", label); b.addEventListener("click", onClick); return b; };
+  const item = (m, extraCls) => {
+    const b = el("button", "item" + (extraCls ? " " + extraCls : "") + (state.selectedMember === m.key ? " active" : ""), m.name);
+    b.addEventListener("click", () => selectMember(m.key));
+    return b;
+  };
+  const noteCard = (m, cls) => {
+    const c = el("div", "card" + (cls ? " " + cls : ""), `<button class="close" aria-label="選択を解除">解除</button><span class="title">${m.name}</span>${m.note}`);
+    c.querySelector(".close").addEventListener("click", () => selectMember(m.key));
+    return c;
+  };
 
-  // 間取り(平面図・面積表)。標準モデル・和風住宅の設計情報から描く
-  const planP = currentPlan(), planN = planStories();
-  if (planP) {
-    const secPlan = el("details", "section plan-sec");
-    secPlan.open = state.planOpen;
-    secPlan.appendChild(el("summary", "", "<h2>間取り(平面図・面積表)</h2>"));
-    secPlan.addEventListener("toggle", () => { state.planOpen = secPlan.open; });
-    const floors = planN === 2 ? [1, 2] : [1];
-    if (!floors.includes(state.planFloor)) state.planFloor = 1;
-    if (floors.length > 1) {
-      const rowF = el("div", "btn-row");
-      floors.forEach((fl) => {
-        const b = el("button", "btn" + (state.planFloor === fl ? " active" : ""), `${fl}階`);
-        b.addEventListener("click", () => { state.planFloor = fl; renderPanel(); });
-        rowF.appendChild(b);
-      });
-      secPlan.appendChild(rowF);
+  /* ---- 上部: 建物モデル + タブ ---- */
+  const head = el("div", "p-head");
+  head.appendChild(el("div", "eyebrow", "Building model · 建物モデル"));
+  head.appendChild(seg(Object.entries(MODEL_INFO).map(([k, v]) => [k, v.label, v.sub]), state.buildingModel, (k) => {
+    if (state.buildingModel === k) return;
+    state.buildingModel = k; state.selectedMember = null; state.selectedDim = null;
+    rebuild(true);
+  }));
+  const info = MODEL_INFO[state.buildingModel];
+  head.appendChild(el("p", "model-sum", info.sum));
+  const tabs = el("div", "tabs");
+  tabs.setAttribute("role", "tablist");
+  const dmgCount = currentDef.members.filter((m) => m.isDamage).length;
+  PANEL_TABS.forEach(([k, lb], i) => {
+    const badge = k === "damage" && dmgCount ? `<span class="badge">${dmgCount}</span>` : "";
+    const t = el("button", "tab" + (state.tab === k ? " active" : ""), `<span class="no">0${i + 1}</span>${lb}${badge}`);
+    t.setAttribute("role", "tab");
+    t.setAttribute("aria-selected", state.tab === k ? "true" : "false");
+    t.addEventListener("click", () => { state.tab = k; renderPanel(); });
+    tabs.appendChild(t);
+  });
+  head.appendChild(tabs);
+  panel.appendChild(head);
+
+  const body = el("div", "p-body");
+  panel.appendChild(body);
+
+  /* ---- 01 部位: 部位を選んで評価の着眼点を読む ---- */
+  if (state.tab === "parts") {
+    const plain = currentDef.members.filter((m) => !m.isDamage);
+    const sec = section("部位と評価の着眼点", `${plain.length}件`);
+    const active = plain.find((m) => m.key === state.selectedMember);
+    sec.appendChild(active ? noteCard(active) : el("div", "empty", "部位を選ぶと、評価の着眼点がここに表示されます。モデル上の橙色の点・ラベルからも選べます。"));
+    sec.appendChild(seg([[false, "まとめて"], [true, "部材ごと"]], state.detailParts, (v) => { state.detailParts = v; state.selectedMember = null; rebuild(false); }, 2));
+    const list = el("div", "list");
+    list.style.marginTop = "10px";
+    if (state.detailParts) {
+      const groups = new Map();
+      plain.forEach((m) => { const g = m.part || "その他"; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(m); });
+      groups.forEach((arr, g) => { list.appendChild(el("div", "group-h", g)); arr.forEach((m) => list.appendChild(item(m))); });
+    } else {
+      plain.forEach((m) => list.appendChild(item(m)));
     }
-    const body = el("div", "", `<div class="plan-svg"></div>${planTableHTML(planP, state.planFloor, planN)}`);
-    body.querySelector(".plan-svg").innerHTML = planSVG(planP, state.planFloor, planN, 290, null);
-    bindPlanHover(body, planP, state.planFloor, planN, 290);
-    secPlan.appendChild(body);
-    const big = el("button", "btn", floors.length > 1 ? "拡大表示(1階・2階を並べて表示)" : "拡大表示");
-    big.style.textAlign = "center";
-    big.addEventListener("click", openPlanOverlay);
-    secPlan.appendChild(big);
-    secPlan.appendChild(el("div", "legend-cap", `面積は室内側の仕上げ面(内法)による概算です。壁面積は窓・戸の開口を差し引いたクロス張替え面積の目安です。1帖=${JO}㎡。`));
-    panel.appendChild(secPlan);
+    sec.appendChild(list);
+    const t = el("div", "");
+    t.style.marginTop = "8px";
+    t.appendChild(toggle("選んだ部位以外を薄く表示", state.focusDim, (v) => { state.focusDim = v; applyMode(); renderPanel(); }));
+    sec.appendChild(t);
+    sec.appendChild(help("選んだ部位はモデル上で橙色に点滅します。内部の部位を選ぶと、外装が自動で透けて表示されます。「部材ごと」にすると、柱・梁・筋かいなどを1つずつ選べ、区分ごとの使用数も表示されます(取替割合の考え方の練習に)。"));
+    body.appendChild(sec);
   }
 
-  // 視点モード
-  // 浸水シミュレーション(水災)
-  const secFlood = el("div", "section", "<h2>浸水痕の高さ(水災の評価)</h2>");
-  {
-    const row0 = el("div", "btn-row");
-    const bNone = el("button", "btn" + (state.floodH === null ? " active" : ""), "痕跡なし");
-    bNone.addEventListener("click", () => { state.floodH = null; updateFlood(); renderPanel(); });
-    row0.appendChild(bNone);
-    FLOOD_PRESETS.forEach((pz) => {
-      const b = el("button", "btn" + (state.floodH !== null && Math.abs(state.floodH - pz.d) < 0.005 ? " active" : ""), pz.label);
-      b.addEventListener("click", () => { state.floodH = pz.d; updateFlood(); renderPanel(); });
-      row0.appendChild(b);
-    });
-    secFlood.appendChild(row0);
-    // 連続調整(1cm刻み)
+  /* ---- 02 損害評価: 被害シミュレーションと浸水痕 ---- */
+  if (state.tab === "damage") {
+    const sec = section("被害シミュレーション", state.dmgScenario !== "none" ? `${dmgCount}か所` : "");
+    sec.appendChild(seg([["none", "なし"], ["wind", "台風"], ["hail", "雹"], ["snow", "大雪"], ["flood", "水災"]], state.dmgScenario,
+      (k) => { state.dmgScenario = k; state.selectedMember = null; rebuild(false); }, 5));
+    if (state.dmgScenario === "none") {
+      sec.appendChild(cap("災害を選ぶと、モデル上に被害が発生します。被害箇所を1つずつ確認し、評価の着眼点を読んで練習します。"));
+    } else {
+      const dmgs = currentDef.members.filter((m) => m.isDamage);
+      const activeD = dmgs.find((m) => m.key === state.selectedMember);
+      const wrap = el("div", "");
+      wrap.style.marginTop = "12px";
+      wrap.appendChild(activeD ? noteCard(activeD, "dmg") : el("div", "empty", "被害箇所を選ぶと、評価の着眼点がここに表示されます。モデル上の赤い点からも選べます。"));
+      const list = el("div", "list");
+      dmgs.forEach((m) => list.appendChild(item(m, "dmg")));
+      wrap.appendChild(list);
+      sec.appendChild(wrap);
+      sec.appendChild(button("別の被害パターンを生成", () => { state.dmgSeed++; state.selectedMember = null; rebuild(false); }));
+      sec.appendChild(help("内部の被害は「表示」タブの「内部(外装を透過)」にすると確認しやすくなります。被害は研修用に自動で作った架空のもので、実際の被害の分布や損害割合を示すものではありません。"));
+    }
+    body.appendChild(sec);
+
+    // 浸水痕(水災の評価)
+    const secF = section("浸水痕の高さ", "水災の評価");
+    const fmt = (d) => d === null ? "痕跡なし" : (d >= 0 ? `床上 ${(d * 100).toFixed(0)}cm` : `床下 ${Math.abs(d * 100).toFixed(0)}cm`);
+    const presets = [[null, "なし"], ...FLOOD_PRESETS.map((p) => [p.d, p.label.replace("床上", "+")])];
+    const curP = presets.find(([d]) => d === null ? state.floodH === null : state.floodH !== null && Math.abs(state.floodH - d) < 0.005);
+    secF.appendChild(seg(presets, curP ? curP[0] : undefined, (d) => { state.floodH = d; updateFlood(); renderPanel(); }, 4));
     const sl = el("div", "slider-row");
     const rng = document.createElement("input");
     rng.type = "range"; rng.min = "-0.30"; rng.max = "1.60"; rng.step = "0.01";
     rng.value = String(state.floodH === null ? 0 : state.floodH);
+    rng.setAttribute("aria-label", "浸水痕の高さ(1階の床面から)");
     const val = el("span", "slider-val");
-    const fmt = (d) => d === null ? "痕跡なし" : (d >= 0 ? `床上 ${(d * 100).toFixed(0)}cm` : `床下 ${Math.abs(d * 100).toFixed(0)}cm`);
     val.textContent = fmt(state.floodH);
     rng.addEventListener("input", () => {          // つまみを動かしている間はパネルを再描画しない
       state.floodH = parseFloat(rng.value);
@@ -5634,240 +5781,141 @@ function renderPanel() {
     });
     rng.addEventListener("change", () => renderPanel());
     sl.appendChild(rng); sl.appendChild(val);
-    secFlood.appendChild(sl);
+    secF.appendChild(sl);
     const f = floodLevel();
-    secFlood.appendChild(el("div", "legend-cap", f
-      ? `痕跡の高さ: 1階の床面から <b>${fmt(f.d)}</b>(地面から ${f.y.toFixed(2)}m)。線より下の汚損の範囲が水に浸かった部位です。<b>歩行モード</b>で室内に入り、壁・建具・造作のどこまで痕跡が残っているかを確認してください。`
-      : "水が引いたあとに残る浸水痕を表示します。評価は事後に行うため、外壁・内壁・建具・造作に残る汚損の範囲と水位線の高さを実測し、床下浸水か床上浸水か、床上なら床から何cmかを記録します。畳・断熱材・キッチン下部・ユニットバスの機器など、痕跡の高さで交換の要否が変わる部位を確認します。"));
-    // 実測ツール
-    const bM = el("button", "btn" + (state.measure ? " active" : ""), (state.measure ? "☑ " : "☐ ") + "実測ツール(画面中央の十字で高さを測る)");
-    bM.style.marginTop = "8px";
-    bM.addEventListener("click", () => setMeasure(!state.measure));
-    secFlood.appendChild(bM);
-    if (state.measure) secFlood.appendChild(el("div", "legend-cap", "画面中央の十字が当たった点の<b>床面からの高さ(FL±)</b>を上部に表示します。まず目測で見当を付けてから確認する使い方を想定しています。"));
+    if (f) secF.appendChild(cap(`1階の床面から ${fmt(f.d)}(地面から ${f.y.toFixed(2)}m)。線より下の汚損の範囲が水に浸かった部位です。`));
+    const t = el("div", "");
+    t.style.marginTop = "6px";
+    t.appendChild(toggle("実測ツール(十字で高さを測る)", state.measure, (v) => setMeasure(v)));
+    secF.appendChild(t);
+    secF.appendChild(help("水が引いたあとに残る浸水痕を表示します。評価は事後に行うため、外壁・内壁・建具・造作に残る汚損の範囲と水位線の高さを実測し、床下浸水か床上浸水か、床上なら床から何cmかを記録します。畳・断熱材・キッチン下部・ユニットバスの機器など、痕跡の高さで交換の要否が変わる部位を確認します。<br>実測ツールは、画面中央の十字が当たった点の床面からの高さ(FL±)を上部に表示します。まず目測で見当を付けてから確認する使い方を想定しています。歩行モードで室内に入ると、壁・建具・造作のどこまで痕跡が残っているかを確認できます。"));
+    body.appendChild(secF);
   }
-  panel.appendChild(secFlood);
 
-  const secView = el("div", "section", "<h2>視点モード</h2>");
-  const rowV = el("div", "btn-row");
-  [[false, "オービット(全体を見る)"], [true, "歩行モード"]].forEach(([v, lb]) => {
-    const b = el("button", "btn" + (state.walk === v ? " active" : ""), lb);
-    b.addEventListener("click", () => { if (state.walk !== v) setWalk(v); });
-    rowV.appendChild(b);
-  });
-  secView.appendChild(rowV);
-  const bEnv = el("button", "btn" + (state.showEnv ? " active" : ""), (state.showEnv ? "☑ " : "☐ ") + "周辺環境(隣家・道路・塀)を表示");
-  bEnv.style.marginTop = "6px";
-  bEnv.addEventListener("click", () => { state.showEnv = !state.showEnv; applyEnvVisibility(); renderPanel(); });
-  secView.appendChild(bEnv);
-  if (state.showEnv) {
-    const bFade = el("button", "btn" + (state.envFade ? " active" : ""), (state.envFade ? "☑ " : "☐ ") + "視界を遮る隣家・塀を自動で透過");
-    bFade.style.marginTop = "6px";
-    bFade.addEventListener("click", () => { state.envFade = !state.envFade; if (!state.envFade) clearEnvFade(); renderPanel(); });
-    secView.appendChild(bFade);
-    secView.appendChild(el("div", "legend-cap", "カメラと建物の間に入った隣家・塀・電柱だけを自動で薄く表示します(歩行モードでは実際の見え方を優先して無効)。"));
-  }
-  if (state.walk) {
-    const rowH = el("div", "btn-row");
-    const heights = [["1階の目線", 1.6], ["2階の目線", 1.6 + 2.75], ["見下ろし", 6.5]];
-    heights.forEach(([lb, h]) => {
-      if (lb === "2階の目線" && state.stories < 2) return;
-      const b = el("button", "btn" + (Math.abs(walkState.eye - h) < 0.05 ? " active" : ""), lb);
-      b.addEventListener("click", () => { walkState.eye = h; updateWalkHud(); renderPanel(); });
-      rowH.appendChild(b);
-    });
-    rowH.style.marginTop = "6px";
-    secView.appendChild(rowH);
-    const bp = el("button", "btn" + (state.walkPass ? " active" : ""), (state.walkPass ? "☑ " : "☐ ") + "壁をすり抜ける(内部も歩ける)");
-    bp.style.marginTop = "6px";
-    bp.addEventListener("click", () => { state.walkPass = !state.walkPass; if (!state.walkPass) buildWalkColliders(); renderPanel(); });
-    secView.appendChild(bp);
-    const bs = el("button", "btn", "開始位置に戻る");
-    bs.style.marginTop = "6px";
-    bs.addEventListener("click", () => { walkState.pos.set(0, walkState.eye, 9); walkState.yaw = 0; walkState.pitch = -0.03; });
-    secView.appendChild(bs);
-    secView.appendChild(el("div", "legend-cap", "PCは画面クリックで視点操作を開始(W A S D 移動 / Shift 早歩き / Q E 高さ / Esc 解除)。スマホ・タブレットは画面ドラッグで見回し、左下の十字ボタンで移動します。<b>F</b>キーでいつでも切替できます。"));
-  }
-  panel.appendChild(secView);
+  /* ---- 03 表示: 見え方・視点・照明・寸法 ---- */
+  if (state.tab === "view") {
+    const secM = section("表示モード");
+    secM.appendChild(seg([["normal", "標準"], ["parts", "部位を色分け"], ["members", "部材を色分け"]],
+      state.mode, (k) => { state.mode = k; applyMode(); renderPanel(); }, 3));
+    const seg2 = seg([["frame", "骨組み(軸組)"], ["interior", "内部(外装を透過)"]], state.mode, (k) => { state.mode = k; applyMode(); renderPanel(); }, 2);
+    seg2.style.marginTop = "4px";
+    secM.appendChild(seg2);
+    if (state.mode === "members") {
+      const lg = el("div", "legend");
+      memberLegendItems().forEach(([nm, ct]) => lg.appendChild(el("div", "legend-item", `<span class="sw" style="background:${memberColorHex(nm)}"></span>${nm}<span class="ct">×${ct}</span>`)));
+      secM.appendChild(lg);
+      secM.appendChild(help("部材の種類ごとに色を変えています。柱・梁・筋かい・母屋・垂木などの違いを見分ける練習に使えます。外装は半透明にしているので、内部の軸組も同時に確認できます。"));
+    }
+    if (state.mode === "parts") {
+      const lg = el("div", "legend");
+      Object.keys(PART_COLORS).forEach((p) => lg.appendChild(el("div", "legend-item", `<span class="sw" style="background:${PART_COLORS[p]}"></span>${p}`)));
+      secM.appendChild(lg);
+      secM.appendChild(help("外装(屋根・外壁・開口部等)は半透明で表示し、内部の部位も同時に確認できます。この部位区分は一般的な建築部位に基づく研修用の区分で、NOSAIの正式な評価様式の区分ではありません。"));
+    }
+    body.appendChild(secM);
 
-  if (state.buildingModel === "standard") {
-  const secN = el("div", "section", "<h2>階数</h2>");
-  const rowN = el("div", "btn-row");
-  [[1, "平屋(1階建て)"], [2, "2階建て"]].forEach(([v, lb]) => {
-    const b = el("button", "btn" + (state.stories === v ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.stories = v; rebuild(true); });
-    rowN.appendChild(b);
-  });
-  secN.appendChild(rowN);
-  panel.appendChild(secN);
-  }   // ← 階数(標準モデルのみ)
+    const secV = section("視点");
+    secV.appendChild(seg([[false, "全体を見る"], [true, "歩行モード"]], state.walk, (v) => { if (state.walk !== v) setWalk(v); }, 2));
+    if (state.walk) {
+      const eyes = [["1階の目線", 1.6], ["2階の目線", 1.6 + 2.75], ["見下ろし", 6.5]].filter(([lb]) => lb !== "2階の目線" || planStories() >= 2);
+      const curE = eyes.find(([, h]) => Math.abs(walkState.eye - h) < 0.05);
+      const s = seg(eyes.map(([lb, h]) => [h, lb]), curE ? curE[1] : undefined, (h) => { walkState.eye = h; updateWalkHud(); renderPanel(); }, eyes.length);
+      s.style.marginTop = "8px";
+      secV.appendChild(s);
+      const t = el("div", "");
+      t.style.marginTop = "6px";
+      t.appendChild(toggle("壁をすり抜ける(内部も歩ける)", state.walkPass, (v) => { state.walkPass = v; if (!v) buildWalkColliders(); renderPanel(); }));
+      secV.appendChild(t);
+      secV.appendChild(button("開始位置に戻る", () => { walkState.pos.set(0, walkState.eye, 9); walkState.yaw = 0; walkState.pitch = -0.03; }));
+      secV.appendChild(help("PCは画面をクリックして視点操作を開始します(W A S D 移動 / Shift 早歩き / Q E 高さ / Esc 解除)。スマホ・タブレットは画面ドラッグで見回し、左下の十字ボタンで移動します。<b>F</b>キーでいつでも切り替えられます。", "操作方法"));
+    }
+    const env = el("div", "");
+    env.style.marginTop = "8px";
+    env.appendChild(toggle("周辺環境(隣家・道路・塀)", state.showEnv, (v) => { state.showEnv = v; applyEnvVisibility(); renderPanel(); }));
+    if (state.showEnv) env.appendChild(toggle("視界を遮る隣家・塀を自動で透過", state.envFade, (v) => { state.envFade = v; if (!v) clearEnvFade(); renderPanel(); }));
+    secV.appendChild(env);
+    body.appendChild(secV);
 
-  // 表示モード
-  const secMode = el("div", "section", "<h2>表示モード</h2>");
-  const rowM = el("div", "btn-row");
-  [["normal","標準"],["parts","部位 色分け"],["members","部材ごとに色分け"],["frame","骨組み(軸組)"],["interior","内部(外装を透過)"]].forEach(([k, lb]) => {
-    const b = el("button", "btn" + (state.mode === k ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.mode = k; applyMode(); renderPanel(); });
-    rowM.appendChild(b);
-  });
-  secMode.appendChild(rowM);
-  if (state.mode === "members") {
-    const lg = el("div", "legend");
-    memberLegendItems().forEach(([nm, ct]) => {
-      lg.appendChild(el("div", "legend-item",
-        `<span class="sw" style="background:${memberColorHex(nm)}"></span>${nm}<span style="color:#94a3b8;margin-left:auto">×${ct}</span>`));
-    });
-    lg.appendChild(el("div", "legend-cap", "部材の種類ごとに色を変えています。柱・梁・筋かい・母屋・垂木などの違いを見分ける練習に使えます。外装は半透明にしているので、内部の軸組も同時に確認できます(「骨組み(軸組)」と併用すると分かりやすくなります)。"));
-    secMode.appendChild(lg);
-  }
-  if (state.mode === "parts") {
-    const lg = el("div", "legend");
-    Object.keys(PART_COLORS).forEach((p) => {
-      lg.appendChild(el("div", "legend-item", `<span class="sw" style="background:${PART_COLORS[p]}"></span>${p}`));
-    });
-    lg.appendChild(el("div", "legend-cap",
-      "外装(屋根・外壁・開口部等)は半透明で表示し、内部の部位も同時に確認できます。※この部位区分は一般的な建築部位に基づく研修用の区分で、NOSAIの正式な評価様式の区分ではありません。"));
-    secMode.appendChild(lg);
-  }
-  panel.appendChild(secMode);
+    const secL = section("ライティング", "L キー");
+    secL.appendChild(seg(Object.entries(LIGHT_PRESETS).map(([k, p]) => [k, p.label.replace("(写実)", ""), k === "legacy" ? "影なし" : "写実"]), state.light,
+      (k) => { state.light = k; applyLighting(); renderPanel(); }, 3));
+    secL.appendChild(help("「昼」「夕方」はトーンマッピング・空の環境光(映り込み)・太陽の影を加えた写実表示で、夕方は室内に明かりが灯ります。「従来」は影のない均一な照明で、部材の確認に向きます。"));
+    body.appendChild(secL);
 
-  if (state.buildingModel === "standard") {
-  // 屋根形状
-  const secShape = el("div", "section", "<h2>屋根形状</h2>");
-  const rowS = el("div", "btn-row");
-  [["kiritsuma","切妻"],["yosemune","寄棟"],["katanagare","片流れ"],["rikuyane","陸屋根"]].forEach(([k, lb]) => {
-    const b = el("button", "btn" + (state.roofShape === k ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.roofShape = k; rebuild(false); });
-    rowS.appendChild(b);
-  });
-  secShape.appendChild(rowS);
-  panel.appendChild(secShape);
-
-  // 屋根材(陸屋根は防水層のため対象外)
-  const secR = el("div", "section", "<h2>屋根材</h2>");
-  if (state.roofShape === "rikuyane") {
-    secR.appendChild(el("div", "legend-cap", "陸屋根はシート防水等の防水層で表現しているため、屋根材の選択は勾配屋根(切妻・寄棟・片流れ)で有効です。"));
-  } else {
-    Object.keys(ROOFS).forEach((k) => {
-      const m = ROOFS[k];
-      const b = el("button", "btn" + (state.roofKey === k ? " active" : ""),
-        `<span class="swatch" style="background:#${m.color.toString(16).padStart(6,"0")}"></span>${m.label}`);
-      b.addEventListener("click", () => { state.roofKey = k; rebuild(false); });
-      secR.appendChild(b);
-    });
-  }
-  panel.appendChild(secR);
-
-  const secW = el("div", "section", "<h2>外壁材</h2>");
-  Object.keys(WALLS).forEach((k) => {
-    const m = WALLS[k];
-    const b = el("button", "btn" + (state.wallKey === k ? " active" : ""),
-      `<span class="swatch" style="background:#${m.color.toString(16).padStart(6,"0")}"></span>${m.label}`);
-    b.addEventListener("click", () => { state.wallKey = k; rebuild(false); });
-    secW.appendChild(b);
-  });
-  panel.appendChild(secW);
-  }   // ← 屋根形状〜外壁材(標準モデルのみ)
-
-  // 損害評価の練習(被害シミュレーション)。被害の出方はモデルごとの部位(和風住宅は瓦・下屋・縁側、キューブ型は金属屋根・サイディング等)に合わせる
-  const secDmg = el("div", "section", "<h2>損害評価の練習(被害シミュレーション)</h2>");
-  const rowSc = el("div", "btn-row");
-  [["none", "被害なし"], ["wind", "台風・強風"], ["hail", "雹(ひょう)"], ["snow", "大雪"], ["flood", "水災(浸水)"]].forEach(([k, lb]) => {
-    const b = el("button", "btn" + (state.dmgScenario === k ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.dmgScenario = k; state.selectedMember = null; rebuild(false); });
-    rowSc.appendChild(b);
-  });
-  secDmg.appendChild(rowSc);
-  if (state.dmgScenario !== "none") {
-    const br = el("button", "btn", "🔄 別の被害パターンを生成");
-    br.style.marginTop = "6px";
-    br.addEventListener("click", () => { state.dmgSeed++; state.selectedMember = null; rebuild(false); });
-    secDmg.appendChild(br);
-    const dmgs = currentDef.members.filter((m) => m.isDamage);
-    secDmg.appendChild(el("div", "legend-cap", `被害箇所は赤色マーカーで表示されます(全${dmgs.length}箇所)。各ボタンを押すと該当部がハイライトされ、評価の着眼点が表示されます。内部の被害は「内部(外装を透過)」表示で確認しやすくなります。`));
-    dmgs.forEach((m) => {
-      const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
-      b.style.borderColor = state.selectedMember === m.key ? "#f59e0b" : "#fca5a5";
-      b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
-      secDmg.appendChild(b);
-    });
-    const activeD = dmgs.find((m) => m.key === state.selectedMember);
-    if (activeD) secDmg.appendChild(el("div", "note-box", `<div class="title">${activeD.name}</div>${activeD.note}`));
-  }
-  panel.appendChild(secDmg);
-
-  // 寸法
-  const secD = el("div", "section", "<h2>寸法の名称</h2>");
-  const bd = el("button", "btn" + (state.showDims ? " active" : ""),
-    state.showDims ? "寸法名称を非表示にする" : "寸法線と名称を表示する(間口・奥行・軒高・棟高)");
-  bd.addEventListener("click", () => { state.showDims = !state.showDims; if (!state.showDims) state.selectedDim = null; renderLabels(); renderPanel(); applyMode(); });
-  secD.appendChild(bd);
-  if (state.showDims) {
-    const rowD = el("div", "btn-row");
-    currentDef.dims.forEach((d) => {
-      const b = el("button", "btn" + (state.selectedDim === d.name ? " active" : ""), d.name);
-      b.addEventListener("click", () => {
-        state.selectedDim = state.selectedDim === d.name ? null : d.name;
-        renderLabels(); renderPanel();
+    const secD = section("寸法の名称");
+    secD.appendChild(toggle("寸法線と名称を表示", state.showDims, (v) => { state.showDims = v; if (!v) state.selectedDim = null; renderLabels(); renderPanel(); applyMode(); }));
+    if (state.showDims) {
+      const chips = el("div", "chips");
+      currentDef.dims.forEach((d) => {
+        const c = el("button", "chip" + (state.selectedDim === d.name ? " active" : ""), d.name);
+        c.addEventListener("click", () => { state.selectedDim = state.selectedDim === d.name ? null : d.name; renderLabels(); renderPanel(); });
+        chips.appendChild(c);
       });
-      rowD.appendChild(b);
-    });
-    secD.appendChild(rowD);
-    secD.appendChild(el("div", "legend-cap", "寸法名を押すと該当する寸法線がオレンジ色に点滅します(もう一度押すと解除)。"));
+      secD.appendChild(chips);
+      secD.appendChild(cap("名称を押すと、その寸法線が橙色に点滅します。"));
+    }
+    body.appendChild(secD);
   }
-  panel.appendChild(secD);
 
-  // 部材・部位
-  // 部材の分け方
-  const secGran = el("div", "section", "<h2>部材の分け方</h2>");
-  const rowGran = el("div", "btn-row");
-  [[false, "まとめて"], [true, "個別(部材ごと)"]].forEach(([v, lb]) => {
-    const b = el("button", "btn" + (state.detailParts === v ? " active" : ""), lb);
-    b.addEventListener("click", () => { state.detailParts = v; state.selectedMember = null; rebuild(false); });
-    rowGran.appendChild(b);
-  });
-  secGran.appendChild(rowGran);
-  const bFD = el("button", "btn" + (state.focusDim ? " active" : ""), (state.focusDim ? "☑ " : "☐ ") + "選択した部材以外を淡色化");
-  bFD.style.marginTop = "6px";
-  bFD.addEventListener("click", () => { state.focusDim = !state.focusDim; applyMode(); renderPanel(); });
-  secGran.appendChild(bFD);
-  secGran.appendChild(el("div", "legend-cap", state.detailParts
-    ? "モデル上の部材名ごとに分けて表示しています(柱・梁・筋かい等を個別に選択できます)。"
-    : "関連する部材をまとめた区分で表示しています。「個別」にすると柱・梁・筋かいなどを1つずつ選択できます。"));
-  panel.appendChild(secGran);
+  /* ---- 04 仕様・間取り: 建物の仕様の切替(標準モデル)と平面図・面積表 ---- */
+  if (state.tab === "spec") {
+    const secS = section("建物の仕様");
+    if (state.buildingModel === "standard") {
+      secS.appendChild(el("div", "sub-h", "階数"));
+      secS.appendChild(seg([[1, "平屋"], [2, "2階建て"]], state.stories, (v) => { state.stories = v; rebuild(true); }, 2));
+      secS.appendChild(el("div", "sub-h", "屋根形状"));
+      secS.appendChild(seg([["kiritsuma", "切妻"], ["yosemune", "寄棟"], ["katanagare", "片流れ"], ["rikuyane", "陸屋根"]], state.roofShape, (k) => { state.roofShape = k; rebuild(false); }, 4));
+      const matList = (title, defs, cur, onPick) => {
+        secS.appendChild(el("div", "sub-h", title));
+        const list = el("div", "list");
+        Object.keys(defs).forEach((k) => {
+          const b = el("button", "item plain" + (cur === k ? " active" : ""), `<span class="swatch" style="background:#${defs[k].color.toString(16).padStart(6, "0")}"></span>${defs[k].label}`);
+          b.addEventListener("click", () => onPick(k));
+          list.appendChild(b);
+        });
+        secS.appendChild(list);
+      };
+      if (state.roofShape === "rikuyane") {
+        secS.appendChild(el("div", "sub-h", "屋根材"));
+        secS.appendChild(cap("陸屋根は防水層で表現しているため、屋根材は勾配屋根(切妻・寄棟・片流れ)で選べます。"));
+      } else {
+        matList("屋根材", ROOFS, state.roofKey, (k) => { state.roofKey = k; rebuild(false); });
+      }
+      matList("外壁材", WALLS, state.wallKey, (k) => { state.wallKey = k; rebuild(false); });
+    } else {
+      secS.appendChild(el("div", "empty", `${info.label}モデルは仕様が決まっているため、階数・屋根・仕上材の切替はありません。切り替えて練習したいときは「標準」モデルを選んでください。`));
+    }
+    secS.appendChild(help(info.detail, "このモデルについて"));
+    body.appendChild(secS);
 
-  const secM = el("div", "section", "<h2>部位と評価の着眼点</h2><div class=\"legend-cap\" style=\"margin:0 0 6px\">選択した部位はモデル上でオレンジ色に点滅します。内部の部位を選ぶと外装が自動的に透けて表示されます</div>");
-  const plain = currentDef.members.filter((m) => !m.isDamage);
-  const mkBtn = (m) => {
-    const b = el("button", "btn" + (state.selectedMember === m.key ? " active" : ""), m.name);
-    b.addEventListener("click", () => { state.selectedMember = state.selectedMember === m.key ? null : m.key; renderLabels(); renderPanel(); applyMode(); });
-    return b;
-  };
-  if (state.detailParts) {
-    const groups = new Map();
-    plain.forEach((m) => { const g = m.part || "その他"; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(m); });
-    [...groups.entries()].forEach(([g, arr]) => {
-      const h = el("div", "legend-cap", `<b style="color:#475569">${g}</b>`);
-      h.style.margin = "8px 0 3px";
-      secM.appendChild(h);
-      arr.forEach((m) => secM.appendChild(mkBtn(m)));
-    });
-  } else {
-    plain.forEach((m) => secM.appendChild(mkBtn(m)));
+    const planP = currentPlan(), planN = planStories();
+    if (planP) {
+      const secP = section("間取り(平面図・面積表)");
+      const floors = planN === 2 ? [1, 2] : [1];
+      if (!floors.includes(state.planFloor)) state.planFloor = 1;
+      if (floors.length > 1) secP.appendChild(seg(floors.map((fl) => [fl, `${fl}階`]), state.planFloor, (fl) => { state.planFloor = fl; renderPanel(); }, 2));
+      const pb = el("div", "", `<div class="plan-svg"></div>${planTableHTML(planP, state.planFloor, planN)}`);
+      pb.querySelector(".plan-svg").innerHTML = planSVG(planP, state.planFloor, planN, 290, null);
+      bindPlanHover(pb, planP, state.planFloor, planN, 290);
+      secP.appendChild(pb);
+      secP.appendChild(button(floors.length > 1 ? "拡大表示(1階・2階を並べる)" : "拡大表示", openPlanOverlay));
+      secP.appendChild(cap(`面積は室内側の仕上げ面(内法)による概算です。壁面積は窓・戸の開口を差し引いたクロス張替え面積の目安です。1帖=${JO}㎡。`));
+      body.appendChild(secP);
+    }
   }
-  const active = currentDef.members.find((m) => m.key === state.selectedMember && !m.isDamage);
-  if (active) {
-    secM.appendChild(el("div", "note-box", `<div class="title">${active.name}</div>${active.note}`));
-  }
-  panel.appendChild(secM);
 
-  // 共通メモ
-  panel.appendChild(el("div", "section note-box",
-    `<div class="title">建物共済の損害評価(公開情報に基づく一般的な枠組み)</div>損害額は再建築価額(新価特約付帯時)又は時価額を基礎に算定されます。総合共済の自然災害(地震等を除く)では、損害額から共済価額の5%又は1万円のいずれか低い額を控除する取扱いが一般的です。地震等は損害割合5%以上が支払要件、支払は共済金額の50%が限度とされる例が多くあります。ただし、具体的な算定方法・部位別の評価基準は各農業共済組合等の約款・損害評価要領によります。`));
+  /* ---- 下部: この教材について(共通メモ・免責) ---- */
+  const foot = el("div", "p-foot");
+  foot.appendChild(help(
+    `<b>建物共済の損害評価(公開情報に基づく一般的な枠組み)</b><p>損害額は再建築価額(新価特約付帯時)又は時価額を基礎に算定されます。総合共済の自然災害(地震等を除く)では、損害額から共済価額の5%又は1万円のいずれか低い額を控除する取扱いが一般的です。地震等は損害割合5%以上が支払要件、支払は共済金額の50%が限度とされる例が多くあります。ただし、具体的な算定方法・部位別の評価基準は各農業共済組合等の約款・損害評価要領によります。</p>` +
+    `<p>本モデルの部位区分・部材構成・説明文は、一般的な木造在来工法の部位名称とNOSAI各組合の公開情報に基づく研修用の参考です。NOSAI建物共済の正式な部位区分表・損害割合基準(損害評価要領等)を再現したものではありません。お手元の評価様式・基準資料をご提供いただければ、その区分に合わせて部位・着眼点ノートを再構成できます。</p>`,
+    "この教材について(損害評価の枠組み・免責)"));
+  foot.querySelector("details > div").classList.add("about");
+  panel.appendChild(foot);
 
-  // 免責
-  panel.appendChild(el("div", "disclaimer",
-    "本モデルの部位区分・部材構成・説明文は、一般的な木造在来工法の部位名称とNOSAI各組合の公開情報に基づく研修用の参考です。NOSAI建物共済の正式な部位区分表・損害割合基準(損害評価要領等)を再現したものではありません。お手元の評価様式・基準資料をご提供いただければ、その区分に合わせて部位・着眼点ノートを再構成できます。"));
+  // 同じタブの再描画ではスクロール位置を保ち、タブを切り替えたら先頭へ
+  panel.dataset.tab = state.tab;
+  panel.scrollTop = prevTab === state.tab ? scrollY : 0;
 }
 
 /* ============================================================
