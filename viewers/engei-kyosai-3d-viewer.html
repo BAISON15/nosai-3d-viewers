@@ -67,6 +67,30 @@
 
   .reset-btn { position: absolute; bottom: 12px; right: 12px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hint { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.8); color: #64748b; font-size: 10px; padding: 4px 8px; border-radius: 4px; max-width: 60%; }
+  /* 歩行モード(建物ビューアと同じ操作) */
+  .walk-btn { position: absolute; bottom: 12px; right: 128px; background: rgba(20,24,25,.88); border: 1px solid #363F44; color: #F6F8F9; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .walk-btn.on { background: #1B9A9C; border-color: #157E80; color: #fff; font-weight: 700; }
+  #walk-ui { position: absolute; inset: 0; pointer-events: none; display: none; }
+  #walk-ui.on { display: block; }
+  #walk-pad { position: absolute; left: 14px; bottom: 62px; display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 46px); gap: 5px; pointer-events: auto; }
+  #walk-pad button, #walk-updown button { background: rgba(20,24,25,.72); border: 1px solid #4C575D; color: #F6F8F9; border-radius: 8px; font-size: 15px; cursor: pointer; user-select: none; touch-action: none; }
+  #walk-pad button:active, #walk-updown button:active { background: #1B9A9C; }
+  #walk-updown { position: absolute; right: 14px; bottom: 62px; display: grid; grid-template-rows: repeat(2, 46px); gap: 5px; pointer-events: auto; }
+  #walk-updown button { width: 46px; }
+  #walk-hud { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(20,24,25,.82); color: #F6F8F9; font-size: 11px; padding: 5px 12px; border-radius: 999px; white-space: nowrap; }
+  #xhair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; z-index: 9; pointer-events: none; display: none; }
+  #xhair::before, #xhair::after { content: ""; position: absolute; background: #fff; opacity: .85; box-shadow: 0 0 3px rgba(0,0,0,.9); }
+  #xhair::before { left: 10px; top: 0; width: 2px; height: 22px; }
+  #xhair::after { top: 10px; left: 0; height: 2px; width: 22px; }
+  #xhair.near::before, #xhair.near::after { background: #FF6F59; opacity: 1; }
+  /* 被害を見つけたときの通知 */
+  #found-toast { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); z-index: 10; pointer-events: none; opacity: 0; transition: opacity .3s;
+                 background: #FFF2EE; border: 1px solid #FFC2B2; color: #8E3324; font-size: 12.5px; font-weight: 700; padding: 7px 14px; border-radius: 10px; box-shadow: 0 4px 12px rgba(20,24,25,.12); white-space: nowrap; }
+  #found-toast.on { opacity: 1; }
+  .hunt-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; font-size: 12.5px; color: var(--text-tertiary); border: 1px dashed var(--border-default); border-radius: var(--radius-sm); }
+  .hunt-row::before { content: ""; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--coral); flex: none; }
+  .hunt-score { font-family: var(--font-mono); font-size: 22px; font-weight: 500; color: var(--coral-strong); }
+  .hunt-score small { font-size: 12px; color: var(--text-tertiary); margin-left: 4px; }
 
   aside { flex: none; width: clamp(290px, 30vw, 350px); min-height: 0; border-left: 1px solid #E0E5E8; overflow-y: auto; scrollbar-gutter: stable; }
   @media (max-width: 860px) {
@@ -201,8 +225,22 @@
     <div id="viewport">
       <div id="canvas-holder"></div>
       <div id="labels"></div>
+      <div id="xhair"></div>
+      <div id="found-toast"></div>
+      <div id="walk-ui">
+        <div id="walk-hud"></div>
+        <div id="walk-pad">
+          <button data-mv="ql">↖</button><button data-mv="f">▲</button><button data-mv="qr">↗</button>
+          <button data-mv="l">◀</button><button data-mv="b">▼</button><button data-mv="r">▶</button>
+        </div>
+        <div id="walk-updown">
+          <button data-mv="up">▲<br><span style="font-size:9px">上</span></button>
+          <button data-mv="dn">▼<br><span style="font-size:9px">下</span></button>
+        </div>
+      </div>
+      <button class="walk-btn" id="walk-toggle">歩行モード (F)</button>
       <button class="reset-btn" id="reset-view">視点をリセット</button>
-      <div class="hint">ドラッグ: 回転 / ホイール・ピンチ: ズーム / 橙色の点: 部材の着眼点</div>
+      <div class="hint">ドラッグ: 回転 / ホイール・ピンチ: ズーム / 橙色の点: 部材の着眼点 / <b>F</b>キー: 歩行モード</div>
     </div>
     <aside id="panel"></aside>
   </main>
@@ -481,8 +519,13 @@ function buildGableFrame(opt) {
     g.add(tag(pipeBetween(new THREE.Vector3( D/2, 0.1, z), new THREE.Vector3( D/2 - bay, eave, z), 0.028, frameMat), part, "筋かい"));
     g.add(tag(pipeBetween(new THREE.Vector3(-D/2, 0.1, z), new THREE.Vector3(-D/2 + bay, eave, z), 0.028, frameMat), part, "筋かい"));
   });
-  // 妻面: 間柱・胴ぶち(全幅)
+  // 妻面: 間柱・胴ぶち(全幅)。妻面Aの出入口(幅1.0m×高さ2.0m)は、胴ぶちを戸の両脇で止め、
+  // 開口に掛かる間柱は戸の上(まぐさ)から立て、戸枠(縦枠・まぐさ)で囲む
+  const doorZ = zCenter(Math.floor((spans - 1) / 2));
+  const dW = 1.0, dH = 2.0, jz0 = doorZ - dW / 2 - 0.03, jz1 = doorZ + dW / 2 + 0.03, headY = dH + 0.05;
   [[D/2, "妻面A"], [-D/2, "妻面B"]].forEach(([x, part]) => {
+    const hasDoor = part === "妻面A";
+    const inDoor = (z) => hasDoor && z > jz0 - 0.06 && z < jz1 + 0.06;
     // 棟ごとに等分して棟中心に対し左右対称に配置(両端は柱列と重なるため除く)
     const nSeg = Math.max(2, Math.round(W / 1.5));
     for (let k = 0; k < spans; k++) {
@@ -490,17 +533,21 @@ function buildGableFrame(opt) {
         const z = zCenter(k) - halfSpan + (W / nSeg) * j;
         const dz = Math.abs(z - zCenter(k));
         const yTop = Math.max(ridge - dz * (rise / halfSpan), eave * 0.6);
-        g.add(tag(pipeBetween(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, yTop, z), 0.04, frameMat), part, "妻面間柱"));
+        const y0 = inDoor(z) ? headY : 0;
+        if (yTop - y0 > 0.1) g.add(tag(pipeBetween(new THREE.Vector3(x, y0, z), new THREE.Vector3(x, yTop, z), 0.04, frameMat), part, "妻面間柱"));
       }
     }
     [0.9, 1.8].forEach((y) => {
-      g.add(tag(pipeBetween(new THREE.Vector3(x, y, -totalW / 2), new THREE.Vector3(x, y, totalW / 2), 0.028, frameMat), part, "妻面胴ぶち"));
+      const segs = hasDoor ? [[-totalW / 2, jz0], [jz1, totalW / 2]] : [[-totalW / 2, totalW / 2]];
+      segs.forEach(([a, b]) => g.add(tag(pipeBetween(new THREE.Vector3(x, y, a), new THREE.Vector3(x, y, b), 0.028, frameMat), part, "妻面胴ぶち")));
     });
   });
-  const doorZ = zCenter(Math.floor((spans - 1) / 2));
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.0, 1.0), MAT.door);
-  door.position.set(D / 2 + 0.04, 1.0, doorZ);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.06, dH, dW), MAT.door);
+  door.position.set(D / 2 + 0.04, dH / 2, doorZ);
   g.add(tag(door, "妻面A", "出入口戸"));
+  // 戸枠(縦枠2本・まぐさ)
+  [jz0, jz1].forEach((z) => g.add(tag(pipeBetween(new THREE.Vector3(D / 2, 0, z), new THREE.Vector3(D / 2, headY, z), 0.032, frameMat), "妻面A", "出入口戸")));
+  g.add(tag(pipeBetween(new THREE.Vector3(D / 2, headY, jz0), new THREE.Vector3(D / 2, headY, jz1), 0.032, frameMat), "妻面A", "出入口戸"));
 
   if (foundation === "strip") {
     [[ totalW / 2], [-totalW / 2]].forEach(([z]) => {
@@ -959,6 +1006,8 @@ const state = {
   dmgSeed: 1,
   selectedDim: null,
   tab: "parts",         // サイドバーで開いているタブ(parts / damage / view / spec)
+  walk: false,          // 歩行モード
+  hunt: true,           // 評価の疑似体験: 歩行モードでは被害のラベル・点を、見つけるまで隠す
 };
 
 const holder = document.getElementById("canvas-holder");
@@ -1035,6 +1084,10 @@ function rebuild(resetCam) {
     scene.add(mk);
     markerMeshes.push(mk);
   });
+  // 被害の出方(型式・棟数・災害・パターン)が変わったら、見つけた被害の記録をやり直す
+  const sig = [state.typeKey, state.spans, state.dmgScenario, state.dmgSeed, state.detailParts].join("|");
+  if (sig !== hunt.sig) { hunt.sig = sig; hunt.found.clear(); hunt.lastFound = null; }
+  applyHuntVisibility();
 
   if (resetCam) {
     orbit.theta = Math.PI/4; orbit.phi = Math.PI/3;
@@ -1044,6 +1097,53 @@ function rebuild(resetCam) {
   applyMode();
   renderLabels();
   renderPanel();
+  if (state.walk) updateWalkHud();
+}
+
+/* ============================================================
+   評価の疑似体験(被害を探す)
+   歩行モードで災害を選ぶと、被害のラベル・点を見つけるまで隠す。
+   被害の近く(4.5m以内)で画面中央の十字を合わせると「発見」として記録する
+============================================================ */
+const HUNT_RANGE = 4.5, HUNT_ANGLE = 0.14;   // 発見できる距離(m)・十字からのずれ(rad、約8°)
+const hunt = { sig: "", found: new Set(), lastFound: null };
+function huntOn() { return state.walk && state.hunt && state.dmgScenario !== "none"; }
+function huntHidden(m) { return huntOn() && m.isDamage && !hunt.found.has(m.key); }
+function applyHuntVisibility() {
+  markerMeshes.forEach((mk) => {
+    const m = currentDef.members.find((x) => x.key === mk.userData.key);
+    mk.visible = !(m && huntHidden(m));
+  });
+}
+/* 十字の先にある未発見の被害を探す(毎フレーム)。近い被害があれば十字を強調する */
+const _hv = new THREE.Vector3(), _hf = new THREE.Vector3();
+function checkDiscovery() {
+  const xh = document.getElementById("xhair");
+  if (!huntOn()) { xh.classList.remove("near"); return; }
+  camera.getWorldDirection(_hf);
+  let near = false, hit = null;
+  for (const m of currentDef.members) {
+    if (!m.isDamage || hunt.found.has(m.key)) continue;
+    _hv.set(m.pos[0], m.pos[1], m.pos[2]).sub(camera.position);
+    const dist = _hv.length();
+    if (dist > HUNT_RANGE) continue;
+    near = true;
+    if (_hv.normalize().angleTo(_hf) < HUNT_ANGLE) { hit = m; break; }
+  }
+  xh.classList.toggle("near", near);
+  if (hit) {
+    hunt.found.add(hit.key);
+    hunt.lastFound = hit.key;
+    const total = currentDef.members.filter((m) => m.isDamage).length;
+    showToast(`被害を発見: ${hit.name.replace(/^被害\d+[:：]\s*/, "")}(${hunt.found.size}/${total})`);
+    applyHuntVisibility(); renderLabels(); renderPanel(); updateWalkHud();
+  }
+}
+let _toastT = 0;
+function showToast(msg) {
+  const t = document.getElementById("found-toast");
+  t.textContent = msg; t.classList.add("on");
+  clearTimeout(_toastT); _toastT = setTimeout(() => t.classList.remove("on"), 2600);
 }
 
 /* ==== 部材ハイライト ==== */
@@ -1558,6 +1658,7 @@ function renderLabels() {
   labelsHolder.innerHTML = "";
   labelEntries = [];
   currentDef.members.forEach((m, i) => {
+    if (huntHidden(m)) return;   // 未発見の被害はラベルも出さない
     const div = document.createElement("div");
     div.className = "label";
     div.innerHTML = `<div class="label-chip${m.isDamage ? " dmg" : ""}${state.selectedMember === m.key ? " active" : ""}">${m.name}</div>`;
@@ -1656,8 +1757,70 @@ dom.style.touchAction = "none";
 const drag = { on: false, x: 0, y: 0 };
 let lastPinch = null;
 
-dom.addEventListener("pointerdown", (e) => { drag.on = true; drag.x = e.clientX; drag.y = e.clientY; });
+/* ============================================================
+   歩行モード(建物ビューアと同じ操作)。施設の床は地面(高さ0)なので、目線の高さだけを持つ
+============================================================ */
+const walkState = { pos: new THREE.Vector3(), yaw: 0, pitch: -0.05, eyeH: 1.6, keys: {}, touch: {} };
+const walkUI = document.getElementById("walk-ui"), walkHud = document.getElementById("walk-hud");
+/* 施設の外(出入口のある妻面の前)から始める */
+function walkToStart() {
+  const bb = new THREE.Box3();
+  modelGroup.traverse((m) => { if (m.isMesh && m.userData.member) bb.expandByObject(m); });
+  walkState.pos.set(bb.min.x - 3.0, 0, (bb.min.z + bb.max.z) / 2);
+  walkState.yaw = -Math.PI / 2;   // +x(施設の中)を向く
+  walkState.pitch = -0.05; walkState.eyeH = 1.6;
+}
+function setWalk(on) {
+  state.walk = on;
+  walkUI.classList.toggle("on", on);
+  document.getElementById("xhair").style.display = on ? "block" : "none";
+  document.getElementById("walk-toggle").classList.toggle("on", on);
+  if (on) walkToStart();
+  else if (document.pointerLockElement === dom) document.exitPointerLock();
+  applyHuntVisibility(); renderLabels(); updateWalkHud(); renderPanel();
+}
+function updateWalkHud() {
+  if (!state.walk) return;
+  const locked = document.pointerLockElement === dom;
+  const total = currentDef.members.filter((m) => m.isDamage).length;
+  const score = huntOn() ? ` ・ 発見した被害 ${hunt.found.size}/${total}` : "";
+  walkHud.innerHTML = (locked
+    ? "歩行中 — W A S D 移動 / Shift 早歩き / Q E 目線の高さ / クリック 調べる / Esc 解除"
+    : "画面をクリックすると視点操作が始まります") + ` ・ 目線 ${walkState.eyeH.toFixed(1)}m` + score;
+}
+function stepWalk(dt) {
+  const k = walkState.keys, t = walkState.touch;
+  camera.rotation.set(walkState.pitch, walkState.yaw, 0, "YXZ");
+  const sp = (k.ShiftLeft || k.ShiftRight ? 3.4 : 1.5) * dt;
+  const f = (k.KeyW || k.ArrowUp || t.f || t.ql || t.qr ? 1 : 0) - (k.KeyS || k.ArrowDown || t.b ? 1 : 0);
+  const sd = (k.KeyD || k.ArrowRight || t.r || t.qr ? 1 : 0) - (k.KeyA || k.ArrowLeft || t.l || t.ql ? 1 : 0);
+  const e0 = walkState.eyeH;
+  if (k.KeyQ || t.dn) walkState.eyeH = Math.max(0.4, walkState.eyeH - 1.2 * dt);
+  if (k.KeyE || t.up) walkState.eyeH = Math.min(6.0, walkState.eyeH + 1.2 * dt);
+  if (walkState.eyeH !== e0) updateWalkHud();
+  if (f || sd) {
+    walkState.pos.x = Math.max(-40, Math.min(40, walkState.pos.x + (-Math.sin(walkState.yaw) * f + Math.cos(walkState.yaw) * sd) * sp));
+    walkState.pos.z = Math.max(-40, Math.min(40, walkState.pos.z + (-Math.cos(walkState.yaw) * f - Math.sin(walkState.yaw) * sd) * sp));
+  }
+  camera.position.set(walkState.pos.x, walkState.eyeH, walkState.pos.z);
+}
+
+dom.addEventListener("pointerdown", (e) => {
+  if (state.walk && document.pointerLockElement !== dom && dom.requestPointerLock && e.pointerType === "mouse") dom.requestPointerLock();
+  drag.on = true; drag.x = e.clientX; drag.y = e.clientY;
+});
 window.addEventListener("pointermove", (e) => {
+  if (state.walk) {
+    if (document.pointerLockElement === dom) {
+      walkState.yaw -= e.movementX * 0.0024;
+      walkState.pitch = Math.max(-1.3, Math.min(1.3, walkState.pitch - e.movementY * 0.0024));
+    } else if (drag.on) {
+      walkState.yaw -= (e.clientX - drag.x) * 0.005;
+      walkState.pitch = Math.max(-1.3, Math.min(1.3, walkState.pitch - (e.clientY - drag.y) * 0.005));
+      drag.x = e.clientX; drag.y = e.clientY;
+    }
+    return;
+  }
   if (!drag.on) return;
   orbit.theta -= (e.clientX - drag.x) * 0.006;
   orbit.phi   -= (e.clientY - drag.y) * 0.006;
@@ -1667,9 +1830,27 @@ window.addEventListener("pointermove", (e) => {
 window.addEventListener("pointerup", () => { drag.on = false; });
 dom.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if (state.walk) return;
   orbit.radius = Math.max(5, Math.min(48, orbit.radius + e.deltaY * 0.012));
 }, { passive: false });
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyF" && !e.repeat && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { setWalk(!state.walk); e.preventDefault(); return; }
+  if (!state.walk) return;
+  walkState.keys[e.code] = true;
+  if (["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
+});
+window.addEventListener("keyup", (e) => { walkState.keys[e.code] = false; });
+document.addEventListener("pointerlockchange", () => { walkState.keys = {}; updateWalkHud(); });
+document.getElementById("walk-toggle").addEventListener("click", () => setWalk(!state.walk));
+document.querySelectorAll("#walk-pad button, #walk-updown button").forEach((b) => {
+  const k = b.dataset.mv;
+  const on = (ev) => { ev.preventDefault(); walkState.touch[k] = true; };
+  const off = (ev) => { ev.preventDefault(); walkState.touch[k] = false; };
+  b.addEventListener("pointerdown", on); b.addEventListener("pointerup", off);
+  b.addEventListener("pointerleave", off); b.addEventListener("pointercancel", off);
+});
 dom.addEventListener("touchmove", (e) => {
+  if (state.walk) return;
   if (e.touches.length === 2) {
     const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
     if (lastPinch !== null) orbit.radius = Math.max(5, Math.min(48, orbit.radius - (d - lastPinch) * 0.03));
@@ -1681,12 +1862,13 @@ dom.addEventListener("touchend", () => { lastPinch = null; });
 
 dom.addEventListener("click", (e) => {
   const rect = dom.getBoundingClientRect();
-  const mouse = new THREE.Vector2(
+  // 歩行中(視点操作中)は画面中央の十字の先を調べる
+  const mouse = state.walk && document.pointerLockElement === dom ? new THREE.Vector2(0, 0) : new THREE.Vector2(
     ((e.clientX - rect.left) / rect.width) * 2 - 1,
     -((e.clientY - rect.top) / rect.height) * 2 + 1
   );
   raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(markerMeshes);
+  const hits = raycaster.intersectObjects(markerMeshes.filter((mk) => mk.visible));   // 未発見の被害の点は選べない
   if (hits.length > 0) {
     const hk = hits[0].object.userData.key;
     selectMember(hk);
@@ -1837,7 +2019,7 @@ function renderPanel() {
       rebuild(true);
     }, 3),
     summary: `${t.label} — ${t.sub}`,
-    tabs: [["parts", "部位"], ["damage", "損害評価", dmgs.length || ""], ["view", "表示"], ["spec", "仕様"]],
+    tabs: [["parts", "部位"], ["damage", "損害評価", huntOn() ? `${hunt.found.size}/${dmgs.length}` : (dmgs.length || "")], ["view", "表示"], ["spec", "仕様"]],
     cur: state.tab, onTab: (k) => { state.tab = k; renderPanel(); },
   }));
   const body = el("div", "p-body");
@@ -1865,6 +2047,27 @@ function renderPanel() {
       (k) => { state.dmgScenario = k; state.selectedMember = null; rebuild(false); }, 3));
     if (state.dmgScenario === "none") {
       sec.appendChild(K.cap("災害を選ぶと、モデル上に被害が発生します。被害箇所を1つずつ確認し、評価の着眼点を読んで練習します。"));
+    } else if (huntOn()) {
+      // 評価の疑似体験: 歩いて被害を探す。見つけた被害だけ一覧に出し、着眼点を読める
+      const found = dmgs.filter((m) => hunt.found.has(m.key)), left = dmgs.length - found.length;
+      const wrap = el("div", "");
+      wrap.style.marginTop = "12px";
+      wrap.appendChild(el("div", "", `<span class="hunt-score">${found.length} / ${dmgs.length}<small>か所を発見</small></span>`));
+      wrap.appendChild(K.cap(left
+        ? "施設の中を歩いて被害を探します。被害の近く(4.5m以内)で画面中央の十字を合わせると発見になります。十字が赤くなったら、近くに未発見の被害があります。"
+        : "すべての被害を見つけました。一覧から各被害の着眼点を確認してください。"));
+      const activeD = found.find((m) => m.key === state.selectedMember);
+      const box = el("div", ""); box.style.marginTop = "10px";
+      if (activeD) box.appendChild(K.noteCard(activeD, "dmg"));
+      box.appendChild(K.memberList(found, false, "dmg"));
+      const list = el("div", "list"); list.style.marginTop = "2px";
+      for (let i = 0; i < left; i++) list.appendChild(el("div", "hunt-row", "未発見の被害"));
+      box.appendChild(list);
+      wrap.appendChild(box);
+      sec.appendChild(wrap);
+      if (left) sec.appendChild(K.button(`答え合わせ(残り${left}か所を表示)`, () => { dmgs.forEach((m) => hunt.found.add(m.key)); applyHuntVisibility(); renderLabels(); renderPanel(); updateWalkHud(); }));
+      sec.appendChild(K.button("別の被害パターンで最初から", () => { state.dmgSeed++; state.selectedMember = null; rebuild(false); walkToStart(); updateWalkHud(); }));
+      sec.appendChild(K.toggles(K.toggle("被害を探す(見つけるまで隠す)", state.hunt, (v) => { state.hunt = v; applyHuntVisibility(); renderLabels(); renderPanel(); updateWalkHud(); })));
     } else {
       const activeD = dmgs.find((m) => m.key === state.selectedMember);
       const wrap = el("div", "");
@@ -1873,7 +2076,9 @@ function renderPanel() {
       wrap.appendChild(K.memberList(dmgs, false, "dmg"));
       sec.appendChild(wrap);
       sec.appendChild(K.button("別の被害パターンを生成", () => { state.dmgSeed++; state.selectedMember = null; rebuild(false); }));
-      sec.appendChild(K.help("被害は研修用に自動で作った架空のもので、実際の被害の分布や損害割合を示すものではありません。"));
+      if (!state.walk) sec.appendChild(K.button("歩行モードで被害を探す(評価の疑似体験)", () => { state.hunt = true; state.selectedMember = null; setWalk(true); }));
+      else sec.appendChild(K.toggles(K.toggle("被害を探す(見つけるまで隠す)", state.hunt, (v) => { state.hunt = v; applyHuntVisibility(); renderLabels(); renderPanel(); updateWalkHud(); })));
+      sec.appendChild(K.help("被害は研修用に自動で作った架空のもので、実際の被害の分布や損害割合を示すものではありません。<br>「歩行モードで被害を探す」では、被害の場所を隠した状態で施設の中を歩き、自分で被害を見つける練習ができます。"));
     }
     body.appendChild(sec);
 
@@ -1901,6 +2106,14 @@ function renderPanel() {
         : "要領では妻面・側面・屋根面・基礎の4区分。各面はA面・B面に分け、棟木・中柱を含む側がA面です(第4-1(1))。Ⅱ類は側面・屋根面が一体の「側屋根面」として扱われます(別表3・4)。"));
     }
     body.appendChild(secM);
+
+    const secV = K.section("視点");
+    secV.appendChild(K.seg([[false, "全体を見る"], [true, "歩行モード"]], state.walk, (v) => { if (state.walk !== v) setWalk(v); }, 2));
+    if (state.walk) {
+      secV.appendChild(K.button("開始位置に戻る(出入口の前)", () => { walkToStart(); updateWalkHud(); }));
+      secV.appendChild(K.help("PCは画面をクリックして視点操作を開始します(W A S D 移動 / Shift 早歩き / Q E 目線の高さ / クリック 十字の先を調べる / Esc 解除)。スマホ・タブレットは画面ドラッグで見回し、左下の十字ボタンで移動します。<b>F</b>キーでいつでも切り替えられます。被覆材・骨材はすり抜けて歩けます。", "操作方法"));
+    }
+    body.appendChild(secV);
 
     const secD = K.section("外面・寸法の名称", "第2");
     secD.appendChild(K.toggle("寸法線と名称を表示", state.showDims, (v) => { state.showDims = v; if (!v) state.selectedDim = null; renderLabels(); renderPanel(); applyMode(); }));
@@ -1961,13 +2174,22 @@ function renderPanel() {
 /* ============================================================
    ループ
 ============================================================ */
+let _lastT = performance.now();
 function animate() {
-  camera.position.set(
-    orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
-    orbit.target.y + orbit.radius * Math.cos(orbit.phi),
-    orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
-  );
-  camera.lookAt(orbit.target);
+  const now = performance.now(), dt = Math.min(0.05, (now - _lastT) / 1000);
+  _lastT = now;
+  if (state.walk) {
+    stepWalk(dt);
+    camera.updateMatrixWorld();
+    checkDiscovery();
+  } else {
+    camera.position.set(
+      orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
+      orbit.target.y + orbit.radius * Math.cos(orbit.phi),
+      orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
+    );
+    camera.lookAt(orbit.target);
+  }
   const pulse = 0.35 + 0.3 * Math.sin(performance.now() * 0.004);
   hlSolid.emissiveIntensity = pulse;
   hlCover.emissiveIntensity = pulse;
