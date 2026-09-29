@@ -967,7 +967,9 @@ scene.background = new THREE.Color(0xdbe7ef);
 scene.fog = new THREE.Fog(0xdbe7ef, 30, 70);
 
 const camera = new THREE.PerspectiveCamera(45, holder.clientWidth / holder.clientHeight, 0.1, 300);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// logarithmicDepthBuffer: 深度をシェーダーで書き出す(建物ビューアと同じ)。Qualcomm Adreno 等の一部のGPUで、
+// 視点を動かしている間に面の一部が抜けて白く見える(ハードウェアの深度の最適化による)描画の乱れを避ける
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setSize(holder.clientWidth, holder.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 holder.appendChild(renderer.domElement);
@@ -1237,7 +1239,8 @@ function addBentArc(parent, r, x, yBase, sideZ, tube, mat, part, member, rng, to
     pts.push(new THREE.Vector3(x, yBase + rr * Math.sin(ph), rr * Math.cos(ph)));
   }
   for (let i = 0; i < N; i++) parent.add(tag(pipeBetween(pts[i], pts[i + 1], tube, mat), part, member));
-  return pts[Math.round(N * ((dentPhi - phi0) / (phi1 - phi0)))];
+  // 大雪では凹みを頂部(アーチの端)付近に置くため、範囲外にならないよう端に寄せる
+  return pts[Math.max(0, Math.min(N, Math.round(N * ((dentPhi - phi0) / (phi1 - phi0)))))];
 }
 function addSagged(parent, p1, p2, rr, mat, part, member, sag, sideways) {
   const mid = p1.clone().add(p2).multiplyScalar(0.5);

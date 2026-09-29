@@ -2006,7 +2006,9 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdbe7ef);
 scene.fog = new THREE.Fog(0xdbe7ef, 25, 55);
 const camera = new THREE.PerspectiveCamera(45, holder.clientWidth / holder.clientHeight, 0.1, 200);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// logarithmicDepthBuffer: 深度をシェーダーで書き出す(建物ビューアと同じ)。Qualcomm Adreno 等の一部のGPUで、
+// 視点を動かしている間に面の一部が抜けて白く見える(ハードウェアの深度の最適化による)描画の乱れを避ける
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setSize(holder.clientWidth, holder.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 holder.appendChild(renderer.domElement);
