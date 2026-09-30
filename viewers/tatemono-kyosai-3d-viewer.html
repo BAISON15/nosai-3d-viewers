@@ -922,14 +922,103 @@ const WSPEC = {
   hHip: 0.90,               // 入母屋の隅棟の立ち上がり
 };
 
-/* 便器(タンク付き・奥行0.73m)。タンクの背を壁に付けて置く。
-   (bx, bz) は背の壁の面上の点(便器の幅の中心)、face は便器が向く方角(S=+z / N=-z / E=+x / W=-x) */
-function placeToilet(put, mat, member, bx, bz, face, fy) {
+/* 便器(手洗い付きタンク・温水洗浄便座・奥行0.73m)。タンクの背を壁に付けて置く。
+   (bx, bz) は背の壁の面上の点(便器の幅の中心)、face は便器が向く方角(S=+z / N=-z / E=+x / W=-x)
+   便器の手前の形で u=幅方向, v=壁から前へ の座標で形を作り、face の向きへ回して置く。1台=1部材にまとめる
+   sideWall: 横の壁の面の位置(face が S/N なら x、E/W なら z)。指定するとその壁にトイレットペーパーホルダーを付ける */
+const TOILET_MAT = {
+  seat:  new THREE.MeshStandardMaterial({ color: 0xf4f3ef, roughness: 0.4 }),                  // 便座・ふた・温水洗浄便座の本体(樹脂)
+  water: new THREE.MeshStandardMaterial({ color: 0xb9d3dc, roughness: 0.08, metalness: 0.1 }),  // 溜水面
+  panel: new THREE.MeshStandardMaterial({ color: 0x8d949a, roughness: 0.45 }),                  // 操作部・ノズルの覆い
+  paper: new THREE.MeshStandardMaterial({ color: 0xf8f7f3, roughness: 0.95 }),                  // トイレットペーパー
+  core:  new THREE.MeshStandardMaterial({ color: 0xb89c74, roughness: 0.9 }),                   // 芯(紙管)
+  hole:  new THREE.MeshStandardMaterial({ color: 0x3a3229, roughness: 1 }),                     // 芯の穴
+};
+function placeToilet(put, mat, member, bx, bz, face, fy, sideWall) {
   const [dx, dz] = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[face];
-  const B = (w, h, dep, off, y) => dx ? box(dep, h, w, mat, bx + dx * off, y, bz) : box(w, h, dep, mat, bx, y, bz + dz * off);
-  put(B(0.36, 0.52, 0.18, 0.09, fy + 0.36), member);    // タンク
-  put(B(0.38, 0.42, 0.55, 0.455, fy + 0.21), member);   // 便器
-  put(B(0.44, 0.10, 0.38, 0.50, fy + 0.45), member);    // 便座・ふた
+  const rot = Math.atan2(dx, dz);                           // 手前(+v)を face の向きへ回す角度
+  const L = (g) => { g.rotateY(rot); g.translate(bx, fy, bz); return g; };
+  const B = (w, h, d, u, y, v) => L(boxGeo(w, h, d, u, y, v));
+  const ellipse = (rx, rz, cz = 0) => {                     // XY 面の楕円(ExtrudeGeometry 用。Y が v になる)
+    const s = new THREE.Shape();
+    s.absellipse(0, cz, rx, rz, 0, Math.PI * 2, false, 0);
+    return s;
+  };
+  const flat = (shape, t, y, v, holes = []) => {            // 水平に寝かせた板(便座など)
+    shape.holes.push(...holes);
+    const g = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 32 });
+    g.rotateX(Math.PI / 2);                                 // 形の Y → +v、押し出し → 下向き
+    g.translate(0, y + t, v);
+    return L(g);
+  };
+  const tube = (pts, r) => L(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([u, y, v]) => new THREE.Vector3(u, y, v))), 24, r, 8, false));
+
+  const vc = 0.485, sz = 1.3;                               // 鉢の中心(壁から)と前後の伸び
+  // 陶器の鉢: 床から立ち上がる脚→鉢の外側→縁→内側→溜水 を1本の断面で回す(内側も正しく向く)
+  const bowl = new THREE.LatheGeometry([
+    [0.125, 0.0], [0.13, 0.06], [0.14, 0.17], [0.165, 0.28], [0.186, 0.35], [0.19, 0.385], [0.184, 0.40],
+    [0.165, 0.402], [0.15, 0.39], [0.13, 0.35], [0.10, 0.29], [0.07, 0.25], [0.0, 0.245],
+  ].map(([r, y]) => new THREE.Vector2(r, y)), 40);
+  bowl.scale(1, 1, sz); bowl.translate(0, 0, vc);
+  const water = new THREE.CircleGeometry(0.085, 32);
+  water.rotateX(-Math.PI / 2); water.scale(1, 1, sz); water.translate(0, 0.27, vc + 0.02);
+
+  // 便座(鉢の縁に載る輪)・ふた(開けて温水洗浄便座の本体にもたせる)
+  const seat = flat(ellipse(0.185, 0.235), 0.024, 0.402, vc + 0.005, [ellipse(0.118, 0.155, 0.02)]);
+  const lid = new THREE.ExtrudeGeometry(ellipse(0.19, 0.235), { depth: 0.022, bevelEnabled: false, curveSegments: 32 });
+  lid.translate(0, 0.235, 0);                               // 下端を回転の軸(ちょうつがい)にする
+  lid.rotateX(-0.20);                                       // 少し後ろへ倒す
+  lid.translate(0, 0.475, 0.325);
+
+  const parts = [
+    [L(bowl), mat],
+    [L(water), TOILET_MAT.water],
+    [B(0.27, 0.40, 0.25, 0, 0.20, 0.135), mat],             // 鉢の後ろ(タンクの受け・排水の覆い)
+    [B(0.30, 0.012, 0.06, 0, 0.006, 0.25), mat],            // 床に付く脚の広がり(後ろ側)
+    // 手洗い付きタンク
+    [B(0.42, 0.40, 0.20, 0, 0.61, 0.105), mat],             // タンク
+    [B(0.44, 0.03, 0.225, 0, 0.825, 0.11), mat],            // タンクのふた
+    [flat(ellipse(0.13, 0.075), 0.004, 0.839, 0.12), TOILET_MAT.water],   // 手洗いの鉢(溜まり)
+    [tube([[0, 0.84, 0.03], [0, 0.93, 0.035], [0, 0.95, 0.07], [0, 0.915, 0.11]], 0.011), UB_MAT.metal],   // 手洗いの吐水管
+    [B(0.018, 0.018, 0.08, -0.17, 0.77, 0.235), UB_MAT.metal],             // 洗浄レバー
+    [B(0.04, 0.04, 0.01, -0.17, 0.77, 0.205), UB_MAT.metal],               // レバーの座
+    // 温水洗浄便座の本体(タンクの前)・側面の操作部・ノズルの覆い
+    [B(0.42, 0.075, 0.13, 0, 0.4375, 0.27), TOILET_MAT.seat],
+    [B(0.06, 0.05, 0.16, 0.24, 0.44, 0.28), TOILET_MAT.seat],              // 袖(操作部)
+    [B(0.004, 0.03, 0.10, 0.2715, 0.445, 0.28), TOILET_MAT.panel],         // 操作ボタン
+    [B(0.08, 0.014, 0.03, 0, 0.40, 0.345), TOILET_MAT.panel],              // ノズルの覆い
+    [seat, TOILET_MAT.seat],
+    [L(lid), TOILET_MAT.seat],
+    // 止水栓(壁)→ タンクへの給水管
+    [B(0.05, 0.06, 0.05, -0.17, 0.16, 0.025), UB_MAT.metal],
+    [tube([[-0.17, 0.19, 0.03], [-0.17, 0.30, 0.04], [-0.14, 0.38, 0.06], [-0.13, 0.415, 0.07]], 0.008), UB_MAT.metal],
+  ];
+  put(mergeGeoms(parts), member);
+
+  // トイレットペーパーホルダー(棚付きの1連。便器の先端あたり・床から0.68mに紙の中心)
+  if (sideWall === undefined) return;
+  const uW = dx ? -dx * (sideWall - bz) : dz * (sideWall - bx);   // 横の壁の面の u 座標
+  const s = Math.sign(uW), U = (d) => uW - s * d;                // 壁から室内へ d 離れた u
+  const yh = 0.68, vh = 0.76, dc = 0.075;                        // 紙の中心の高さ・前後位置・壁からの距離
+  const cyl = (r, len, d, y, v) => {                             // 前後(v)方向に寝かせた円柱
+    const g = new THREE.CylinderGeometry(r, r, len, 28);
+    g.rotateX(Math.PI / 2);
+    g.translate(U(d), y, v);
+    return L(g);
+  };
+  const hang = 0.11;                                             // 垂れた紙の長さ
+  put(mergeGeoms([
+    [B(0.008, 0.10, 0.17, U(0.004), yh + 0.035, vh), UB_MAT.metal],          // 壁の座板
+    [B(0.135, 0.006, 0.17, U(0.0675), yh + 0.082, vh), UB_MAT.metal],        // 棚(紙の上のふた)
+    [B(0.006, 0.03, 0.17, U(0.132), yh + 0.067, vh), UB_MAT.metal],          // 棚の先端の折り返し
+    [B(0.09, 0.075, 0.006, U(0.045), yh + 0.04, vh - 0.063), UB_MAT.metal],  // 左右の腕(芯棒の受け)
+    [B(0.09, 0.075, 0.006, U(0.045), yh + 0.04, vh + 0.063), UB_MAT.metal],
+    [cyl(0.006, 0.13, dc, yh, vh), UB_MAT.metal],                            // 芯棒
+    [cyl(0.056, 0.112, dc, yh, vh), TOILET_MAT.paper],                      // 紙
+    [cyl(0.021, 0.114, dc, yh, vh), TOILET_MAT.core],                       // 芯
+    [cyl(0.017, 0.116, dc, yh, vh), TOILET_MAT.hole],                       // 芯の穴
+    [B(0.002, hang, 0.11, U(dc + 0.056), yh - hang / 2, vh), TOILET_MAT.paper],   // 前に垂らした紙
+  ]), "トイレットペーパーホルダー");
 }
 
 /* 矩形 [x0, x1, z0, z1] から cut(同じ形式。null なら何もしない)を除いた矩形の集まり。天井の階段の開口などに使う */
@@ -1547,7 +1636,7 @@ function buildWafuHouse() {
       IW(box(0.79, 0.05, 0.49, MW.counter, vx + 0.02, fY + 0.84, vz + 0.01), "洗面化粧台");
       IW(box(0.70, 0.72, 0.06, MW.kanagu, vx, fY + 1.34, zW + 0.055), "洗面化粧台");
       IW(box(0.60, 0.92, 0.55, MW.cab, xB + 0.025 + 0.30, fY + 0.46, zW2 - 0.025 - 0.275), "洗濯機置場");
-      placeToilet(IW, MW.toki, "便器", (xC + xD) / 2, iZ0 + 0.01, "S", fY);   // 北の外壁を背に、入口(南)向き
+      placeToilet(IW, MW.toki, "便器", (xC + xD) / 2, iZ0 + 0.01, "S", fY, xD - 0.025);   // 北の外壁を背に、入口(南)向き。紙巻器は東の壁
     }
     /* ---------------- 玄関の造作 ---------------- */
     IW(box(0.42, 1.20, 0.95, MW.cab, domaX1 - 0.24, fY + 0.18, (zEn + iZ1) / 2), "玄関収納");
@@ -2036,8 +2125,8 @@ function buildCubeInterior(g) {
     fy: P.floorY(1), top: P.ceilY(1) - 0.02, door: [-2.90 - P.zn, -2.20 - P.zn], doorTop: P.floorY(1) + 2.02,
   });
   // 便器。1階のトイレは幅0.88m×奥行1.15mなので、奥行の長い向き(北の間仕切りを背に南向き)に置く。2階は北の外壁を背に南向き
-  placeToilet(IN, M.toki, "便器", (3.55 + 0.035 + P.xe) / 2, -1.90 + 0.04, "S", t1);
-  placeToilet(IN, M.toki, "便器", 3.90, P.zn + 0.01, "S", t2);
+  placeToilet(IN, M.toki, "便器", (3.55 + 0.035 + P.xe) / 2, -1.90 + 0.04, "S", t1, P.xe - 0.008);   // 紙巻器は東の外壁(戸は西)
+  placeToilet(IN, M.toki, "便器", 3.90, P.zn + 0.01, "S", t2, P.xe - 0.008);                     // 紙巻器は東の外壁(窓の下)
   // 土間収納の棚(ホール側の壁。勝手口への通路を空ける)
   IN(box(0.35, 1.80, 1.00, M.cabinet, 3.55 + 0.035 + 0.175, domaTop + 0.90, 1.45), "玄関収納");
   /* 家具類 */
@@ -3475,7 +3564,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   }
   // 便器
   {
-    placeToilet(IN, MI.toki, "便器", xCor - 0.04, (zWat + zMid) / 2, "W", f1);   // 東の間仕切りを背に、入口の戸(西)と向き合う(奥行1.12m より幅1.20m の向きが広い)
+    placeToilet(IN, MI.toki, "便器", xCor - 0.04, (zWat + zMid) / 2, "W", f1, zMid - 0.035);   // 紙巻器は南の間仕切り。東の間仕切りを背に、入口の戸(西)と向き合う(奥行1.12m より幅1.20m の向きが広い)
   }
   // 玄関収納(シューズボックス)。玄関戸(z 1.10〜2.10)の正面を避け、土間の奥の壁に付ける
   IN(box(0.80, 1.15, 0.34, MI.cabinet, (domaX0 + iX1) / 2 + 0.05, f1 + 0.55, domaZ1 - 0.19), "玄関収納");
@@ -4004,7 +4093,7 @@ const MEMBER_TARGETS = {
   kiso:    ["布基礎", "布基礎(中通り)"],
   naiso:   ["内壁(クロス)", "天井", "幅木"],
   yuka:    ["床(フローリング)", "床(畳)", "床(タイル)", "床(2階フローリング)", "玄関土間", "上がり框"],
-  zosaku:  ["内部建具(開き戸)", "内部建具(引戸)", "内部建具(折れ戸)", "襖", "建具枠", "押入", "システムキッチン", "浴槽(ユニットバス)", "洗面化粧台", "洗濯機置場", "便器", "玄関収納"],
+  zosaku:  ["内部建具(開き戸)", "内部建具(引戸)", "内部建具(折れ戸)", "襖", "建具枠", "押入", "システムキッチン", "浴槽(ユニットバス)", "洗面化粧台", "洗濯機置場", "便器", "トイレットペーパーホルダー", "玄関収納"],
   kazai:   ["家具類(広縁の応接セット)", "家具類(布団)", "家具類(冷蔵庫)", "家具類(ダイニングセット)", "家具類(ソファ)", "家具類(ローテーブル)", "家具類(ラグ)", "家具類(テレビ・テレビ台)", "家具類(座卓・座布団)", "家具類(たんす・チェスト)", "家具類(ベッド)", "家具類(ナイトテーブル)", "家具類(机・椅子)", "家具類(本棚)"],
   setsubi: ["エコキュート(貯湯タンク)","エコキュート(ヒートポンプ)","エコキュート(基礎)","エコキュート(配管)","室外機","立水栓","電気メーター"],
   doushi:  ["胴差し", "床梁(2階床組)"],
@@ -4098,6 +4187,7 @@ const DETAIL_NOTES = {
   "玄関収納": "玄関のシューズボックス。浸水では土間からの水を最初に受ける収納です。",
   "洗濯機置場": "防水パンと給排水。浸水では排水口からの逆流による汚損も確認します。",
   "便器": "浸水では給排水設備への影響も含めて確認します。",
+  "トイレットペーパーホルダー": "便器の脇の壁に付く紙巻器。浸水の高さによっては紙・本体の汚損を確認します。",
   "階段": "内部造作。浸水や消火活動による水濡れの影響を受けやすい動線部位です。",
 };
 const DETAIL_FALLBACK = (name, part, count) => part === "家具類"
