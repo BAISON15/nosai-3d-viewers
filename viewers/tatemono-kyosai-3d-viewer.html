@@ -1145,6 +1145,67 @@ function buildKitchen(add, member, o) {
   }
 }
 
+/* 洗面化粧台(幅75cm。キャビネット・一体成形のボウル付き天板・シングルレバー水栓・三面鏡・照明)
+   (o.wx, o.wz) は背の壁の面上の点(幅の中心)、o.face は正面が向く方角、o.fy は床の仕上げ面、o.W / o.D は幅・奥行
+   浸水の汚損は部材の外形で描くので、下台(キャビネット・天板・水栓)と鏡の部分は別のメッシュに分ける */
+const VANITY_MAT = {
+  light: new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.6, emissive: 0xfff4dc, emissiveIntensity: 0.55 }),   // 照明のカバー
+};
+function buildVanity(add, member, o) {
+  const { wx, wz, face, fy } = o, W = o.W || 0.75, D = o.D || 0.46;
+  const [dx, dz] = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[face];
+  const rot = Math.atan2(dx, dz);
+  const Lg = (g) => { g.rotateY(rot); g.translate(wx, fy, wz); return g; };
+  const B = (w, h, d, u, y, v) => Lg(boxGeo(w, h, d, u, y, v));   // u: 幅の向き / v: 壁から手前へ / y: 床から
+  const H = 0.80, T = 0.04, plH = 0.07;                           // 天板の高さ・厚み・台輪の高さ
+  const KM = KITCHEN_MAT;
+
+  // キャビネット(台輪・本体・両開きの扉・取手)
+  const lower = [
+    [B(W, plH, D - 0.08, 0, plH / 2, (D - 0.08) / 2), KM.plinth],
+    [B(W, H - T - plH, D - 0.04, 0, plH + (H - T - plH) / 2, (D - 0.04) / 2), KM.body],
+  ];
+  const fh = H - T - plH - 0.006, fyc = plH + 0.003 + fh / 2;
+  for (const s of [-1, 1]) {
+    lower.push([B(W / 2 - 0.004, fh, 0.02, s * W / 4, fyc, D - 0.03), KM.front]);
+    lower.push([B(0.012, 0.16, 0.014, s * 0.04, plH + fh - 0.12, D - 0.013), KM.chrome]);   // 取手(扉の合わせ目の上寄り)
+  }
+  // 天板(ボウルの開口を空けた一体成形)・ボウル・排水口
+  const brx = 0.24, brz = 0.15, bvc = D / 2 + 0.03;                // ボウルの開口(楕円の半径)と中心
+  const topShape = new THREE.Shape();
+  topShape.moveTo(-W / 2, 0); topShape.lineTo(W / 2, 0); topShape.lineTo(W / 2, D); topShape.lineTo(-W / 2, D); topShape.lineTo(-W / 2, 0);
+  const hole = new THREE.Path(); hole.absellipse(0, bvc, brx, brz, 0, Math.PI * 2, true, 0);
+  topShape.holes.push(hole);
+  const topG = new THREE.ExtrudeGeometry(topShape, { depth: T, bevelEnabled: false, curveSegments: 40 });
+  topG.rotateX(Math.PI / 2); topG.translate(0, H, 0);              // 形の Y → +v、押し出し → 下向き
+  lower.push([Lg(topG), KM.top]);
+  const bowl = new THREE.LatheGeometry([[1, 0], [0.92, -0.05], [0.72, -0.11], [0.40, -0.145], [0, -0.15]].map(([r, y]) => new THREE.Vector2(r, y)), 40);
+  bowl.scale(brx, 1, brz); bowl.translate(0, H, bvc);             // 縁から中心へ下る断面を回す(内側が上を向く)
+  lower.push([Lg(bowl), KM.top]);
+  const drain = new THREE.CylinderGeometry(0.022, 0.022, 0.004, 24); drain.translate(0, H - 0.148, bvc);
+  lower.push([Lg(drain), KM.chrome]);
+  lower.push([B(W, 0.06, 0.015, 0, H + 0.03, 0.0075), KM.top]);                    // 天板の後ろの立上り(水返し)
+  // シングルレバー水栓(ボウルの奥の天板に立て、吐水口をボウルの上へ)
+  const fv = bvc - brz - 0.04;
+  const base = new THREE.CylinderGeometry(0.022, 0.025, 0.12, 24); base.translate(0, H + 0.06, fv);
+  lower.push([Lg(base), KM.chrome]);
+  lower.push([B(0.03, 0.022, 0.13, 0, H + 0.105, fv + 0.06), KM.chrome]);           // 吐水口
+  lower.push([B(0.016, 0.014, 0.07, 0, H + 0.132, fv - 0.005), KM.chrome]);         // レバー
+  add(mergeGeoms(lower), member);
+
+  // 三面鏡(収納付き)と照明。鏡は3枚に分け、合わせ目を細い線で見せる
+  const y0 = H + 0.30, y1 = y0 + 0.78, md = 0.14;
+  const mirror = [
+    [B(W, y1 - y0, md - 0.02, 0, (y0 + y1) / 2, (md - 0.02) / 2), KM.body],
+    [B(W, 0.10, md, 0, y1 + 0.05, md / 2), KM.front],                                // 上部の照明の箱
+    [B(W - 0.04, 0.012, 0.03, 0, y1 + 0.004, md - 0.02), VANITY_MAT.light],         // 照明のカバー(下向き)
+    [B(W, 0.025, md, 0, y0 - 0.0125, md / 2), KM.front],                             // 鏡の下の棚
+  ];
+  const pw = (W - 0.008) / 3;
+  for (let k = -1; k <= 1; k++) mirror.push([B(pw - 0.006, y1 - y0 - 0.02, 0.012, k * (pw + 0.004), (y0 + y1) / 2, md - 0.014), UB_MAT.mirror]);
+  add(mergeGeoms(mirror), member);
+}
+
 /* 矩形 [x0, x1, z0, z1] から cut(同じ形式。null なら何もしない)を除いた矩形の集まり。天井の階段の開口などに使う */
 function rectsMinus(rect, cut) {
   if (!cut) return [rect];
@@ -1759,9 +1820,7 @@ function buildWafuHouse() {
       // 洗面脱衣(幅1.60×奥行1.25): 入口(南)と浴室の入口(北)を東寄りに一直線に並べて通路(幅約0.8m)を確保し、
       // 洗面化粧台(北西)と洗濯機置場(南西)は西側にまとめる
       const vx = xB + 0.025 + 0.375, vz = zW + 0.025 + 0.225;
-      IW(box(0.75, 0.82, 0.45, MW.cab, vx, fY + 0.41, vz), "洗面化粧台");
-      IW(box(0.79, 0.05, 0.49, MW.counter, vx + 0.02, fY + 0.84, vz + 0.01), "洗面化粧台");
-      IW(box(0.70, 0.72, 0.06, MW.kanagu, vx, fY + 1.34, zW + 0.055), "洗面化粧台");
+      buildVanity(IW, "洗面化粧台", { wx: vx, wz: zW + 0.025, face: "S", fy: fY, D: 0.45 });
       IW(box(0.60, 0.92, 0.55, MW.cab, xB + 0.025 + 0.30, fY + 0.46, zW2 - 0.025 - 0.275), "洗濯機置場");
       placeToilet(IW, MW.toki, "便器", (xC + xD) / 2, iZ0 + 0.01, "S", fY, xD - 0.025);   // 北の外壁を背に、入口(南)向き。紙巻器は東の壁
     }
@@ -1815,7 +1874,8 @@ function buildWafuHouse() {
       for (let i = 0; i < nStep; i++) {
         const zc = stZ0 - run2 * i;
         IW(box(1.05, 0.05, run2 + 0.03, MW.ita, sxc, fY + 0.06 + rise2 * (i + 1) - 0.02, zc), "階段");
-        IW(box(1.05, rise2 - 0.05, 0.03, MW.cab, sxc, fY + 0.06 + rise2 * (i + 1) - rise2 / 2, zc + run2 / 2), "階段");
+        // 蹴込: 下の段の踏板の上から踏板の下まで。面は踏板の先端(段鼻)より2cm奥に下げる(面が重なるとちらつく)
+        IW(box(1.04, rise2 - 0.05, 0.03, MW.cab, sxc, fY + 0.06 + rise2 * (i + 1) - 0.02 - rise2 / 2, zc + run2 / 2 - 0.02), "階段");
       }
       // 手すり: 東の間仕切り(xD)側に、踏板の上0.80mの高さで勾配に沿って付ける(下の東納戸の引戸 z 0.9〜1.7 を避けて4段目から)
       const hx = xD - 0.035 - 0.06, treadTop = (i) => fY + 0.06 + rise2 * (i + 1) + 0.005;
@@ -2224,9 +2284,23 @@ function buildCubeInterior(g) {
     for (let i = 0; i < ST.nStep; i++) {
       const zc = ST.zBottom - ST.run * i;
       IN(box(ST.w, 0.05, ST.run + 0.03, M.tategu, ST.cx, t1 + rise * (i + 1) - 0.025, zc), "階段");
-      IN(box(ST.w, rise - 0.05, 0.03, M.cabinet, ST.cx, t1 + rise * (i + 1) - rise / 2, zc + ST.run / 2), "階段");
+      // 蹴込: 下の段の踏板の上から踏板の下まで。面は段鼻より2cm奥に下げる(面が重なるとちらつく)
+      IN(box(ST.w - 0.01, rise - 0.05, 0.03, M.cabinet, ST.cx, t1 + rise * (i + 1) - 0.025 - rise / 2, zc + ST.run / 2 - 0.02), "階段");
     }
     const t2 = top(2);
+    // 吹抜けの縁の側面(1階の天井から2階の床の下まで)。開いたままだと床の中の梁や外壁の裏が見えるので、1階の壁を延ばしてふさぐ
+    {
+      const [hx0, hx1, hz0, hz1] = [P.G.xAB, 1.95, ST.holeZ0, ST.holeZ1];
+      // 壁は縁より3.5cm吹抜け側へ出るので、床の切り口が見えないよう床の上面(の2mm下)まで立ち上げる。
+      // 北の縁(上り口)は最上段の踏板が切り口を隠すので、踏板と重ならないよう床の下面で止める
+      const y0 = P.ceilY(1), yT = top(2) - 0.002, yB = P.floorY(2) - 0.04;
+      const wall = (w, d, x, z, y1) => IN(box(w, y1 - y0, d, M.kabe, x, (y0 + y1) / 2, z), "内壁(クロス)");
+      // 西・南の縁は2階の間仕切り(下端が床の中)と面が重なるので、吹抜け側へ2mmずらす
+      wall(0.07, hz1 - hz0, hx0 + 0.002, (hz0 + hz1) / 2, yT);
+      wall(0.07, hz1 - hz0, hx1, (hz0 + hz1) / 2, yT);
+      wall(hx1 - hx0 - 0.07, 0.07, (hx0 + hx1) / 2, hz0, yB);
+      wall(hx1 - hx0 - 0.07, 0.07, (hx0 + hx1) / 2, hz1 - 0.002, yT);
+    }
     IN(box(0.05, 0.85, 1.30, M.tategu, P.G.xAB + 0.05, t2 + 0.43, -1.25), "階段");      // 廊下(2階)側
     IN(box(0.05, 0.85, 2.80, M.tategu, 1.95 - 0.05, t2 + 0.43, -0.50), "階段");                                   // 廊下(2階・東)側
   }
@@ -2243,9 +2317,7 @@ function buildCubeInterior(g) {
     });
   }
   // 洗面脱衣: 洗面化粧台(西の壁)と洗濯機置場(北の窓の下)
-  IN(box(0.46, 0.82, 0.75, M.cabinet, P.G.xAB + 0.265, t1 + 0.41, -2.70), "洗面化粧台");
-  IN(box(0.50, 0.05, 0.79, M.counter, P.G.xAB + 0.285, t1 + 0.845, -2.70), "洗面化粧台");
-  IN(box(0.06, 0.75, 0.70, M.kanagu, P.G.xAB + 0.065, t1 + 1.34, -2.70), "洗面化粧台");
+  buildVanity(IN, "洗面化粧台", { wx: P.G.xAB + 0.035, wz: -2.70, face: "E", fy: t1 });
   IN(box(0.64, 0.92, 0.62, M.cabinet, 2.55, t1 + 0.46, P.zn + 0.34), "洗濯機置場");
   // ユニットバス(入口 x=3.00 の折れ戸から東の外壁へ)
   buildUnitBath(IN, "浴槽(ユニットバス)", {
@@ -3680,9 +3752,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   {
     const wx = xWa + 0.035;                                                        // 西の壁の面
     IN(box(0.64, 0.92, 0.62, MI.cabinet, wx + 0.33, f1 + 0.46, iZ0 + 0.33), "洗濯機置場");   // 北西の隅
-    IN(box(0.46, 0.82, 0.75, MI.cabinet, wx + 0.23, f1 + 0.41, -2.475), "洗面化粧台");
-    IN(box(0.50, 0.05, 0.79, MI.counter, wx + 0.25, f1 + 0.84, -2.475), "洗面化粧台");
-    IN(box(0.06, 0.75, 0.70, MI.kanagu, wx + 0.03, f1 + 1.34, -2.475), "洗面化粧台");     // 鏡
+    buildVanity(IN, "洗面化粧台", { wx, wz: -2.475, face: "E", fy: f1 });
   }
   // 便器
   {
@@ -3726,7 +3796,8 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
     for (let i = 0; i < nStep; i++) {
       const zc = stZb - run2 * i;
       IN(box(1.00, 0.05, run2 + 0.03, MI.tategu, sxc, f1 + rise2 * (i + 1) - 0.02, zc), "階段");
-      IN(box(1.00, rise2 - 0.05, 0.03, MI.cabinet, sxc, f1 + rise2 * (i + 1) - rise2 / 2, zc + run2 / 2), "階段");
+      // 蹴込: 下の段の踏板の上から踏板の下まで。面は段鼻より2cm奥に下げる(面が重なるとちらつく)
+      IN(box(0.99, rise2 - 0.05, 0.03, MI.cabinet, sxc, f1 + rise2 * (i + 1) - 0.02 - rise2 / 2, zc + run2 / 2 - 0.02), "階段");
     }
     IN(box(0.06, 0.06, stZb - stZt + 0.3, MI.tategu, xCor + 0.12, f1 + 1.85, (stZb + stZt) / 2), "階段");
     IN(box(0.06, 0.85, 0.06, MI.tategu, xCor + 0.12, f1 + 1.42, stZb), "階段");
