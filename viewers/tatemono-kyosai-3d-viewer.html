@@ -1021,6 +1021,130 @@ function placeToilet(put, mat, member, bx, bz, face, fy, sideWall) {
   ]), "トイレットペーパーホルダー");
 }
 
+/* システムキッチン(I型。下台・天板・シンク・水栓・IHクッキングヒーター・キッチンパネル・吊戸棚・レンジフード)
+   (o.wx, o.wz) は背の壁の面上の点(キッチンの長さの中心)、o.face はキッチンの正面が向く方角、o.fy は床の仕上げ面、o.L は長さ
+   o.sink / o.cook: シンク・コンロの中心(壁に沿った向きの座標。face が S/N なら x、E/W なら z) / o.cookW: コンロの幅
+   o.upper: 吊戸棚を付ける / o.hood: レンジフードを付ける
+   o.splash: キッチンパネルの範囲 [[from, to, 上端の高さ(床から)], ...](省略すると全長を吊戸棚の下端まで)
+   浸水の汚損は部材の外形で描くので、下台・天板まわり・パネル・吊戸棚・レンジフードは別のメッシュに分ける */
+const KITCHEN_MAT = {
+  front:  new THREE.MeshStandardMaterial({ color: 0xece6db, roughness: 0.42 }),                   // 扉・引出しの面材
+  body:   new THREE.MeshStandardMaterial({ color: 0xd8d0c2, roughness: 0.7 }),                    // キャビネットの本体
+  plinth: new THREE.MeshStandardMaterial({ color: 0x4e4a46, roughness: 0.8 }),                    // 台輪(けこみ)
+  top:    new THREE.MeshStandardMaterial({ color: 0xf3f1ec, roughness: 0.26 }),                   // 天板(人工大理石)
+  steel:  new THREE.MeshStandardMaterial({ color: 0xc3c8cb, roughness: 0.3, metalness: 0.75 }),   // シンク(ステンレス)
+  chrome: new THREE.MeshStandardMaterial({ color: 0xdfe3e6, roughness: 0.14, metalness: 0.9 }),   // 水栓・取手
+  glass:  new THREE.MeshStandardMaterial({ color: 0x17191c, roughness: 0.1, metalness: 0.2 }),    // IHのトッププレート・グリルの窓
+  mark:   new THREE.MeshStandardMaterial({ color: 0x8a9097, roughness: 0.4 }),                    // IHの加熱部の印・操作部
+  panel:  new THREE.MeshStandardMaterial({ color: 0xf6f4f0, roughness: 0.32 }),                   // キッチンパネル
+  hood:   new THREE.MeshStandardMaterial({ color: 0xe2e4e6, roughness: 0.35, metalness: 0.35 }),  // レンジフード
+  filter: new THREE.MeshStandardMaterial({ color: 0x6d7276, roughness: 0.5, metalness: 0.4 }),    // レンジフードの整流板
+};
+function buildKitchen(add, member, o) {
+  const { wx, wz, face, fy, L } = o;
+  const [dx, dz] = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[face];
+  const rot = Math.atan2(dx, dz);
+  const Lg = (g) => { g.rotateY(rot); g.translate(wx, fy, wz); return g; };
+  const B = (w, h, d, u, y, v) => Lg(boxGeo(w, h, d, u, y, v));   // u: 長さの向き / v: 壁から手前へ / y: 床から
+  const ax = (w) => dx ? -dx * (w - wz) : dz * (w - wx);           // 壁に沿った座標 → u
+  const su = ax(o.sink), cu = ax(o.cook), cw = o.cookW || 0.75;
+  const H = 0.85, T = 0.04, D = 0.65, plH = 0.10;                 // 天板の高さ・厚み・奥行・台輪の高さ
+  const yUp0 = 1.45, yUp1 = 2.15, upD = 0.35;                     // 吊戸棚の下端・上端・奥行
+  const hw = cw;                                                   // レンジフードの幅(コンロに合わせる)
+
+  // 下台: 本体・台輪・扉と引出し。シンク下(2段)・コンロ下(グリル＋2段)・その他(3段)に割る
+  const lower = [
+    [B(L, H - T - plH, 0.60, 0, plH + (H - T - plH) / 2, 0.30), KITCHEN_MAT.body],
+    [B(L, plH, 0.55, 0, plH / 2, 0.275), KITCHEN_MAT.plinth],
+  ];
+  const cuts = [-L / 2, su - 0.45, su + 0.45, cu - cw / 2, cu + cw / 2, L / 2].sort((a, b) => a - b);
+  const FH = H - T - plH;                                          // 前板の範囲の高さ
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const a = cuts[i], b = cuts[i + 1];
+    if (b - a < 0.05) continue;
+    const mid = (a + b) / 2;
+    const kind = Math.abs(mid - su) < 0.2 ? "sink" : Math.abs(mid - cu) < 0.2 ? "cook" : "etc";
+    const tiers = kind === "sink" ? [0.30, FH - 0.30] : kind === "cook" ? [0.12, (FH - 0.12) / 2, (FH - 0.12) / 2] : [0.17, (FH - 0.17) / 2, (FH - 0.17) / 2];
+    const n = kind === "etc" ? Math.max(1, Math.round((b - a) / 0.6)) : 1;
+    const cwid = (b - a) / n;
+    for (let k = 0; k < n; k++) {
+      const uc = a + cwid * (k + 0.5);
+      let yt = H - T;                                              // 上から順に並べる
+      tiers.forEach((h, j) => {
+        const yc = yt - h / 2;
+        const grill = kind === "cook" && j === 0;
+        lower.push([B(cwid - 0.004, h - 0.004, 0.02, uc, yc, 0.61), grill ? KITCHEN_MAT.glass : KITCHEN_MAT.front]);
+        lower.push([B(Math.min(cwid - 0.12, grill ? 0.30 : 0.42), 0.012, 0.014, uc, yt - (grill ? 0.025 : 0.035), 0.627), KITCHEN_MAT.chrome]);   // 取手(横長のバー)
+        yt -= h;
+      });
+    }
+  }
+  add(mergeGeoms(lower), member);
+
+  // 天板(シンクの開口を空ける)・シンク・水栓・IHクッキングヒーター
+  const sw = 0.78, sv0 = 0.13, sv1 = 0.55, sd = 0.20;              // シンクの幅・前後の範囲・深さ
+  const L2 = L + 0.04, ut0 = -L2 / 2, ut1 = L2 / 2;
+  const top = [
+    [B(su - sw / 2 - ut0, T, D + 0.01, (ut0 + su - sw / 2) / 2, H - T / 2, (D + 0.01) / 2), KITCHEN_MAT.top],
+    [B(ut1 - su - sw / 2, T, D + 0.01, (su + sw / 2 + ut1) / 2, H - T / 2, (D + 0.01) / 2), KITCHEN_MAT.top],
+    [B(sw, T, sv0, su, H - T / 2, sv0 / 2), KITCHEN_MAT.top],
+    [B(sw, T, D + 0.01 - sv1, su, H - T / 2, (sv1 + D + 0.01) / 2), KITCHEN_MAT.top],
+    [B(L2, 0.012, 0.012, 0, H - 0.006, D + 0.016), KITCHEN_MAT.top],                       // 天板の前の水返し(縁)
+    // シンク(側面・底・排水口)
+    [B(0.008, sd, sv1 - sv0, su - sw / 2 + 0.004, H - sd / 2, (sv0 + sv1) / 2), KITCHEN_MAT.steel],
+    [B(0.008, sd, sv1 - sv0, su + sw / 2 - 0.004, H - sd / 2, (sv0 + sv1) / 2), KITCHEN_MAT.steel],
+    [B(sw, sd, 0.008, su, H - sd / 2, sv0 + 0.004), KITCHEN_MAT.steel],
+    [B(sw, sd, 0.008, su, H - sd / 2, sv1 - 0.004), KITCHEN_MAT.steel],
+    [B(sw, 0.008, sv1 - sv0, su, H - sd, (sv0 + sv1) / 2), KITCHEN_MAT.steel],
+  ];
+  const disc = (r, t, u, y, v, mat) => { const g = new THREE.CylinderGeometry(r, r, t, 28); g.translate(u, y, v); top.push([Lg(g), mat]); };
+  disc(0.055, 0.006, su + 0.22, H - sd + 0.005, sv1 - 0.10, UB_MAT.drain);                // 排水口
+  // 水栓(シングルレバーのグースネック)。シンクの奥の天板に立てる
+  const fu = su + 0.20, fv = 0.07;
+  disc(0.028, 0.05, fu, H + 0.025, fv, KITCHEN_MAT.chrome);
+  top.push([Lg(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    [fu, H + 0.04, fv], [fu, H + 0.26, fv + 0.01], [fu, H + 0.33, fv + 0.08], [fu, H + 0.30, fv + 0.18], [fu, H + 0.24, fv + 0.21],
+  ].map(([u, y, v]) => new THREE.Vector3(u, y, v))), 32, 0.012, 10, false)), KITCHEN_MAT.chrome]);
+  top.push([B(0.016, 0.016, 0.10, fu, H + 0.075, fv + 0.03), KITCHEN_MAT.chrome]);         // レバー
+  // IHクッキングヒーター(天板に載るガラスのトッププレート・加熱部の印・操作部)
+  top.push([B(cw - 0.02, 0.006, 0.50, cu, H + 0.003, 0.33), KITCHEN_MAT.glass]);
+  const ring = (r, u, v) => { const g = new THREE.RingGeometry(r - 0.008, r, 40); g.rotateX(-Math.PI / 2); g.translate(u, H + 0.0065, v); top.push([Lg(g), KITCHEN_MAT.mark]); };
+  ring(0.085, cu - (cw - 0.02) / 4, 0.42); ring(0.085, cu + (cw - 0.02) / 4, 0.42); ring(0.065, cu, 0.20);
+  for (let k = -1; k <= 1; k++) top.push([B(0.05, 0.002, 0.012, cu + k * 0.12, H + 0.0065, 0.56), KITCHEN_MAT.mark]);   // 操作部
+  add(mergeGeoms(top), member);
+
+  // キッチンパネル(天板から上の壁)
+  const splash = o.splash ? o.splash.map(([a, b, y]) => [ax(a), ax(b), y]) : [[-L / 2, L / 2, o.upper ? yUp0 : yUp1]];
+  add(mergeGeoms(splash.map(([a, b, y]) => [B(Math.abs(b - a), y - H, 0.006, (a + b) / 2, (H + y) / 2, 0.003), KITCHEN_MAT.panel])), member);
+
+  // 吊戸棚(レンジフードの上は空ける)
+  if (o.upper) {
+    const segs = [[-L / 2, cu - hw / 2], [cu + hw / 2, L / 2]].filter(([a, b]) => b - a > 0.2);
+    const up = [];
+    for (const [a, b] of segs) {
+      up.push([B(b - a, yUp1 - yUp0, upD - 0.02, (a + b) / 2, (yUp0 + yUp1) / 2, (upD - 0.02) / 2), KITCHEN_MAT.body]);
+      const n = Math.max(1, Math.round((b - a) / 0.45)), dw = (b - a) / n;
+      for (let k = 0; k < n; k++) {
+        const uc = a + dw * (k + 0.5);
+        up.push([B(dw - 0.004, yUp1 - yUp0 - 0.004, 0.02, uc, (yUp0 + yUp1) / 2, upD - 0.01), KITCHEN_MAT.front]);
+        up.push([B(Math.min(dw - 0.12, 0.30), 0.012, 0.014, uc, yUp0 + 0.03, upD + 0.007), KITCHEN_MAT.chrome]);   // 取手(下端)
+      }
+    }
+    add(mergeGeoms(up), member);
+  }
+
+  // レンジフード(フラット形。整流板・操作ボタン・幕板)
+  if (o.hood) {
+    const yh = H + 0.73;                                            // 整流板の高さ(IHから73cm)
+    add(mergeGeoms([
+      [B(hw, 0.10, 0.60, cu, yh + 0.05, 0.30), KITCHEN_MAT.hood],
+      [B(hw - 0.06, 0.004, 0.52, cu, yh - 0.002, 0.30), KITCHEN_MAT.filter],
+      [B(hw, yUp1 - yh - 0.10, upD - 0.02, cu, (yh + 0.10 + yUp1) / 2, (upD - 0.02) / 2), KITCHEN_MAT.hood],   // 幕板(ダクトの覆い)
+      ...[-1, 0, 1].map((k) => [B(0.025, 0.012, 0.004, cu + hw / 2 - 0.12 + k * 0.035, yh + 0.05, 0.602), KITCHEN_MAT.mark]),
+    ]), member);
+  }
+}
+
 /* 矩形 [x0, x1, z0, z1] から cut(同じ形式。null なら何もしない)を除いた矩形の集まり。天井の階段の開口などに使う */
 function rectsMinus(rect, cut) {
   if (!cut) return [rect];
@@ -1097,7 +1221,8 @@ const WAFU_PLAN = (() => {
     P(1, "z", G.zEn, iX0, G.xB, [Dr(iX0, G.xB, "shoji", "障子(内部)", { leaves: 8 })]),
     P(1, "z", G.zEn, 3.00, G.domaX0),                                                    // ホールと広縁の間
     // 座敷 ⇔ 次の間(襖4枚)、台所 ⇔ 茶の間(襖2枚)
-    P(1, "x", G.xA, iZ0, G.zEn, [Dr(-2.55, -0.73, "fusuma", "襖"), Dr(G.zMid, G.zEn, "fusuma", "襖", { leaves: 4 })]),
+    // 座敷の押入(奥行 zMid〜zMid+0.98)の背は壁にし、襖は押入の前面から広縁境まで
+    P(1, "x", G.xA, iZ0, G.zEn, [Dr(-2.55, -0.73, "fusuma", "襖"), Dr(G.zMid + 0.98, G.zEn, "fusuma", "襖", { leaves: 4 })]),
     // 座敷 ⇔ 台所は床の間・押入の背面のため壁。次の間 ⇔ 茶の間は襖4枚
     P(1, "z", G.zMid, iX0, G.xB, [Dr(G.xA, G.xB, "fusuma", "襖", { leaves: 4 })]),
     // 茶の間・次の間 ⇔ 水回り・東の廊下(次の間から東の廊下へ引戸)
@@ -1600,24 +1725,26 @@ function buildWafuHouse() {
       const tx0 = iX0 + 0.1, tkW = 1.82;
       IW(box(tkW, 0.16, 0.90, MW.toko, tx0 + tkW / 2, fY + 0.09, zMid + 0.55), "床の間");
       IW(box(tkW, ih - 0.2, 0.06, MW.kabe, tx0 + tkW / 2, fY + 0.2 + (ih - 0.2) / 2, zMid + 0.12), "床の間");
-      IW(box(tkW + 0.1, 0.22, 0.16, MW.toko, tx0 + tkW / 2, cH - 0.35, zMid + 0.55), "床の間");
-      IW(box(0.14, ih - 0.3, 0.14, MW.toko, tx0 + tkW, fY + 0.3 + (ih - 0.3) / 2, zMid + 0.95), "床柱");
-      // 押入(床の間の東隣)。床柱の東から次の間との境の壁(xA)の手前まで(これまで境の壁を越えていた)
-      const ox0 = tx0 + tkW + 0.08, ox1 = xA - 0.03;
+      // 落とし掛け(床の間の前面の上)と、その上の小壁
+      const yOt = cH - 0.35;
+      IW(box(tkW, 0.12, 0.08, MW.toko, tx0 + tkW / 2, yOt, zMid + 0.96), "床の間");
+      IW(box(tkW, cH - (yOt + 0.06), 0.05, MW.kabe, tx0 + tkW / 2, (yOt + 0.06 + cH) / 2, zMid + 0.96), "内壁(京壁)");
+      // 床柱: 床の間の東端に、畳の上から天井まで通す。芯は押入の襖の通りに揃え、方立より少し前に出す
+      const tbW = 0.13, tbx = tx0 + tkW + tbW / 2;
+      IW(box(tbW, cH - (fY + 0.04), tbW, MW.toko, tbx, (fY + 0.04 + cH) / 2, zMid + 1.01), "床柱");
+      // 押入(床の間の東隣)。床柱の東の面から次の間との境の壁(xA)の手前まで
+      const ox0 = tx0 + tkW + tbW, ox1 = xA - 0.03;
       IW(box(ox1 - ox0, 2.00, 0.88, MW.ita, (ox0 + ox1) / 2, fY + 1.00, zMid + 0.54), "押入");
-      doorSetW(fY, 0.04, "z", zMid + 0.98, ox0 + 0.01, ox1 - 0.01, "fusuma", "押入", { noFrame: true, sillH: 0, yTop: fY + 1.98, v: 0.03 });   // 押入の襖
+      // 押入の襖(敷居・鴨居・方立で納め、鴨居は次の間との境の鴨居と高さを揃える)と、鴨居の上の小壁
+      doorSetW(fY, 0.04, "z", zMid + 0.98, ox0, ox1 - 0.01, "fusuma", "押入", { yTop: fY + 1.98, v: 0.03 });   // 方立は床柱に付ける
+      IW(box(ox1 - ox0, cH - (fY + 1.98), 0.05, MW.kabe, (ox0 + ox1) / 2, (fY + 1.98 + cH) / 2, zMid + 0.98 + 0.03), "内壁(京壁)");
     }
     /* ---------------- 次の間の仏壇 ---------------- */
     IW(box(0.55, 1.85, 0.95, MW.butsu, xB - 0.30, fY + 0.93, 0.70), "仏壇");   // 次の間の東の壁際(北側の襖・座敷の押入と重ならない位置)
     /* ---------------- 台所の造作 ---------------- */
     {
       const kx = iX0 + 0.35, kz0 = iZ0 + 0.5, kz1 = iZ0 + 3.1, kzc = (kz0 + kz1) / 2, kl = kz1 - kz0;
-      IW(box(0.65, 0.86, kl, MW.cab, kx, fY + 0.445, kzc), "システムキッチン");
-      IW(box(0.69, 0.05, kl + 0.04, MW.counter, kx, fY + 0.885, kzc), "システムキッチン");
-      IW(box(0.45, 0.03, 0.55, MW.kanagu, kx + 0.02, fY + 0.90, kzc - 0.6), "システムキッチン");
-      IW(box(0.04, 0.30, 0.04, MW.kanagu, kx - 0.22, fY + 1.05, kzc - 0.6), "システムキッチン");
-      IW(box(0.48, 0.02, 0.55, MW.kanagu, kx + 0.02, fY + 0.91, kzc + 0.6), "システムキッチン");
-      IW(box(0.40, 0.60, kl - 0.5, MW.cab, kx - 0.10, fY + 1.92, kzc), "システムキッチン");
+      buildKitchen(IW, "システムキッチン", { wx: kx - 0.325, wz: kzc, face: "E", fy: fY, L: kl, sink: kzc - 0.6, cook: kzc + 0.6, upper: true, hood: true });
       IW(box(0.65, 1.85, 0.60, MW.cab, kx + 0.05, fY + 0.93, kz1 + 0.6), "食器棚");
     }
     /* ---------------- 浴室・洗面・便所 ---------------- */
@@ -1677,7 +1804,8 @@ function buildWafuHouse() {
     partitionsW(2, f2, ih2, 0.04, MW.kabe2, "内壁(2階)");
     // 押入(和室A。南の窓を避けて西の壁に)・クローゼット(洋室B。北側廊下の壁、戸の脇)
     IW(box(0.80, 2.00, 1.75, MW.ita, jX0 + 0.42, f2 + 1.055, 0.0), "押入");
-    doorSetW(f2, 0.08, "x", jX0 + 0.82, -0.86, 0.86, "fusuma", "押入", { noFrame: true, sillH: 0, yTop: f2 + 2.02, v: 0.03 });   // 押入の襖
+    doorSetW(f2, 0.08, "x", jX0 + 0.82, -0.86, 0.86, "fusuma", "押入", { yTop: f2 + 2.02, v: 0.03 });   // 押入の襖(敷居・鴨居・方立で納める)
+    IW(box(0.05, c2 - (f2 + 2.02), 1.72, MW.kabe2, jX0 + 0.85, (f2 + 2.02 + c2) / 2, 0.0), "内壁(2階)");    // 鴨居の上の小壁
     IW(box(1.50, 2.00, 0.62, MW.cab, 2.10, f2 + 1.055, zHall + 0.335), "押入");
     // 手すり(吹抜けの西の縁。南の縁は納戸の壁、北は階段の上り口なので付けない)
     IW(box(0.06, 0.85, stZ0 - stZ1, MW.sao, xS + 0.04, f2 + 0.45, (stZ0 + stZ1) / 2), "階段");
@@ -2107,12 +2235,12 @@ function buildCubeInterior(g) {
   // システムキッチン(LDKの北の壁。シンクは北の窓の下、コンロは西寄り)
   {
     const x0 = -1.90, x1 = 0.80, kz = P.zn + 0.335, cx = (x0 + x1) / 2;   // 室内側の仕上げ面(8mm内側)に当てる
-    IN(box(x1 - x0, 0.86, 0.65, M.cabinet, cx, t1 + 0.43, kz), "システムキッチン");
-    IN(box(x1 - x0 + 0.04, 0.05, 0.69, M.counter, cx, t1 + 0.885, kz), "システムキッチン");
-    IN(box(0.55, 0.03, 0.45, M.kanagu, -0.30, t1 + 0.90, kz + 0.02), "システムキッチン");            // シンク
-    IN(box(0.04, 0.30, 0.04, M.kanagu, -0.30, t1 + 1.05, kz - 0.20), "システムキッチン");            // 水栓
-    IN(box(0.55, 0.02, 0.48, M.kanagu, -1.50, t1 + 0.91, kz), "システムキッチン");                   // コンロ
-    IN(box(0.60, 0.40, 0.50, M.kanagu, -1.50, t1 + 1.75, P.zn + 0.25), "システムキッチン");          // レンジフード(窓の西)
+    // 北の窓(x -1.20〜0.60、下端 1.60)の前は吊戸棚を付けず、キッチンパネルは窓の下で止める。コンロ(幅60cm)とレンジフードは窓の西
+    const sill = 1.60 - t1 - 0.02;
+    buildKitchen(IN, "システムキッチン", {
+      wx: cx, wz: kz - 0.325, face: "S", fy: t1, L: x1 - x0, sink: -0.30, cook: -1.52, cookW: 0.60, upper: false, hood: true,
+      splash: [[x0, -1.22, 2.15], [-1.22, 0.62, sill], [0.62, x1, 2.15]],
+    });
   }
   // 洗面脱衣: 洗面化粧台(西の壁)と洗濯機置場(北の窓の下)
   IN(box(0.46, 0.82, 0.75, M.cabinet, P.G.xAB + 0.265, t1 + 0.41, -2.70), "洗面化粧台");
@@ -3540,13 +3668,7 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   // システムキッチン(開口のない西面にI型。前面に広い通路)
   {
     const kx = iX0 + 0.34, kz0 = 0.35, kz1 = 2.95, kzc = (kz0 + kz1) / 2, kl = kz1 - kz0;
-    IN(box(0.65, 0.86, kl, MI.cabinet, kx, f1 + 0.43, kzc), "システムキッチン");
-    IN(box(0.69, 0.05, kl + 0.04, MI.counter, kx, f1 + 0.885, kzc), "システムキッチン");
-    IN(box(0.45, 0.03, 0.55, MI.kanagu, kx + 0.02, f1 + 0.90, kzc - 0.65), "システムキッチン");
-    IN(box(0.04, 0.30, 0.04, MI.kanagu, kx - 0.22, f1 + 1.05, kzc - 0.65), "システムキッチン");
-    IN(box(0.48, 0.02, 0.55, MI.kanagu, kx + 0.02, f1 + 0.91, kzc + 0.65), "システムキッチン");
-    IN(box(0.40, 0.60, kl - 0.5, MI.cabinet, kx - 0.10, f1 + 1.92, kzc), "システムキッチン");
-    IN(box(0.52, 0.28, 0.65, MI.kanagu, kx - 0.04, f1 + 1.55, kzc + 0.65), "システムキッチン");
+    buildKitchen(IN, "システムキッチン", { wx: kx - 0.325, wz: kzc, face: "E", fy: f1, L: kl, sink: kzc - 0.65, cook: kzc + 0.65, upper: true, hood: true });
   }
   // ユニットバス(1616)。入口(洗面側の壁 x=xBath)から奥の壁へ、洗い場→浴槽の順に並べる
   buildUnitBath(IN, "浴槽(ユニットバス)", {
