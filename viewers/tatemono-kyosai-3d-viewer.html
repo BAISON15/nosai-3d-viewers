@@ -4885,44 +4885,90 @@ function dmgGlass(rng, { size = 0.5 }) {
 }
 
 /* 外壁のひび割れ・剥落: 衝突点から枝分かれするひびと、仕上げが剥がれて下地が見える部分(漆喰は小舞も見せる) */
+/* 凹み・欠けの形。面の奥へは描けないので、形は面の少し手前に平らに置き、法線だけを「凹んだ形」のものにする。
+   場面の光が当たる向きに応じて影の側・明るい側が自然に出るので、どの向きの面・どの視点でも凹んで見える */
+function dmgFlatGeo(tris, z) {                 // tris: [[x, y, 法線(Vector3)] ×3, ...] → 位置は z の平面、法線は指定どおり
+  const pos = [], nor = [], uv = [];
+  for (const t of tris) for (const [x, y, n] of t) { pos.push(x, y, z); nor.push(n.x, n.y, n.z); uv.push(0, 0); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+// 打痕(なめらかな凹み): 深さ z=-d/2(1+cos(πρ/r))。縁の法線は面と同じ向きなので、まわりの面に自然になじむ
+function dmgDimpleGeo(r, depth, x, y, z = 0.0025, seg = 20, rings = 5) {
+  const P = (k, s) => {
+    const rho = (r * k) / rings, th = (s / seg) * Math.PI * 2, fp = (depth / 2) * (Math.PI / r) * Math.sin((Math.PI * rho) / r);
+    return [x + rho * Math.cos(th), y + rho * Math.sin(th), new THREE.Vector3(-fp * Math.cos(th), -fp * Math.sin(th), 1).normalize()];
+  };
+  const tris = [];
+  for (let k = 0; k < rings; k++) for (let s = 0; s < seg; s++) {
+    const a = P(k, s), b = P(k + 1, s), c = P(k + 1, s + 1), d = P(k, s + 1);
+    tris.push([a, b, c]);
+    if (k > 0) tris.push([a, c, d]);
+  }
+  return dmgFlatGeo(tris, z);
+}
+// 欠け(割れた面が角ばって見える凹み): 縁→中段→底の3段の多面体で、面ごとの法線を付ける
+function dmgChipGeo(rng, r, depth, x, y, z = 0.003) {
+  const n = 9 + ((rng() * 5) | 0), cx = (rng() - 0.5) * r * 0.35, cy = (rng() - 0.5) * r * 0.35, P = [], M = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + (rng() - 0.5) * 0.35, k = 0.7 + rng() * 0.5, b = a + (rng() - 0.5) * 0.5;
+    P.push(new THREE.Vector3(Math.cos(a) * r * k, Math.sin(a) * r * k * 0.85, 0));
+    M.push(new THREE.Vector3(cx + Math.cos(b) * r * k * 0.5, cy + Math.sin(b) * r * k * 0.42, -depth * (0.5 + rng() * 0.35)));
+  }
+  const C = new THREE.Vector3(cx, cy, -depth), tris = [];
+  const face = (a, b, c) => {
+    const nn = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+    if (nn.z < 0) nn.negate();
+    tris.push([a, b, c].map((p) => [x + p.x, y + p.y, nn]));
+  };
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    face(P[i], P[j], M[i]); face(M[i], P[j], M[j]); face(M[i], M[j], C);
+  }
+  const geo = dmgFlatGeo(tris, z);
+  geo.userData.edge = dmgRingGeo(P.map((p) => new THREE.Vector2(p.x, p.y)), 1.04, 0.1, z + 0.0005);   // 欠けた縁(塗膜の割れ口)の影
+  geo.userData.edge.translate(x, y, 0);
+  return geo;
+}
+
 function dmgWallCrack(rng, { size = 0.6, spall = true, core = 0xc9c2b2, lath = false, crackColor = DMG_C.crack }) {
-  const L = [], cm = dmgMat(crackColor, { rough: 0.95 });
+  const L = [], cm = dmgMat(crackColor, { rough: 0.95, opacity: 0.85 });
   const nB = 3 + ((rng() * 3) | 0);
-  for (let i = 0; i < nB; i++) dmgCrackTree(L, rng, 0, 0, (i / nB) * Math.PI * 2 + rng() * 0.8, size * (0.35 + rng() * 0.35), 0.008, cm, 2);
-  if (spall) {
-    const r = size * (0.16 + rng() * 0.12), pts = dmgOutline(rng, r * 1.2, r, 11, 0.5);
-    L.push([dmgShapeGeo(pts, 1, 0.004), dmgMat(core, { rough: 0.95 })]);
-    L.push([dmgRingGeo(pts, 1.06, 0.1, 0.0045), dmgMat(shade(core, 0.55), { rough: 0.95 })]);         // 剥がれた縁の影
+  for (let i = 0; i < nB; i++) dmgCrackTree(L, rng, 0, 0, (i / nB) * Math.PI * 2 + rng() * 0.8, size * (0.35 + rng() * 0.35), 0.006, cm, 2);
+  if (spall) {                                                                                         // 剥落: 割れた面が角ばった凹み
+    const r = size * (0.15 + rng() * 0.1);
+    const cg = dmgChipGeo(rng, r * 1.2, r * 0.3, 0, 0, 0.004);
+    L.push([cg, dmgMat(core, { rough: 0.95 })], [cg.userData.edge, dmgMat(shade(core, 0.45), { opacity: 0.55 })]);
     if (lath) for (let k = -2; k <= 2; k++) {                                                          // 小舞(竹の下地)
-      dmgSeg(L, -r * 0.8, k * r * 0.28, r * 0.8, k * r * 0.28, 0.012, 0.006, dmgMat(0x6b5536));
-      dmgSeg(L, k * r * 0.3, -r * 0.7, k * r * 0.3, r * 0.7, 0.01, 0.0065, dmgMat(0x7a6240));
+      dmgSeg(L, -r * 0.7, k * r * 0.24, r * 0.7, k * r * 0.24, 0.011, 0.0055, dmgMat(0x6b5536));
+      dmgSeg(L, k * r * 0.26, -r * 0.6, k * r * 0.26, r * 0.6, 0.009, 0.006, dmgMat(0x7a6240));
     }
   }
   const g = new THREE.Group(); g.add(mergeGeoms(L));
   return g;
 }
 
-/* 雹の打痕: 光の当たり方で凹みを見せる(上側の内面は影、下側の内面は明るい)。瓦・スレートは一部が割れ、外壁は欠ける */
-function dmgHail(rng, { size = 0.9, count = 18, kind = "tile", color = 0x888888, core = 0xc9c2b2 }) {
-  // 凹みの下側の内面は空を映して明るい(濃色の板金でも見えるよう、明るいグレーへ寄せる)
-  const liteC = new THREE.Color(color).lerp(new THREE.Color(0xc4ccd4), kind === "metal" ? 0.5 : 0.3).getHex();
-  const L = [], dark = dmgMat(shade(color, 0.45), { opacity: kind === "wall" ? 0.8 : 0.6 }), lite = dmgMat(liteC, { opacity: 0.55, metal: kind === "metal" ? 0.5 : 0 });
-  const cm = dmgMat(DMG_C.crack), chip = dmgMat(core, { rough: 0.95 });
+/* 雹の打痕: なめらかな凹み(打痕)と、角ばった欠け。外壁・瓦は一部が欠けて下地が見え、欠けから細いひびが走る */
+function dmgHail(rng, { size = 0.9, count = 18, kind = "tile", color = 0x888888, core }) {
+  const metal = kind === "metal";
+  const coreC = core ?? shade(color, 1.3);                                                  // 瓦・スレートの割れ口は表面より明るい
+  const dent = dmgMat(color, { opacity: metal ? 0.85 : 0.75, metal: metal ? 0.55 : 0, rough: metal ? 0.35 : 0.85 });
+  const chip = dmgMat(coreC, { rough: 0.95 }), hair = dmgMat(DMG_C.crack, { opacity: 0.4 }), rimM = dmgMat(shade(color, 0.45), { opacity: 0.5 });
+  const L = [];
   for (let i = 0; i < count; i++) {
     const x = (rng() + rng() - 1) * size * 0.6, y = (rng() + rng() - 1) * size * 0.6;   // 中心に寄った分布
-    const r = (kind === "metal" ? 0.02 : kind === "wall" ? 0.026 : 0.016) + rng() * (kind === "wall" ? 0.035 : 0.028);
-    const up = new THREE.CircleGeometry(r, 14, 0, Math.PI); up.translate(x, y, 0.002);
-    const dn = new THREE.CircleGeometry(r * 0.9, 14, Math.PI, Math.PI); dn.translate(x, y, 0.002);
-    L.push([up, dark], [dn, lite]);
-    if (kind !== "metal" && rng() < (kind === "wall" ? 0.65 : 0.3)) {                  // 割れ・欠け
-      if (kind === "wall") {                                                             // 欠け: 下地の色と、欠けた縁の影
-        const cp = dmgOutline(rng, r * 1.5, r * 1.25, 8, 0.6);
-        L.push([dmgShapeGeo(cp, 1, 0.003, x, y), chip]);
-        const rim = dmgRingGeo(cp, 1.12, 0.22, 0.0028); rim.translate(x, y, 0); L.push([rim, dmgMat(shade(color, 0.4), { opacity: 0.85 })]);
+    const r = (metal ? 0.022 : kind === "wall" ? 0.02 : 0.016) + rng() * (kind === "wall" ? 0.03 : 0.026);
+    if (!metal && rng() < (kind === "wall" ? 0.45 : 0.3)) {
+      const cg = dmgChipGeo(rng, r * 1.25, r * 0.38, x, y);
+      L.push([cg, chip], [cg.userData.edge, rimM]);
+      if (rng() < 0.55) {                                                                   // 欠けから走る細いひび
+        const nC = 1 + ((rng() * 3) | 0);
+        for (let k = 0; k < nC; k++) { const a = rng() * Math.PI * 2; dmgCrackTree(L, rng, x + Math.cos(a) * r, y + Math.sin(a) * r, a, r * (1.2 + rng() * 1.8), 0.0025, hair, 0); }
       }
-      const nC = 3 + ((rng() * 3) | 0);
-      for (let k = 0; k < nC; k++) { const a = rng() * Math.PI * 2, l = r * (1.5 + rng() * 2.5); dmgSeg(L, x, y, x + Math.cos(a) * l, y + Math.sin(a) * l, 0.003, 0.0035, cm); }
-    }
+    } else L.push([dmgDimpleGeo(r, r * (metal ? 0.6 : 0.55), x, y), dent]);
   }
   const g = new THREE.Group(); g.add(mergeGeoms(L));
   return g;
@@ -5229,7 +5275,7 @@ function damageStandard({ sc, rng, addPatch, mark, flood }) {
   // 被害の形に使う色・種類(屋根材・外壁材の選択に合わせる)
   const roofC = memberColor("屋根葺き材", ROOFS[state.roofKey].color), roofT = { kawara: "kawara", slate: "slate", galvalume: "metal" }[state.roofKey];
   const slopeTan = shape === "katanagare" ? riseT / (2 * Ze) : rise / Ze;
-  const wallCore = { mortar: 0x9b958a, siding: 0xc9c2b2, wood: 0xc8a77a }[state.wallKey];
+  const wallCore = { mortar: 0xd2cbbd, siding: 0xd6d0c4, wood: 0xcfae80 }[state.wallKey];   // 欠けて見える下地(割れ口は表面より明るい)
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
   const gutterAt = (sf) => V3((rng() - 0.5) * (W - 2.4), wallTop + 0.02, sf * (shape === "rikuyane" ? D / 2 + 0.12 : Ze + 0.155));
   // 庇: 元の庇を隠し、先端が垂れ下がった形に置き換える(庇の上面・壁際を原点に、出の向きを Y にする)
