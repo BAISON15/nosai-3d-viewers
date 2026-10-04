@@ -1206,6 +1206,92 @@ function buildVanity(add, member, o) {
   add(mergeGeoms(mirror), member);
 }
 
+/* 照明器具(天井付け・吊り下げ)。光源は置かず、光る面は発光する材質で見せる
+   kind: "washiPendant"(和紙の角型ペンダント) | "washiCeil"(和風角型シーリング) | "round"(丸型LEDシーリング) | "small"(小型シーリング)
+         | "down"(ダウンライト) | "panel"(角型の薄型LEDシーリング) | "pendant"(金属シェードのペンダント)
+   (x, z) は器具の中心、yc は天井の下面の高さ。o.s: 大きさ / o.drop: 天井から器具の下端までの長さ / o.color: "white" | "black"(pendant のシェード) */
+const LIGHT_MAT = {
+  glow:  new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.5, emissive: 0xfff3dc, emissiveIntensity: 0.85 }),   // 乳白のカバー
+  washi: new THREE.MeshStandardMaterial({ color: 0xf7efdc, roughness: 0.9, emissive: 0xffe3b4, emissiveIntensity: 0.6 }),    // 和紙
+  wood:  new THREE.MeshStandardMaterial({ color: 0x5e3f25, roughness: 0.6 }),                                               // 和風の木枠(濃)
+  woodL: new THREE.MeshStandardMaterial({ color: 0xa47b4f, roughness: 0.6 }),                                               // 和風の木枠(淡)
+  white: new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.4 }),                                               // 本体(白)
+  black: new THREE.MeshStandardMaterial({ color: 0x232528, roughness: 0.42, metalness: 0.55, side: THREE.DoubleSide }),     // 金属シェード(黒)
+  shadeW: new THREE.MeshStandardMaterial({ color: 0xeeeeea, roughness: 0.4, metalness: 0.2, side: THREE.DoubleSide }),     // 金属シェード(白)
+  cord:  new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.6 }),
+};
+function lightFixture(kind, x, yc, z, o = {}) {
+  const P = [];
+  const B = (w, h, d, px, py, pz, mat) => P.push([boxGeo(w, h, d, x + px, yc + py, z + pz), mat]);
+  const Cy = (rt, rb, h, py, mat, seg = 32, open = false) => { const g = new THREE.CylinderGeometry(rt, rb, h, seg, 1, open); g.translate(x, yc + py, z); P.push([g, mat]); };
+  const M = LIGHT_MAT;
+  if (kind === "washiPendant") {                       // 角型の和紙ペンダント(木枠と格子)。引掛シーリングの木の台から吊るす
+    const s = o.s || 0.46, h = 0.24, drop = o.drop || 0.78, yt = -drop + h, ym = -drop + h / 2;
+    B(0.13, 0.03, 0.13, 0, -0.015, 0, M.wood);
+    Cy(0.004, 0.004, drop - h - 0.03, -0.03 - (drop - h - 0.03) / 2, M.cord, 8);
+    B(s - 0.02, h - 0.02, s - 0.02, 0, ym, 0, M.washi);
+    for (const [px, pz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) B(0.025, h, 0.025, px * (s / 2 - 0.0125), ym, pz * (s / 2 - 0.0125), M.wood);   // 隅の柱
+    for (const py of [yt - 0.0125, -drop + 0.0125]) {                                                      // 上下の枠
+      for (const sd of [-1, 1]) { B(s, 0.025, 0.025, 0, py, sd * (s / 2 - 0.0125), M.wood); B(0.025, 0.025, s, sd * (s / 2 - 0.0125), py, 0, M.wood); }
+    }
+    for (const sd of [-1, 1]) for (const k of [-1, 1]) {                                                 // 各面の縦格子
+      B(0.012, h - 0.05, 0.014, k * s / 6, ym, sd * (s / 2 - 0.003), M.wood);
+      B(0.014, h - 0.05, 0.012, sd * (s / 2 - 0.003), ym, k * s / 6, M.wood);
+    }
+    B(s - 0.03, 0.02, 0.02, 0, yt + 0.005, 0, M.wood); B(0.02, 0.02, s - 0.03, 0, yt + 0.005, 0, M.wood);   // 上の十字(吊り金具の受け)
+  } else if (kind === "washiCeil") {                   // 和風角型シーリング(木の台・和紙のカバー・底の格子)
+    const s = o.s || 0.55, h = 0.12;
+    B(s, 0.02, s, 0, -0.01, 0, M.woodL);
+    B(s - 0.04, h - 0.02, s - 0.04, 0, -0.02 - (h - 0.02) / 2, 0, M.washi);
+    const yb = -h + 0.006;
+    // 底の木枠は和紙のカバーの側面より1cm外へ出す(面が揃うとちらつく)
+    for (const sd of [-1, 1]) { B(s - 0.02, 0.016, 0.03, 0, yb, sd * (s / 2 - 0.025), M.woodL); B(0.03, 0.016, s - 0.02, sd * (s / 2 - 0.025), yb, 0, M.woodL); }
+    for (const k of [-1, 1]) { B(0.012, 0.012, s - 0.06, k * s / 6, yb - 0.001, 0, M.woodL); B(s - 0.06, 0.012, 0.012, 0, yb - 0.001, k * s / 6, M.woodL); }
+  } else if (kind === "round") {                       // 丸型LEDシーリング(白い台座に乳白のドーム)
+    const r = o.s || 0.28;
+    Cy(r, r, 0.03, -0.015, M.white, 48);
+    Cy(r - 0.012, r - 0.06, 0.07, -0.03 - 0.035, M.glow, 48);
+  } else if (kind === "small") {                       // 小型シーリング
+    const r = o.s || 0.13;
+    Cy(r, r, 0.02, -0.01, M.white, 32);
+    Cy(r - 0.008, r - 0.035, 0.06, -0.02 - 0.03, M.glow, 32);
+  } else if (kind === "down") {                        // ダウンライト(天井に埋め込み。枠と光る面だけ見える)
+    Cy(0.065, 0.065, 0.006, -0.003, M.white, 32);
+    Cy(0.047, 0.047, 0.003, -0.0075, M.glow, 32);                                                       // 光る面は枠の下面より少し下げる(面が揃うとちらつく)
+  } else if (kind === "panel") {                       // 角型の薄型LEDシーリング
+    const s = o.s || 0.6;
+    B(s, 0.045, s, 0, -0.0225, 0, M.white);
+    B(s - 0.05, 0.006, s - 0.05, 0, -0.047, 0, M.glow);
+  } else if (kind === "pendant") {                     // 金属シェードのペンダント(ダイニングの上)
+    const drop = o.drop || 0.95, sh = 0.17, shade = o.color === "white" ? M.shadeW : M.black;
+    Cy(0.045, 0.045, 0.025, -0.0125, shade, 24);
+    Cy(0.003, 0.003, drop - sh - 0.025, -0.025 - (drop - sh - 0.025) / 2, M.cord, 8);
+    Cy(0.035, 0.15, sh, -drop + sh / 2, shade, 40, true);                                               // シェード(下が開く)
+    Cy(0.035, 0.035, 0.004, -drop + sh, shade, 24);                                                     // シェードの天
+    const bulb = new THREE.SphereGeometry(0.045, 20, 12); bulb.translate(x, yc - drop + 0.06, z); P.push([bulb, M.glow]);
+  }
+  return mergeGeoms(P);
+}
+/* 部屋ごとの照明。pick(room, rect, C, grid) が [{ kind, x, z, ...o }] を返す
+   rect は天井の開口(階段の吹抜け)を除いた部屋の矩形のうち最も広いもの / C: 矩形の中心 / grid(sp): 間隔 sp で並べた位置 */
+function addRoomLights(add, rooms, opt) {
+  for (const room of rooms) {
+    if (room.finish === "吹抜け" || room.noCeil) continue;
+    let rects = [room.rect];
+    for (const h of opt.holes || []) rects = rects.flatMap((r) => rectsMinus(r, h));
+    if (!rects.length) continue;
+    const rect = rects.reduce((a, b) => ((b[1] - b[0]) * (b[3] - b[2]) > (a[1] - a[0]) * (a[3] - a[2]) ? b : a));
+    const [x0, x1, z0, z1] = rect;
+    const C = [(x0 + x1) / 2, (z0 + z1) / 2];
+    const grid = (sp) => {
+      const nx = Math.max(1, Math.round((x1 - x0) / sp)), nz = Math.max(1, Math.round((z1 - z0) / sp)), out = [];
+      for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) out.push([x0 + (x1 - x0) * (i + 0.5) / nx, z0 + (z1 - z0) * (j + 0.5) / nz]);
+      return out;
+    };
+    for (const sp of opt.pick(room, rect, C, grid) || []) add(lightFixture(sp.kind, sp.x, opt.ceil, sp.z, sp), "照明器具");
+  }
+}
+
 /* 矩形 [x0, x1, z0, z1] から cut(同じ形式。null なら何もしない)を除いた矩形の集まり。天井の階段の開口などに使う */
 function rectsMinus(rect, cut) {
   if (!cut) return [rect];
@@ -1741,6 +1827,24 @@ function buildWafuHouse() {
     for (let x = iX0 + 0.65; x < iX1; x += 0.65)
       rectsMinus([x - 0.025, x + 0.025, iZ0, iZ1], ceilHole).forEach(([x0, x1, z0, z1]) =>
         IW(box(x1 - x0, 0.06, z1 - z0, MW.sao, (x0 + x1) / 2, cH - 0.05, (z0 + z1) / 2), "天井(竿縁天井)"));
+    /* ---------------- 照明(和室は和紙の角型ペンダント、ほかは和風の角型シーリング) ----------------
+       器具は竿縁(0.65m間隔)の間に納まるよう、x を竿縁の中間に寄せる */
+    {
+      const snap = (x) => iX0 + 0.65 * (Math.round((x - iX0) / 0.65 - 0.5) + 0.5);
+      const L = (kind, [x, z], o = {}) => ({ kind, x: snap(x), z, ...o });
+      const dining = WP.furniture.find((f) => f.type === "diningSet" && f.room === "daidokoro");
+      addRoomLights(IW, WP.rooms.filter((r) => r.floor === 1), {
+        ceil: cH - 0.02, holes: [ceilHole],
+        pick(r, rect, C, grid) {
+          if (r.id === "furo") return [];                                             // ユニットバスは専用の照明
+          if (r.finish === "畳") return [L("washiPendant", C)];
+          if (r.id === "daidokoro") return [L("washiPendant", dining ? dining.at : C, { s: 0.40, drop: cH - 0.02 - (fY + 1.55) })];   // 食卓の上
+          if (r.id === "hiroen") return grid(2.4).map((p) => L("washiCeil", p, { s: 0.36 }));
+          if (r.id === "rouka" || r.id === "rokaE" || r.id === "hall") return grid(1.8).map((p) => L("washiCeil", p, { s: 0.34 }));
+          return [L("washiCeil", C, { s: 0.32 })];
+        },
+      });
+    }
     /* ---------------- 外壁の室内側の仕上げ(京壁) ----------------
        間仕切り・床・天井・畳寄せの端を受け、外壁との間の隙間をふさぐ。「内部(外装を透過)」表示では外壁と一緒に透過させる(layer=ext)。
        開口部(縁側の建具・玄関・窓)は外壁と同じ位置に穴を空ける */
@@ -1857,6 +1961,17 @@ function buildWafuHouse() {
       if (r.finish === "畳") tatami2(x0 + 0.06, x1 - 0.06, z0 + 0.06, z1 - 0.06, r.tatami[0], r.tatami[1]);   // 下地の上に畳を敷く
     });
     IW(box(jX1 - jX0, 0.04, jZ1 - jZ0, MW.kabe2, (jX0 + jX1) / 2, c2, (jZ0 + jZ1) / 2), "天井(2階)");
+    // 照明(2階)。和室は和紙の角型ペンダント、ほかは和風の角型シーリング
+    addRoomLights(IW, WP.rooms.filter((r) => r.floor === 2), {
+      ceil: c2 - 0.02,
+      pick(r, rect, C, grid) {
+        const L = (kind, [x, z], o = {}) => ({ kind, x, z, ...o });
+        if (r.finish === "畳") return [L("washiPendant", C)];
+        if (r.id === "yoB") return [L("washiCeil", C, { s: 0.52 })];
+        if (r.id === "rouka2") return grid(2.2).map((p) => L("washiCeil", p, { s: 0.32 }));
+        return [L("washiCeil", C, { s: 0.30 })];
+      },
+    });
     // 2階の外壁の室内側の仕上げ(1階と同じく開口部に穴を空ける)
     liningW(2, WP.bounds(2), f2 - 0.04, c2 - 0.02, MW.kabe2, "内壁(2階)");
     // 2階の間仕切り(北側廊下 ⇔ 和室A・洋室B、和室A ⇔ 洋室B、洋室B ⇔ 踊り場・納戸)
@@ -2249,6 +2364,26 @@ function buildCubeInterior(g) {
     // 天井(1階の階段の上は、2階の吹抜けへ抜けるよう張らない)
     if (!r.noCeil) IN(box(w, 0.04, d, M.tenjo, cx, P.ceilY(r.floor), cz), "天井");
   }));
+  /* 照明。LDK・廊下・水回りはダウンライト、食卓の上に黒い金属シェードのペンダントを2灯、個室は角型の薄型シーリング */
+  [1, 2].forEach((fl) => {
+    const yc = P.ceilY(fl) - 0.02;
+    addRoomLights(IN, P.rooms.filter((r) => r.floor === fl), {
+      ceil: yc,
+      pick(r, rect, C, grid) {
+        const at = ([x, z], kind, o = {}) => ({ kind, x, z, ...o });
+        if (r.id === "bath") return [];                                               // ユニットバスは専用の照明
+        if (r.id === "ldk") {
+          const din = P.furniture.find((f) => f.room === "ldk" && f.type === "diningSet");
+          const pend = din ? [-0.32, 0.32].map((d) => [din.at[0], din.at[1] + d]) : [];
+          const downs = grid(1.7).filter(([x, z]) => pend.every(([px, pz]) => Math.hypot(x - px, z - pz) > 0.8));
+          return [...downs.map((p) => at(p, "down")), ...pend.map((p) => at(p, "pendant", { drop: yc - (top(1) + 1.50) }))];
+        }
+        if (["kodomo1", "kodomo2", "shushin"].includes(r.id)) return [at(C, "panel", { s: 0.6 })];
+        if (["rouka", "hall", "hall2", "rouka2", "rouka2e", "senmen"].includes(r.id)) return grid(1.5).map((p) => at(p, "down"));
+        return [at(C, "down")];
+      },
+    });
+  });
   // 上がり框(ホール ⇔ 玄関土間)
   const doma = P.rooms.find((r) => r.id === "doma");
   IN(box(doma.rect[1] - doma.rect[0], top(1) - domaTop, 0.14, M.tategu, (doma.rect[0] + doma.rect[1]) / 2, (top(1) + domaTop) / 2, doma.rect[2] + 0.07), "上がり框");
@@ -2454,13 +2589,22 @@ function buildCubeHouse() {
     grp.traverse((m) => { if (m.isMesh) T2(m, P.wall, member || "外壁(凹み部)"); });
     g.add(grp);
   }
-  function louver(w, h, cu, cv, at, dir, member) {
+  // 木目ルーバー(羽板を横に並べ、建物側に立てたアルミの角柱で支える)。baseY: 支柱を立てる床・地面の高さ
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x3a3734, roughness: 0.45, metalness: 0.5 });
+  function louver(w, h, cu, cv, at, dir, member, baseY) {
     const n = Math.max(3, Math.round(h / 0.20));
     const bh = h / n * 0.72;
     const grp = new THREE.Group();
     for (let i = 0; i < n; i++) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(w, bh, 0.035), CM.wood);
       b.position.y = -h / 2 + (i + 0.5) * (h / n); grp.add(b);
+    }
+    // 支柱(両端から10cm内側と、その間を1.8m以下の間隔で割る)。羽板の裏(建物側)にビス留めする想定で、下端は床・地面に少し埋める
+    const ps = 0.06, pz = -(0.035 / 2 + ps / 2), y0 = baseY - cv - 0.05, y1 = h / 2 + 0.02;
+    const span = w - 0.2, np = Math.ceil(span / 1.8) + 1;
+    for (let k = 0; k < np; k++) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(ps, y1 - y0, ps), postMat);
+      p.position.set(-span / 2 + span * k / (np - 1), (y0 + y1) / 2, pz); grp.add(p);
     }
     if (dir === "S") grp.position.set(cu, cv, at);
     if (dir === "E") { grp.position.set(at, cv, cu); grp.rotation.y = Math.PI / 2; }
@@ -2487,8 +2631,8 @@ function buildCubeHouse() {
   buildWall("S", A.zF, { u0: A.x0, u1: A.x1, v0: S.baseH, v1: A.top, holes: [balc, liv] }, CM.light, "外壁(サイディング・淡色)");
   addRecess("S", A.zF, (balc.u0 + balc.u1) / 2, (balc.v0 + balc.v1) / 2, balc.u1 - balc.u0, balc.v1 - balc.v0, 1.55, CM.recessD, "インナーバルコニー", [holeOf(oBalc)]);
   addRecess("S", A.zF, (liv.u0 + liv.u1) / 2, (liv.v0 + liv.v1) / 2, liv.u1 - liv.u0, liv.v1 - liv.v0, 0.95, CM.recessD, "1階 掃出し窓の凹み", [holeOf(oLiv)]);
-  louver(3.95, 1.00, (balc.u0 + balc.u1) / 2, 4.48, A.zF - 0.26, "S", "バルコニー手すり(木目ルーバー)");
-  louver(3.60, 1.35, (liv.u0 + liv.u1) / 2 + 0.15, 1.30, A.zF + 0.62, "S", "目隠しフェンス(木目ルーバー)");
+  louver(3.95, 1.00, (balc.u0 + balc.u1) / 2, 4.48, A.zF - 0.26, "S", "バルコニー手すり(木目ルーバー)", balc.v0 + 0.02);   // 支柱はバルコニーの床から
+  louver(3.60, 1.35, (liv.u0 + liv.u1) / 2 + 0.15, 1.30, A.zF + 0.62, "S", "目隠しフェンス(木目ルーバー)", 0);              // 支柱は地面から
   /* 西面・背面 */
   buildWall("W", A.x0, { u0: A.zR, u1: A.zF, v0: S.baseH, v1: A.top, holes: facadeHoles("W") }, CM.light, "外壁(サイディング・淡色)");
   buildWall("N", zR, { u0: xW, u1: xE, v0: S.baseH, v1: B.top, holes: facadeHoles("N") }, CM.dark, "外壁(サイディング・濃色)");
@@ -3684,6 +3828,24 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
   const ceilHole = n === 2 ? [STD_PLAN.stair.x0, STD_PLAN.stair.x1, STD_PLAN.stair.holeZ0, STD_PLAN.stair.holeZ1] : null;
   rectsMinus([iX0, iX1, iZ0, iZ1], ceilHole).forEach(([x0, x1, z0, z1]) =>
     IN(box(x1 - x0, 0.04, z1 - z0, MI.tenjo, (x0 + x1) / 2, c1, (z0 + z1) / 2), "天井"));
+  /* 照明(1階)。LDKはリビングに丸型シーリング・食卓の上にペンダント、和室は和風の角型シーリング、ほかは小型シーリング */
+  {
+    const furn = (room, type) => STD_PLAN.furniture.find((f) => f.room === room && f.type === type);
+    addRoomLights(IN, STD_PLAN.rooms.filter((r) => r.floor === 1), {
+      ceil: c1 - 0.02, holes: ceilHole ? [ceilHole] : [],
+      pick(r, rect, C, grid) {
+        const L = (kind, [x, z], o = {}) => ({ kind, x, z, ...o });
+        if (r.id === "bath") return [];                                               // ユニットバスは専用の照明
+        if (r.id === "ldk") {
+          const liv = furn("ldk", "lowTable"), din = furn("ldk", "diningSet");
+          return [L("round", liv ? liv.at : C, { s: 0.32 }), ...(din ? [L("pendant", din.at, { color: "white", drop: c1 - 0.02 - (f1 + 1.50) })] : [])];
+        }
+        if (r.id === "washitsu") return [L("washiCeil", C, { s: 0.55 })];
+        if (r.id === "rouka") return grid(2.0).map((p) => L("small", p));
+        return [L("small", C)];
+      },
+    });
+  }
   /* 外壁の室内側の仕上げ(クロス)
      間仕切り・床・天井・幅木の端(境界線 iX0〜iX1 / iZ0〜iZ1)を受け、外壁との間に隙間を残さない。
      室内側の面は境界線より8mm内側(ユニットバスの壁パネルと面を重ねない)。開口部は外壁と同じ位置に穴を空ける。
@@ -3779,6 +3941,14 @@ function buildHouse(stories, roofShape, roofKey, wallKey) {
       slabF(x0, x1, z0, z1, MI.yuka, "床(2階フローリング)", f2, 0.08);
     });
     IN(box(iX1 - iX0, 0.04, iZ1 - iZ0, MI.tenjo, (iX0 + iX1) / 2, c2, (iZ0 + iZ1) / 2), "天井");
+    // 照明(2階)。洋室は丸型シーリング、廊下・ホールは小型シーリング
+    addRoomLights(IN, STD_PLAN.rooms.filter((r) => r.floor === 2), {
+      ceil: c2 - 0.02,
+      pick(r, rect, C, grid) {
+        if (r.id === "yoA" || r.id === "yoB") return [{ kind: "round", x: C[0], z: C[1], s: 0.28 }];
+        return grid(2.2).map(([x, z]) => ({ kind: "small", x, z }));
+      },
+    });
     liningAt(f2 - 0.04, c2 - 0.02, 2);   // 2階の外壁の室内側の仕上げ
 
     // 間仕切り(北側廊下 ⇔ 洋室A・B、洋室A ⇔ B、洋室B ⇔ 階段室)
@@ -4286,7 +4456,7 @@ const MEMBER_TARGETS = {
   kiso:    ["布基礎", "布基礎(中通り)"],
   naiso:   ["内壁(クロス)", "天井", "幅木"],
   yuka:    ["床(フローリング)", "床(畳)", "床(タイル)", "床(2階フローリング)", "玄関土間", "上がり框"],
-  zosaku:  ["内部建具(開き戸)", "内部建具(引戸)", "内部建具(折れ戸)", "襖", "建具枠", "押入", "システムキッチン", "浴槽(ユニットバス)", "洗面化粧台", "洗濯機置場", "便器", "トイレットペーパーホルダー", "玄関収納"],
+  zosaku:  ["内部建具(開き戸)", "内部建具(引戸)", "内部建具(折れ戸)", "襖", "建具枠", "押入", "システムキッチン", "浴槽(ユニットバス)", "洗面化粧台", "洗濯機置場", "便器", "トイレットペーパーホルダー", "玄関収納", "照明器具"],
   kazai:   ["家具類(広縁の応接セット)", "家具類(布団)", "家具類(冷蔵庫)", "家具類(ダイニングセット)", "家具類(ソファ)", "家具類(ローテーブル)", "家具類(ラグ)", "家具類(テレビ・テレビ台)", "家具類(座卓・座布団)", "家具類(たんす・チェスト)", "家具類(ベッド)", "家具類(ナイトテーブル)", "家具類(机・椅子)", "家具類(本棚)"],
   setsubi: ["エコキュート(貯湯タンク)","エコキュート(ヒートポンプ)","エコキュート(基礎)","エコキュート(配管)","室外機","立水栓","電気メーター"],
   doushi:  ["胴差し", "床梁(2階床組)"],
@@ -4381,6 +4551,7 @@ const DETAIL_NOTES = {
   "洗濯機置場": "防水パンと給排水。浸水では排水口からの逆流による汚損も確認します。",
   "便器": "浸水では給排水設備への影響も含めて確認します。",
   "トイレットペーパーホルダー": "便器の脇の壁に付く紙巻器。浸水の高さによっては紙・本体の汚損を確認します。",
+  "照明器具": "天井に付けた照明器具(シーリングライト・ペンダント・ダウンライト)。雨漏りでは器具内への浸水・漏電のおそれがあり、天井のシミと併せて確認します。",
   "階段": "内部造作。浸水や消火活動による水濡れの影響を受けやすい動線部位です。",
 };
 const DETAIL_FALLBACK = (name, part, count) => part === "家具類"
@@ -5587,8 +5758,8 @@ function buildWalkColliders() {
       g.computeBoundingBox();
       walkColliders.push(g.boundingBox.expandByScalar(0.28));
     }
-    // 家具類・浴槽・天井には載らない(天井は階段を上る途中で頭上をすり抜ける)
-    if (/^家具類|浴槽|天井|^DMG/.test(mem)) return;
+    // 家具類・浴槽・天井・照明には載らない(天井は階段を上る途中で頭上をすり抜ける)
+    if (/^家具類|浴槽|天井|照明|^DMG/.test(mem)) return;
     walkFloors.push({ mesh: m, box: new THREE.Box3().setFromObject(m) });
   });
   if (ground.visible) { ground.updateMatrixWorld(true); walkFloors.push({ mesh: ground, box: new THREE.Box3().setFromObject(ground) }); }
