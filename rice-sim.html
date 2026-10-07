@@ -43,99 +43,150 @@
       'ページを再読み込みしてください。</p></div>';
   }, 6000));
 </script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
+  /* NOSAI Design System のトークンに準拠（ティールの差し色・クールな中間色・等幅の英字ラベル） */
   :root{
-    --gold:#F0BC3C; --green:#6DBE5B; --blue:#4FA3D9; --red:#E0654B;
-    --card:rgba(11,24,30,.76); --line:rgba(255,255,255,.14);
-    --txt:#F2EEE3; --dim:#9DA9AF;
-    --sans:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",sans-serif;
-    --mincho:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+    --brand:#1B9A9C; --brand-hover:#157E80; --brand-active:#136466; --brand-subtle:#ECF8F8; --brand-border:#A6DEDF;
+    --text-brand:#136466; --brand-strong:#134F50;
+    --accent:#FF6F59; --accent-hover:#E2563F;
+    --text-primary:#141819; --text-secondary:#4C575D; --text-tertiary:#6A767D; --text-disabled:#98A4AB;
+    --surface-page:#F6F8F9; --surface-card:#FFFFFF; --surface-sunken:#EEF1F3; --surface-inverse:#141819;
+    --border-subtle:#E0E5E8; --border-default:#C9D1D6;
+    --success:#1F9D63; --success-subtle:#DCF3E7; --warning:#E0A03A; --warning-subtle:#FAEFD8;
+    --danger:#E14B4B; --danger-subtle:#FBE0E0; --info:#2E86C9; --info-subtle:#DDEBF7;
+    /* ゲージの色（JS から var(--blue) などで参照する） */
+    --blue:var(--info); --green:var(--success); --gold:var(--warning); --red:var(--danger);
+    --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-pill:999px;
+    --shadow-sm:0 1px 3px rgba(20,24,25,.08),0 1px 2px rgba(20,24,25,.04);
+    --shadow-md:0 4px 12px rgba(20,24,25,.08),0 2px 4px rgba(20,24,25,.04);
+    --shadow-lg:0 12px 28px rgba(20,24,25,.12),0 4px 8px rgba(20,24,25,.05);
+    --shadow-xl:0 24px 56px rgba(20,24,25,.16);
+    --shadow-brand:0 8px 24px rgba(27,154,156,.28);
+    --focus-ring:rgba(27,154,156,.45);
+    --ease-out:cubic-bezier(.22,1,.36,1);
+    --font-sans:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
+    --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body{height:100%;overflow:hidden}
-  body{font-family:var(--sans);background:#08151B;color:var(--txt);-webkit-font-smoothing:antialiased}
+  body{font-family:var(--font-sans);background:#A8C8D8;color:var(--text-primary);-webkit-font-smoothing:antialiased}
   #view{position:fixed;inset:0;z-index:1}
   canvas{display:block;width:100%;height:100%;touch-action:none}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .eyebrow{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--text-tertiary)}
 
   #ui{position:fixed;inset:0;z-index:10;pointer-events:none;display:flex;flex-direction:column;
       justify-content:space-between;padding:12px 14px calc(12px + env(safe-area-inset-bottom));gap:10px}
   .on{pointer-events:auto}
-  .card{background:var(--card);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-        border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .card{background:rgba(255,255,255,.94);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+        border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-md)}
   .top,.bottom{width:100%;max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
   .row{display:flex;gap:10px;flex-wrap:wrap}
 
-  .meters{display:flex;gap:20px;padding:11px 17px;flex:1}
-  .m{display:flex;flex-direction:column;gap:3px;min-width:70px}
-  .m .k{font-size:10.5px;color:var(--dim);letter-spacing:.05em}
-  .m .v{font-size:18px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
-  .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.13);overflow:hidden;margin-top:4px}
-  .bar i{display:block;height:100%;width:0;border-radius:3px;transition:width .4s ease,background .4s}
-  .aim{font-size:10px;color:var(--dim);margin-top:3px}
+  /* メーター */
+  .meters{display:flex;gap:22px;padding:10px 16px 11px;flex:1}
+  .meters.brand{flex:none;border-top:2px solid var(--brand)}
+  .m{display:flex;flex-direction:column;gap:3px;min-width:72px}
+  .m .k{font-size:11px;font-weight:700;color:var(--text-secondary);white-space:nowrap}
+  .m .k i{font-style:normal;font-family:var(--font-mono);font-size:9px;font-weight:500;letter-spacing:.12em;color:var(--text-disabled);margin-left:5px}
+  .m .v{font-size:18px;font-weight:700;line-height:1.2;color:var(--text-primary)}
+  .m .v.mono{font-family:var(--font-mono);font-weight:600;letter-spacing:-.01em}
+  .bar{height:6px;border-radius:var(--radius-pill);background:var(--surface-sunken);overflow:hidden;margin-top:4px}
+  .bar i{display:block;height:100%;width:0;border-radius:var(--radius-pill);transition:width .4s var(--ease-out),background .4s var(--ease-out)}
+  .aim{font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);margin-top:3px}
 
-  .guide{padding:13px 17px}
+  /* ガイド */
+  .guide{padding:13px 17px 14px;border-left:3px solid var(--brand)}
   .gh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .chip{font-size:11px;font-weight:700;color:#241A05;background:var(--gold);padding:3px 10px;border-radius:20px}
-  .gt{font-family:var(--mincho);font-size:19px;font-weight:600;letter-spacing:.04em}
-  .gw{margin-left:auto;font-size:11px;color:var(--dim)}
-  .gd{font-size:13px;line-height:1.8;color:#DDD8CB;margin-top:6px;max-width:72ch}
-  .task{margin-top:9px;font-size:13px;padding:7px 12px;border-radius:8px;
-        background:rgba(240,188,60,.13);border:1px solid rgba(240,188,60,.32)}
-  .task.done{background:rgba(109,190,91,.13);border-color:rgba(109,190,91,.35)}
+  .chip{font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.08em;color:var(--text-brand);
+        background:var(--brand-subtle);border:1px solid var(--brand-border);padding:2px 10px;border-radius:var(--radius-pill)}
+  .gt{font-size:20px;font-weight:900;letter-spacing:-.02em;line-height:1.28}
+  .gw{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);letter-spacing:.04em}
+  .gd{font-size:13px;line-height:1.8;color:var(--text-secondary);margin-top:6px}
+  .g-toggle{flex:none;font:500 11.5px var(--font-sans);color:var(--text-brand);background:none;border:1px solid var(--brand-border);
+            border-radius:var(--radius-pill);padding:3px 10px 3px 11px;gap:6px}
+  .g-toggle:hover:not(:disabled){background:var(--brand-subtle)}
+  .g-toggle::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+                   transform:translateY(2px) rotate(-135deg);transition:transform .2s var(--ease-out)}
+  .guide.folded .g-toggle::after{transform:translateY(-1px) rotate(45deg)}
+  .guide.folded .gd{display:none}
+  .task{margin-top:10px;font-size:13px;font-weight:500;line-height:1.6;padding:8px 12px;
+        border-radius:var(--radius-sm);background:var(--warning-subtle);color:#6B4A12}
+  .task.busy{background:var(--brand-subtle);color:var(--text-brand)}
+  .task.done{background:var(--success-subtle);color:#145F3D}
 
-  .acts{padding:11px 12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-  button{font:600 14px var(--sans);color:var(--txt);cursor:pointer;padding:12px 17px;border-radius:11px;
-         border:1px solid var(--line);background:rgba(255,255,255,.09);
-         transition:background .15s,transform .1s}
-  button:hover:not(:disabled){background:rgba(255,255,255,.18)}
+  /* 操作ボタン */
+  .acts{padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  button{font:700 14px var(--font-sans);color:var(--text-primary);cursor:pointer;padding:11px 17px;border-radius:var(--radius-md);
+         border:1.5px solid var(--border-default);background:var(--surface-card);display:inline-flex;align-items:center;gap:8px;
+         transition:background .2s var(--ease-out),border-color .2s var(--ease-out),box-shadow .2s var(--ease-out),transform .12s var(--ease-out)}
+  button:hover:not(:disabled){background:var(--surface-sunken)}
   button:active:not(:disabled){transform:scale(.97)}
-  button:disabled{opacity:.4;cursor:not-allowed}
-  button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
-  .b-water{background:rgba(79,163,217,.24);border-color:rgba(79,163,217,.45)}
-  .b-main{background:linear-gradient(135deg,#F0BC3C,#D2941A);color:#241A05;border-color:transparent}
-  .b-weed{background:rgba(224,101,75,.22);border-color:rgba(224,101,75,.45)}
-  .b-next{background:linear-gradient(135deg,#6DBE5B,#3B8A42);color:#0D1F10;border-color:transparent}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
+  button .u{font-family:var(--font-mono);font-size:12px;font-weight:500;color:var(--text-tertiary)}
+  .b-water{border-color:#B5D3EC}
+  .b-water:hover:not(:disabled){background:var(--info-subtle)}
+  .b-weed{border-color:#F2B8B8}
+  .b-weed:hover:not(:disabled){background:var(--danger-subtle)}
+  .b-main{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:var(--shadow-brand)}
+  .b-main:hover:not(:disabled){background:var(--brand-hover);border-color:var(--brand-hover)}
+  .b-main:disabled{box-shadow:none}
+  .b-next{background:var(--accent);border-color:var(--accent);color:#fff}
+  .b-next:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover)}
 
-  .veil{position:fixed;inset:0;z-index:20;background:rgba(5,13,18,.84);display:flex;
-        align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+  /* お知らせ・結果 */
+  .veil{position:fixed;inset:0;z-index:20;background:rgba(20,24,25,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+        display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto}
   .veil.hide{display:none}
-  .sheet{width:100%;max-width:560px;background:#0F212A;border:1px solid var(--line);
-         border-radius:18px;padding:26px 24px}
-  .sheet h2{font-family:var(--mincho);font-size:23px;font-weight:600;letter-spacing:.05em;margin-bottom:12px}
-  .sheet p{font-size:13.5px;line-height:1.9;color:#DDD8CB;margin-bottom:13px}
-  .sheet ul{list-style:none;font-size:13px;line-height:1.75;margin-bottom:14px}
-  .sheet li{padding:9px 13px;border-radius:10px;background:rgba(255,255,255,.055);margin-bottom:7px;color:#DDD8CB}
-  .sheet li b{color:var(--gold)}
-  .aimbox{display:inline-block;font-size:12.5px;color:var(--blue);border:1px solid rgba(79,163,217,.4);
-          background:rgba(79,163,217,.12);border-radius:8px;padding:6px 12px;margin-bottom:14px}
-  .note{font-size:12px;color:var(--dim)}
-  .scores{display:flex;gap:24px;flex-wrap:wrap;margin:14px 0 18px}
-  .scores .n{font-size:36px;font-weight:700;color:var(--gold);line-height:1;font-variant-numeric:tabular-nums}
-  .scores .u{font-size:11.5px;color:var(--dim);margin-top:5px;max-width:150px;line-height:1.5}
+  .sheet{width:100%;max-width:560px;margin:auto;background:var(--surface-card);border-top:3px solid var(--brand);
+         border-radius:var(--radius-lg);box-shadow:var(--shadow-xl);padding:24px 24px 26px}
+  .sheet .eyebrow{margin-bottom:8px;color:var(--text-brand)}
+  .sheet h2{font-size:24px;font-weight:900;letter-spacing:-.02em;line-height:1.28;margin-bottom:12px}
+  .sheet p{font-size:13.5px;line-height:1.9;color:var(--text-secondary);margin-bottom:14px}
+  .sheet ul{list-style:none;font-size:13px;line-height:1.75;margin-bottom:16px;display:flex;flex-direction:column;gap:6px}
+  .sheet li{padding:9px 13px;border-radius:var(--radius-sm);background:var(--surface-sunken);color:var(--text-secondary)}
+  .sheet li b{color:var(--text-primary);margin-right:6px}
+  .aimbox{display:inline-block;font-size:12.5px;font-weight:500;color:#1F5E8E;background:var(--info-subtle);
+          border-radius:var(--radius-sm);padding:6px 12px;margin-bottom:16px}
+  .note{font-size:12px;color:var(--text-tertiary)}
+  .scores{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 18px}
+  .scores>div{background:var(--surface-page);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:12px 12px 11px}
+  .scores .n{font-family:var(--font-mono);font-size:30px;font-weight:600;color:var(--brand-strong);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .scores .n small{font-family:var(--font-mono);font-size:12px;font-weight:500;letter-spacing:0;color:var(--text-tertiary);margin-left:4px}
+  .scores .u{font-size:11px;color:var(--text-tertiary);margin-top:7px;line-height:1.5}
   .rows{width:100%;border-collapse:collapse;font-size:12.5px}
-  .rows th,.rows td{border-bottom:1px solid var(--line);padding:7px 5px;text-align:left}
-  .rows th{font-weight:400;font-size:11px;color:var(--dim)}
-  .rows td.r{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
-  .words{margin-top:20px}
-  .words h3{font-family:var(--mincho);font-size:16px;margin-bottom:6px}
-  .words dt{color:var(--gold);font-size:12.5px;margin-top:7px}
-  .words dd{font-size:12.5px;color:#BEB9AD;line-height:1.7}
+  .rows th,.rows td{border-bottom:1px solid var(--border-subtle);padding:8px 5px;text-align:left;vertical-align:top}
+  .rows td{color:var(--text-secondary)}
+  .rows td:first-child{color:var(--text-primary);font-weight:700;white-space:nowrap}
+  .rows th{font-family:var(--font-mono);font-weight:500;font-size:10px;letter-spacing:.12em;color:var(--text-tertiary)}
+  .rows .r{text-align:right}
+  .rows td.r{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--text-primary)}
+  .words{margin-top:22px}
+  .words h3{font-size:15px;font-weight:700;margin-bottom:6px}
+  .words dt{color:var(--text-brand);font-size:12.5px;font-weight:700;margin-top:9px}
+  .words dd{font-size:12.5px;color:var(--text-secondary);line-height:1.7}
 
-  .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:30;font-size:12.5px;
-         background:rgba(20,36,44,.95);border:1px solid var(--line);color:var(--txt);
-         padding:9px 17px;border-radius:22px;opacity:0;pointer-events:none;transition:opacity .25s}
-  .toast.show{opacity:1}
+  .toast{position:fixed;left:50%;top:18px;transform:translate(-50%,-6px);z-index:30;font-size:12.5px;font-weight:500;
+         background:var(--surface-inverse);color:#F6F8F9;box-shadow:var(--shadow-lg);
+         padding:9px 18px;border-radius:var(--radius-pill);opacity:0;pointer-events:none;
+         transition:opacity .2s var(--ease-out),transform .2s var(--ease-out)}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
   .look{position:fixed;left:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:9;
-        font-size:11px;color:var(--dim)}
+        font-size:11px;color:var(--text-secondary);background:rgba(255,255,255,.8);padding:4px 10px;border-radius:var(--radius-pill)}
   @media (max-width:640px){
     #ui{padding:8px 9px calc(8px + env(safe-area-inset-bottom));gap:8px}
     .meters{gap:13px;padding:9px 12px}
-    .m{min-width:58px}.m .v{font-size:15px}
+    .m{min-width:58px}.m .v{font-size:15px}.m .k i{display:none}
     .gt{font-size:17px}.gd{font-size:12.5px}
-    button{font-size:13px;padding:11px 13px}
+    button{font-size:13px;padding:10px 12px}
+    .scores .n{font-size:24px}
     .look{display:none}
   }
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
@@ -145,22 +196,22 @@
 <div id="ui">
   <div class="top">
     <div class="row">
-      <div class="card meters on">
-        <div class="m"><span class="k">季節</span><span class="v" id="m-season" style="color:var(--blue)">春 (4月)</span></div>
-        <div class="m"><span class="k">工程</span><span class="v" id="m-stage" style="color:var(--gold)">1 / 7</span></div>
+      <div class="card meters brand on">
+        <div class="m"><span class="k">季節<i>SEASON</i></span><span class="v" id="m-season">春 (4月)</span></div>
+        <div class="m"><span class="k">工程<i>STAGE</i></span><span class="v mono" id="m-stage">1 / 7</span></div>
       </div>
       <div class="card meters on">
         <div class="m">
-          <span class="k">田んぼの水</span><span class="v" id="m-water">0cm</span>
+          <span class="k">田んぼの水<i>WATER</i></span><span class="v mono" id="m-water">0cm</span>
           <div class="bar"><i id="b-water" style="background:var(--blue)"></i></div>
           <span class="aim" id="m-aim">目安 5cm</span>
         </div>
         <div class="m">
-          <span class="k">稲の育ち</span><span class="v" id="m-growth">0%</span>
-          <div class="bar"><i id="b-growth" style="background:var(--green)"></i></div>
+          <span class="k">稲の育ち<i>GROWTH</i></span><span class="v mono" id="m-growth">0%</span>
+          <div class="bar"><i id="b-growth" style="background:var(--brand)"></i></div>
         </div>
         <div class="m">
-          <span class="k">雑草・害虫</span><span class="v" id="m-weed">少ない</span>
+          <span class="k">雑草・害虫<i>PESTS</i></span><span class="v" id="m-weed">少ない</span>
           <div class="bar"><i id="b-weed" style="background:var(--green)"></i></div>
         </div>
       </div>
@@ -171,6 +222,7 @@
         <span class="chip" id="g-when">春 4月</span>
         <span class="gt" id="g-title">土づくり・代かき</span>
         <span class="gw" id="g-weather"></span>
+        <button class="g-toggle" id="g-toggle" aria-expanded="true" aria-controls="g-desc">説明をたたむ</button>
       </div>
       <p class="gd" id="g-desc"></p>
       <p class="task" id="g-task"></p>
@@ -179,8 +231,8 @@
 
   <div class="bottom">
     <div class="card acts on" id="acts">
-      <button class="b-water" id="btn-in">💧 給水 ＋1cm</button>
-      <button class="b-water" id="btn-out">☀️ 排水 −1cm</button>
+      <button class="b-water" id="btn-in">💧 給水<span class="u">+1cm</span></button>
+      <button class="b-water" id="btn-out">☀️ 排水<span class="u">−1cm</span></button>
       <button class="b-main" id="btn-main">🚜 作業する</button>
       <button class="b-weed" id="btn-weed">🌿 草取り・防除</button>
       <button class="b-next" id="btn-next">⏩ 次の季節へ</button>
@@ -193,6 +245,7 @@
 
 <div class="veil" id="modal">
   <div class="sheet">
+    <div class="eyebrow" id="mo-eyebrow">// RICE CULTIVATION · 7 STAGES</div>
     <h2 id="mo-title">お米ができるまでの一年</h2>
     <p id="mo-body"></p>
     <div id="mo-extra"></div>
@@ -202,20 +255,21 @@
 
 <div class="veil hide" id="result">
   <div class="sheet">
+    <div class="eyebrow">// HARVEST REPORT</div>
     <h2 id="rs-title">🌾 収穫おつかれさまでした</h2>
     <p id="rs-lead"></p>
     <div class="scores">
-      <div><div class="n" id="rs-yield">—</div><div class="u">10アール（約25m×40m）あたりの玄米（kg・目安）</div></div>
+      <div><div class="n"><span id="rs-yield">—</span><small>kg/10a</small></div><div class="u">単収の目安（10アール＝約25m×40mあたりの玄米）</div></div>
       <div><div class="n" id="rs-grade">—</div><div class="u">お米の等級の目安</div></div>
-      <div><div class="n" id="rs-score">—</div><div class="u">田んぼの管理の点数</div></div>
+      <div><div class="n"><span id="rs-score">—</span><small>点</small></div><div class="u">田んぼの管理の点数（100点満点）</div></div>
     </div>
-    <table class="rows"><thead><tr><th>工程</th><th>ふりかえり</th><th class="r">点</th></tr></thead>
+    <table class="rows"><thead><tr><th>STAGE</th><th>ふりかえり</th><th class="r">PT</th></tr></thead>
       <tbody id="rs-log"></tbody></table>
     <div class="words">
       <h3>この一年に出てきた言葉</h3>
       <dl id="rs-words"></dl>
     </div>
-    <div style="margin-top:20px"><button class="b-main" onclick="location.reload()">もう一年やる</button></div>
+    <div style="margin-top:22px"><button class="b-main" onclick="location.reload()">もう一年やる</button></div>
   </div>
 </div>
 
@@ -1200,7 +1254,7 @@ function updateGuide(){
   }else{
     task.textContent = s.task;
   }
-  task.className = 'task' + (state.done ? ' done' : '');
+  task.className = 'task' + (state.done ? ' done' : state.working ? ' busy' : '');
   if(state.working){
     if(job.kind === 'dry')        task.textContent = '☀️ 中干し中… ' + state.dryDay + '日目 / 7日　この間は水を入れないでください';
     else if(job.kind === 'irrigate') task.textContent = '💧 間断灌漑中… ' + ((job.phase%2===0) ? '水を入れています' : '水が落ちていくのを待っています') + '（' + (Math.floor(job.phase/2)+1) + '回目 / 3回）';
@@ -1286,7 +1340,8 @@ el('btn-next').onclick = ()=>{
   if(ns.steps[0].mode === 'harvest') state.weed = Math.max(0, state.weed - 20);
   setSeason(parseInt(ns.season.match(/(\d+)月/)[1], 10));
   paintAll(); paintWater(); updateMeters(); updateGuide();
-  showModal('【' + ns.season + '】 ' + ns.title,
+  showModal('STAGE ' + String(state.idx+1).padStart(2,'0') + ' / ' + String(STAGES.length).padStart(2,'0') + ' · ' + ns.when,
+            ns.title,
             ns.desc,
             '水深の目安は ' + ns.aim + 'cm です。' + (ns.weedRate ? '雑草も伸びやすい時期です。' : ''));
 };
@@ -1294,7 +1349,8 @@ el('btn-next').onclick = ()=>{
 /* =========================================================
    9. お知らせ・結果
    ========================================================= */
-function showModal(title, body, aim){
+function showModal(eyebrow, title, body, aim){
+  el('mo-eyebrow').textContent = '// ' + eyebrow;
   el('mo-title').textContent = title;
   el('mo-body').textContent  = body;
   el('mo-extra').innerHTML   = aim ? '<div class="aimbox">' + aim + '</div>' : '';
@@ -1302,6 +1358,21 @@ function showModal(title, body, aim){
   el('modal').classList.remove('hide');
 }
 el('mo-ok').onclick = ()=> el('modal').classList.add('hide');
+
+// ガイドの説明は畳める（季節のはじめのお知らせで同じ説明を読めるため）。スマホは畳んだ状態から
+function foldGuide(folded){
+  el('g-desc').closest('.guide').classList.toggle('folded', folded);
+  el('g-toggle').textContent = folded ? '説明を見る' : '説明をたたむ';
+  el('g-toggle').setAttribute('aria-expanded', String(!folded));
+}
+let savedFold = null;
+try { savedFold = localStorage.getItem('rice-sim-guide-folded'); } catch(e) {}
+foldGuide(savedFold !== null ? savedFold === '1' : matchMedia('(max-width:640px)').matches);
+el('g-toggle').onclick = ()=>{
+  const folded = !el('g-desc').closest('.guide').classList.contains('folded');
+  foldGuide(folded);
+  try { localStorage.setItem('rice-sim-guide-folded', folded ? '1' : '0'); } catch(e) {}
+};
 
 function showResult(){
   state.finished = true;
@@ -1395,10 +1466,10 @@ function boot(){
   el('mo-body').textContent  = '4月の土づくりから10月の稲刈りまで、7つの季節を体験します。田んぼの水は放っておくと少しずつ減り、夏には雑草も伸びてきます。ゲージを見ながら手入れをしてください。';
   el('mo-extra').innerHTML =
     '<ul>' +
-    '<li><b>💧 給水／☀️ 排水</b>　季節ごとの「目安の水深」に合わせます。ゲージが青なら合っています。</li>' +
-    '<li><b>🚜 作業する</b>　トラクタや田植機が田んぼを走ります。押すだけで進みます。</li>' +
-    '<li><b>🌿 草取り・防除</b>　雑草ゲージが伸びてきたら押してください。</li>' +
-    '<li><b>⏩ 次の季節へ</b>　その季節の管理が採点され、次に進みます。</li>' +
+    '<li><b>💧 給水／☀️ 排水</b>季節ごとの「目安の水深」に合わせます。ゲージが青なら合っています。</li>' +
+    '<li><b>🚜 作業する</b>トラクタや田植機が田んぼを走ります。押すだけで進みます。</li>' +
+    '<li><b>🌿 草取り・防除</b>雑草ゲージが伸びてきたら押してください。</li>' +
+    '<li><b>⏩ 次の季節へ</b>その季節の管理が採点され、次に進みます。</li>' +
     '</ul>';
   el('mo-ok').textContent = 'はじめる';
   loop();
